@@ -1,4 +1,5 @@
 ﻿using System.Globalization;
+using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using LibreHardwareMonitor.Hardware;
@@ -17,7 +18,8 @@ class Program
             IsCpuEnabled = true,
             IsGpuEnabled = true,
             IsMemoryEnabled = true,
-            IsMotherboardEnabled = true
+            IsMotherboardEnabled = true,
+            IsStorageEnabled = true
         };
 
         var mqttFactory = new MqttClientFactory();
@@ -43,6 +45,8 @@ class Program
             var cpu = computer.Hardware.FirstOrDefault(h => h.HardwareType == HardwareType.Cpu);
             var gpu = computer.Hardware.FirstOrDefault(IsGpuHardware);
             var memory = computer.Hardware.FirstOrDefault(h => h.HardwareType == HardwareType.Memory);
+            var motherboard = computer.Hardware.FirstOrDefault(h => h.HardwareType == HardwareType.Motherboard);
+            var storages = computer.Hardware.Where(h => h.HardwareType == HardwareType.Storage).ToList();
 
             await EnsureMqttConnectedAsync(mqttClient, mqttOptions, shutdown.Token);
             LogDebug(config.DebugEnabled, "MQTT connected.");
@@ -85,23 +89,27 @@ class Program
                 var rawGpuMemUsed = FindSensorValue(gpu, SensorType.SmallData, "GPU Memory Used");
                 var rawGpuMemTotal = FindSensorValue(gpu, SensorType.SmallData, "GPU Memory Total");
 
-                var cpuLoad = config.Sensors.CpuLoad ? RoundPercentToInt(rawCpuLoad) : null;
-                var cpuTemp = config.Sensors.CpuTemp ? rawCpuTemp : null;
-                var gpuLoad = config.Sensors.GpuLoad ? RoundPercentToInt(rawGpuLoad) : null;
-                var gpuTemp = config.Sensors.GpuTemp ? rawGpuTemp : null;
-                var ramLoad = config.Sensors.RamLoad ? RoundPercentToInt(rawRamLoad) : null;
-                var ramUsed = config.Sensors.RamUsed ? rawRamUsed : null;
-                var ramTotal = config.Sensors.RamTotal ? rawRamTotal : null;
-                var cpuPackagePower = config.Sensors.CpuPackagePower ? rawCpuPackagePower : null;
-                var cpuCoreVoltage = config.Sensors.CpuCoreVoltage ? rawCpuCoreVoltage : null;
-                var gpuBoardPower = config.Sensors.GpuBoardPower ? rawGpuBoardPower : null;
-                var gpuFan = config.Sensors.GpuFanSpeed ? rawGpuFan : null;
-                var gpuMemLoad = config.Sensors.GpuMemoryLoad ? RoundPercentToInt(rawGpuMemLoad) : null;
-                var gpuMemUsed = config.Sensors.GpuMemoryUsed ? rawGpuMemUsed : null;
-                var gpuMemTotal = config.Sensors.GpuMemoryTotal ? rawGpuMemTotal : null;
+                var sensors = config.Sensors ?? new SensorConfig();
+
+                var cpuLoad = sensors.CpuLoad ? RoundPercentToInt(rawCpuLoad) : null;
+                var cpuTemp = sensors.CpuTemp ? rawCpuTemp : null;
+                var gpuLoad = sensors.GpuLoad ? RoundPercentToInt(rawGpuLoad) : null;
+                var gpuTemp = sensors.GpuTemp ? rawGpuTemp : null;
+                var ramLoad = sensors.RamLoad ? RoundPercentToInt(rawRamLoad) : null;
+                var ramUsed = sensors.RamUsed ? rawRamUsed : null;
+                var ramTotal = sensors.RamTotal ? rawRamTotal : null;
+                var cpuPackagePower = sensors.CpuPackagePower ? rawCpuPackagePower : null;
+                var cpuCoreVoltage = sensors.CpuCoreVoltage ? rawCpuCoreVoltage : null;
+                var gpuBoardPower = sensors.GpuBoardPower ? rawGpuBoardPower : null;
+                var gpuFan = sensors.GpuFanSpeed ? rawGpuFan : null;
+                var gpuMemLoad = sensors.GpuMemoryLoad ? RoundPercentToInt(rawGpuMemLoad) : null;
+                var gpuMemUsed = sensors.GpuMemoryUsed ? rawGpuMemUsed : null;
+                var gpuMemTotal = sensors.GpuMemoryTotal ? rawGpuMemTotal : null;
 
                 var cpuName = cpu?.Name ?? "CPU";
                 var gpuName = gpu?.Name ?? "GPU";
+                var motherboardName = sensors.MotherboardName ? motherboard?.Name : null;
+                var driveMetrics = sensors.Drives ? CollectDriveMetrics(storages) : new List<StorageMetrics>();
 
                 var summaryParts = new List<string>();
 
@@ -123,6 +131,16 @@ class Program
                     summaryParts.Add(ramSummary);
                 }
 
+                if (!string.IsNullOrWhiteSpace(motherboardName))
+                {
+                    summaryParts.Add($"MB {motherboardName}");
+                }
+
+                if (driveMetrics.Count > 0)
+                {
+                    summaryParts.Add(BuildDrivesSummary(driveMetrics));
+                }
+
                 if (summaryParts.Count > 0)
                 {
                     Console.WriteLine(string.Join(" || ", summaryParts));
@@ -134,7 +152,9 @@ class Program
                     Host = Environment.MachineName,
                     Cpu = BuildCpuMetrics(cpuName, cpuLoad, cpuTemp, cpuPackagePower, cpuCoreVoltage),
                     Gpu = BuildGpuMetrics(gpuName, gpuLoad, gpuTemp, gpuBoardPower, gpuFan, gpuMemLoad, gpuMemUsed, gpuMemTotal),
-                    Ram = BuildRamMetrics(ramLoad, ramUsed, ramTotal)
+                    Ram = BuildRamMetrics(ramLoad, ramUsed, ramTotal),
+                    Motherboard = BuildMotherboardMetrics(motherboardName),
+                    Drives = driveMetrics.Count > 0 ? driveMetrics : null
                 }, shutdown.Token);
 
                 LogDebug(config.DebugEnabled, "MQTT publish complete.");
@@ -305,7 +325,7 @@ class Program
             parts.Add("Vcore " + FormatVolts(coreVoltage));
         }
 
-            return parts.Count == 0 ? $"CPU {name}" : $"CPU {name}: {string.Join(", ", parts)}";
+        return parts.Count == 0 ? $"CPU {name}" : $"CPU {name}: {string.Join(", ", parts)}";
     }
 
     static string? BuildGpuSummary(
@@ -349,7 +369,7 @@ class Program
             parts.Add("VRAM Load " + FormatPercent(vramLoad));
         }
 
-                return parts.Count == 0 ? $"GPU {name}" : $"GPU {name}: {string.Join(", ", parts)}";
+        return parts.Count == 0 ? $"GPU {name}" : $"GPU {name}: {string.Join(", ", parts)}";
     }
 
     static CpuMetrics BuildCpuMetrics(string name, int? load, float? temp, float? packagePower, float? coreVoltage)
@@ -455,6 +475,211 @@ class Program
         }
 
         return "n/a";
+    }
+
+    static string FormatStorageUsage(float? used, float? free, float? total)
+    {
+        if (total.HasValue && total.Value > 0 && used.HasValue)
+        {
+            var percent = RoundPercentToInt((used.Value / total.Value) * 100f);
+            var usedText = FormatGigabytes(used.Value);
+            var freeText = free.HasValue ? FormatGigabytes(free.Value) : "n/a";
+            var totalText = FormatGigabytes(total.Value);
+            return $"{FormatPercent(percent)} ({usedText}/{freeText}/{totalText}GB)";
+        }
+
+        if (used.HasValue || free.HasValue || total.HasValue)
+        {
+            var usedText = used.HasValue ? FormatGigabytes(used.Value) : "n/a";
+            var freeText = free.HasValue ? FormatGigabytes(free.Value) : "n/a";
+            var totalText = total.HasValue ? FormatGigabytes(total.Value) : "n/a";
+            return $"{usedText}/{freeText}/{totalText}GB";
+        }
+
+        return "n/a";
+    }
+
+    static MotherboardMetrics? BuildMotherboardMetrics(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return null;
+        }
+
+        return new MotherboardMetrics
+        {
+            Name = name
+        };
+    }
+
+    static string BuildDrivesSummary(IEnumerable<StorageMetrics> drives)
+    {
+        var parts = new List<string>();
+        foreach (var drive in drives)
+        {
+            var usage = FormatStorageUsage(drive.UsedGb, drive.FreeGb, drive.TotalGb);
+            parts.Add($"{drive.Name}: {usage}");
+        }
+
+        return "Drives " + string.Join(", ", parts);
+    }
+
+    static List<StorageMetrics> CollectDriveMetrics(IEnumerable<IHardware> storages)
+    {
+        var results = new List<StorageMetrics>();
+        var osDrives = GetOsDrives();
+
+        foreach (var storage in storages)
+        {
+            var used = FindStorageValue(storage, "Used Space", "Used", "Usage");
+            var free = FindStorageValue(storage, "Available Space", "Free Space", "Available", "Free");
+            var total = FindStorageValue(storage, "Total Capacity", "Total");
+
+            if (!total.HasValue && used.HasValue && free.HasValue)
+            {
+                total = used + free;
+            }
+
+            if (!used.HasValue && total.HasValue && free.HasValue)
+            {
+                used = total - free;
+            }
+
+            if (!free.HasValue && total.HasValue && used.HasValue)
+            {
+                free = total - used;
+            }
+
+            if ((!used.HasValue || !free.HasValue || !total.HasValue) && osDrives.Count > 0)
+            {
+                var match = MatchDriveBySize(storage.Name, total, osDrives);
+                if (match != null)
+                {
+                    total ??= match.TotalGb;
+                    free ??= match.FreeGb;
+                    used ??= match.UsedGb;
+                }
+            }
+
+            var usedPercent = (used.HasValue && total.HasValue && total.Value > 0)
+                ? RoundPercentToInt((used.Value / total.Value) * 100f)
+                : null;
+
+            if (!used.HasValue && !free.HasValue && !total.HasValue)
+            {
+                continue;
+            }
+
+            results.Add(new StorageMetrics
+            {
+                Name = storage.Name,
+                UsedGb = used,
+                FreeGb = free,
+                TotalGb = total,
+                UsedPercent = usedPercent
+            });
+        }
+
+        return results;
+    }
+
+    static List<OsDriveSnapshot> GetOsDrives()
+    {
+        var results = new List<OsDriveSnapshot>();
+
+        foreach (var drive in DriveInfo.GetDrives())
+        {
+            if (!drive.IsReady)
+            {
+                continue;
+            }
+
+            var totalGb = (float)(drive.TotalSize / 1024d / 1024d / 1024d);
+            var freeGb = (float)(drive.AvailableFreeSpace / 1024d / 1024d / 1024d);
+            var usedGb = totalGb - freeGb;
+
+            results.Add(new OsDriveSnapshot
+            {
+                Name = drive.Name,
+                Label = drive.VolumeLabel,
+                TotalGb = totalGb,
+                FreeGb = freeGb,
+                UsedGb = usedGb
+            });
+        }
+
+        return results;
+    }
+
+    static OsDriveSnapshot? MatchDriveBySize(string hardwareName, float? totalGb, List<OsDriveSnapshot> osDrives)
+    {
+        if (!totalGb.HasValue || totalGb.Value <= 0)
+        {
+            return null;
+        }
+
+        var bestDiff = float.MaxValue;
+        OsDriveSnapshot? best = null;
+        var threshold = Math.Max(1f, totalGb.Value * 0.02f);
+
+        foreach (var drive in osDrives)
+        {
+            var diff = Math.Abs(totalGb.Value - drive.TotalGb);
+            if (diff <= threshold && diff < bestDiff)
+            {
+                bestDiff = diff;
+                best = drive;
+            }
+        }
+
+        return best;
+    }
+
+    static float? FindSensorValueContains(IHardware? hardware, SensorType type, string namePart)
+    {
+        if (hardware == null)
+        {
+            return null;
+        }
+
+        foreach (var hw in EnumerateHardware(hardware))
+        {
+            foreach (var sensor in hw.Sensors)
+            {
+                if (sensor.SensorType == type
+                    && sensor.Name.Contains(namePart, StringComparison.OrdinalIgnoreCase))
+                {
+                    return sensor.Value;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    static float? FindStorageValue(IHardware hardware, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            var exact = FindSensorValue(hardware, SensorType.Data, name)
+                ?? FindSensorValue(hardware, SensorType.SmallData, name);
+            if (exact.HasValue)
+            {
+                return exact;
+            }
+        }
+
+        foreach (var name in names)
+        {
+            var partial = FindSensorValueContains(hardware, SensorType.Data, name)
+                ?? FindSensorValueContains(hardware, SensorType.SmallData, name);
+            if (partial.HasValue)
+            {
+                return partial;
+            }
+        }
+
+        return null;
     }
 
     static async Task PublishToMqttAsync(
@@ -576,6 +801,8 @@ class Program
         public bool GpuMemoryLoad { get; set; } = true;
         public bool GpuMemoryUsed { get; set; } = true;
         public bool GpuMemoryTotal { get; set; } = true;
+        public bool MotherboardName { get; set; } = true;
+        public bool Drives { get; set; } = true;
     }
 
     sealed class MqttMetrics
@@ -585,6 +812,8 @@ class Program
         public CpuMetrics? Cpu { get; set; }
         public GpuMetrics? Gpu { get; set; }
         public RamMetrics? Ram { get; set; }
+        public MotherboardMetrics? Motherboard { get; set; }
+        public List<StorageMetrics>? Drives { get; set; }
     }
 
     sealed class CpuMetrics
@@ -613,5 +842,28 @@ class Program
         public int? Load { get; set; }
         public float? UsedGb { get; set; }
         public float? TotalGb { get; set; }
+    }
+
+    sealed class MotherboardMetrics
+    {
+        public string Name { get; set; } = string.Empty;
+    }
+
+    sealed class StorageMetrics
+    {
+        public string Name { get; set; } = string.Empty;
+        public float? UsedGb { get; set; }
+        public float? FreeGb { get; set; }
+        public float? TotalGb { get; set; }
+        public int? UsedPercent { get; set; }
+    }
+
+    sealed class OsDriveSnapshot
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Label { get; set; } = string.Empty;
+        public float TotalGb { get; set; }
+        public float FreeGb { get; set; }
+        public float UsedGb { get; set; }
     }
 }
