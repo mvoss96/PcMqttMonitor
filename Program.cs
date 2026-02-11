@@ -1,5 +1,6 @@
 ﻿using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using LibreHardwareMonitor.Hardware;
 using MQTTnet;
 using MQTTnet.Protocol;
@@ -9,6 +10,7 @@ class Program
     static async Task Main()
     {
         var config = LoadConfig("config.json");
+        LogDebug(config.DebugEnabled, "Config loaded.");
 
         var computer = new Computer
         {
@@ -26,6 +28,7 @@ class Program
             .WithCredentials(config.Username, config.Password)
             .WithClientId($"pcmqtt-{Environment.MachineName.ToLowerInvariant()}")
             .Build();
+        LogDebug(config.DebugEnabled, "MQTT options built.");
 
         using var shutdown = new CancellationTokenSource();
         Console.CancelKeyPress += (_, e) =>
@@ -42,57 +45,106 @@ class Program
             var memory = computer.Hardware.FirstOrDefault(h => h.HardwareType == HardwareType.Memory);
 
             await EnsureMqttConnectedAsync(mqttClient, mqttOptions, shutdown.Token);
+            LogDebug(config.DebugEnabled, "MQTT connected.");
 
             while (!shutdown.IsCancellationRequested)
             {
+                LogDebug(config.DebugEnabled, "Refreshing sensors.");
                 foreach (var hardware in computer.Hardware)
                 {
                     UpdateHardwareTree(hardware);
                 }
 
-                var cpuLoad = FindSensorValue(cpu, SensorType.Load, "CPU Total");
-                var cpuTemp = FindSensorValue(cpu, SensorType.Temperature, "Core (Tctl/Tdie)")
+                var rawCpuLoad = FindSensorValue(cpu, SensorType.Load, "CPU Total");
+                var rawCpuTemp = FindSensorValue(cpu, SensorType.Temperature, "Core (Tctl/Tdie)")
                     ?? FindFirstSensorValue(cpu, SensorType.Temperature);
 
-                var gpuLoad = FindSensorValue(gpu, SensorType.Load, "GPU Core")
+                var rawGpuLoad = FindSensorValue(gpu, SensorType.Load, "GPU Core")
                     ?? FindFirstSensorValue(gpu, SensorType.Load);
-                var gpuTemp = FindSensorValue(gpu, SensorType.Temperature, "GPU Core")
+                var rawGpuTemp = FindSensorValue(gpu, SensorType.Temperature, "GPU Core")
                     ?? FindFirstSensorValue(gpu, SensorType.Temperature);
 
-                var ramLoad = FindSensorValue(memory, SensorType.Load, "Memory");
-                var ramUsed = FindSensorValue(memory, SensorType.Data, "Memory Used");
-                var ramAvailable = FindSensorValue(memory, SensorType.Data, "Memory Available");
-                var ramTotal = FindSensorValue(memory, SensorType.Data, "Memory Total")
-                    ?? (ramUsed.HasValue && ramAvailable.HasValue ? ramUsed + ramAvailable : null);
+                var rawRamLoad = FindSensorValue(memory, SensorType.Load, "Memory");
+                var rawRamUsed = FindSensorValue(memory, SensorType.Data, "Memory Used");
+                var rawRamAvailable = FindSensorValue(memory, SensorType.Data, "Memory Available");
+                var rawRamTotal = FindSensorValue(memory, SensorType.Data, "Memory Total")
+                    ?? (rawRamUsed.HasValue && rawRamAvailable.HasValue ? rawRamUsed + rawRamAvailable : null);
+
+                var rawCpuPackagePower = FindSensorValue(cpu, SensorType.Power, "Package")
+                    ?? FindFirstSensorValue(cpu, SensorType.Power);
+                var rawCpuCoreVoltage = FindSensorValue(cpu, SensorType.Voltage, "Core (SVI2 TFN)")
+                    ?? FindFirstSensorValue(cpu, SensorType.Voltage);
+
+                var rawGpuBoardPower = FindSensorValue(gpu, SensorType.Power, "GPU Board Power")
+                    ?? FindSensorValue(gpu, SensorType.Power, "GPU Package")
+                    ?? FindFirstSensorValue(gpu, SensorType.Power);
+                var rawGpuFan = FindSensorValue(gpu, SensorType.Fan, "GPU Fan 1")
+                    ?? FindFirstSensorValue(gpu, SensorType.Fan);
+                var rawGpuMemLoad = FindSensorValue(gpu, SensorType.Load, "GPU Memory")
+                    ?? FindFirstSensorValue(gpu, SensorType.Load);
+                var rawGpuMemUsed = FindSensorValue(gpu, SensorType.SmallData, "GPU Memory Used");
+                var rawGpuMemTotal = FindSensorValue(gpu, SensorType.SmallData, "GPU Memory Total");
+
+                var cpuLoad = config.Sensors.CpuLoad ? RoundPercentToInt(rawCpuLoad) : null;
+                var cpuTemp = config.Sensors.CpuTemp ? rawCpuTemp : null;
+                var gpuLoad = config.Sensors.GpuLoad ? RoundPercentToInt(rawGpuLoad) : null;
+                var gpuTemp = config.Sensors.GpuTemp ? rawGpuTemp : null;
+                var ramLoad = config.Sensors.RamLoad ? RoundPercentToInt(rawRamLoad) : null;
+                var ramUsed = config.Sensors.RamUsed ? rawRamUsed : null;
+                var ramTotal = config.Sensors.RamTotal ? rawRamTotal : null;
+                var cpuPackagePower = config.Sensors.CpuPackagePower ? rawCpuPackagePower : null;
+                var cpuCoreVoltage = config.Sensors.CpuCoreVoltage ? rawCpuCoreVoltage : null;
+                var gpuBoardPower = config.Sensors.GpuBoardPower ? rawGpuBoardPower : null;
+                var gpuFan = config.Sensors.GpuFanSpeed ? rawGpuFan : null;
+                var gpuMemLoad = config.Sensors.GpuMemoryLoad ? RoundPercentToInt(rawGpuMemLoad) : null;
+                var gpuMemUsed = config.Sensors.GpuMemoryUsed ? rawGpuMemUsed : null;
+                var gpuMemTotal = config.Sensors.GpuMemoryTotal ? rawGpuMemTotal : null;
 
                 var cpuName = cpu?.Name ?? "CPU";
                 var gpuName = gpu?.Name ?? "GPU";
 
-                Console.WriteLine(
-                    $"GPU {gpuName}: {FormatPercent(gpuLoad)} {FormatCelsius(gpuTemp)} || " +
-                    $"CPU {cpuName}: {FormatPercent(cpuLoad)} {FormatCelsius(cpuTemp)} || " +
-                    $"RAM: {FormatRamUsage(ramLoad, ramUsed, ramTotal)}");
+                var summaryParts = new List<string>();
+
+                var cpuSummary = BuildCpuSummary(cpuName, cpuLoad, cpuTemp, cpuPackagePower, cpuCoreVoltage);
+                if (cpuSummary != null)
+                {
+                    summaryParts.Add(cpuSummary);
+                }
+
+                var gpuSummary = BuildGpuSummary(gpuName, gpuLoad, gpuTemp, gpuBoardPower, gpuFan, gpuMemLoad, gpuMemUsed, gpuMemTotal);
+                if (gpuSummary != null)
+                {
+                    summaryParts.Add(gpuSummary);
+                }
+
+                var ramSummary = BuildRamSummary(ramLoad, ramUsed, ramTotal);
+                if (ramSummary != null)
+                {
+                    summaryParts.Add(ramSummary);
+                }
+
+                if (summaryParts.Count > 0)
+                {
+                    Console.WriteLine(string.Join(" || ", summaryParts));
+                }
 
                 await PublishToMqttAsync(mqttFactory, mqttClient, mqttOptions, config.Topic, new MqttMetrics
                 {
                     TimestampUtc = DateTime.UtcNow,
                     Host = Environment.MachineName,
-                    CpuName = cpuName,
-                    CpuLoad = cpuLoad,
-                    CpuTempC = cpuTemp,
-                    GpuName = gpuName,
-                    GpuLoad = gpuLoad,
-                    GpuTempC = gpuTemp,
-                    RamLoad = ramLoad,
-                    RamUsedGb = ramUsed,
-                    RamTotalGb = ramTotal
+                    Cpu = BuildCpuMetrics(cpuName, cpuLoad, cpuTemp, cpuPackagePower, cpuCoreVoltage),
+                    Gpu = BuildGpuMetrics(gpuName, gpuLoad, gpuTemp, gpuBoardPower, gpuFan, gpuMemLoad, gpuMemUsed, gpuMemTotal),
+                    Ram = BuildRamMetrics(ramLoad, ramUsed, ramTotal)
                 }, shutdown.Token);
+
+                LogDebug(config.DebugEnabled, "MQTT publish complete.");
 
                 await Task.Delay(TimeSpan.FromSeconds(config.PublishIntervalSeconds), shutdown.Token);
             }
         }
         catch (OperationCanceledException)
         {
+            LogDebug(config.DebugEnabled, "Shutdown requested.");
         }
         finally
         {
@@ -100,6 +152,7 @@ class Program
             {
                 var disconnectOptions = mqttFactory.CreateClientDisconnectOptionsBuilder().Build();
                 await mqttClient.DisconnectAsync(disconnectOptions, CancellationToken.None);
+                LogDebug(config.DebugEnabled, "MQTT disconnected.");
             }
             computer.Close();
         }
@@ -180,8 +233,20 @@ class Program
     static string FormatPercent(float? value)
     {
         return value.HasValue
-            ? value.Value.ToString("0.##", CultureInfo.InvariantCulture) + "%"
+            ? value.Value.ToString("0", CultureInfo.InvariantCulture) + "%"
             : "n/a";
+    }
+
+    static string FormatPercent(int? value)
+    {
+        return value.HasValue
+            ? value.Value.ToString("0", CultureInfo.InvariantCulture) + "%"
+            : "n/a";
+    }
+
+    static int? RoundPercentToInt(float? value)
+    {
+        return value.HasValue ? (int)MathF.Round(value.Value) : null;
     }
 
     static string FormatCelsius(float? value)
@@ -191,7 +256,7 @@ class Program
             : "n/a";
     }
 
-    static string FormatRamUsage(float? load, float? used, float? total)
+    static string FormatRamUsage(int? load, float? used, float? total)
     {
         if (used.HasValue && total.HasValue && total.Value > 0)
         {
@@ -206,9 +271,190 @@ class Program
         return FormatPercent(load);
     }
 
+    static string? BuildRamSummary(int? load, float? used, float? total)
+    {
+        if (!load.HasValue && !used.HasValue && !total.HasValue)
+        {
+            return null;
+        }
+
+        return $"RAM: {FormatRamUsage(load, used, total)}";
+    }
+
+    static string? BuildCpuSummary(string name, int? load, float? temp, float? packagePower, float? coreVoltage)
+    {
+        var parts = new List<string>();
+
+        if (load.HasValue)
+        {
+            parts.Add(FormatPercent(load));
+        }
+
+        if (temp.HasValue)
+        {
+            parts.Add(FormatCelsius(temp));
+        }
+
+        if (packagePower.HasValue)
+        {
+            parts.Add("Pkg " + FormatWatts(packagePower));
+        }
+
+        if (coreVoltage.HasValue)
+        {
+            parts.Add("Vcore " + FormatVolts(coreVoltage));
+        }
+
+            return parts.Count == 0 ? $"CPU {name}" : $"CPU {name}: {string.Join(", ", parts)}";
+    }
+
+    static string? BuildGpuSummary(
+        string name,
+        int? load,
+        float? temp,
+        float? boardPower,
+        float? fan,
+        int? vramLoad,
+        float? vramUsed,
+        float? vramTotal)
+    {
+        var parts = new List<string>();
+
+        if (load.HasValue)
+        {
+            parts.Add(FormatPercent(load));
+        }
+
+        if (temp.HasValue)
+        {
+            parts.Add(FormatCelsius(temp));
+        }
+
+        if (boardPower.HasValue)
+        {
+            parts.Add("Pwr " + FormatWatts(boardPower));
+        }
+
+        if (fan.HasValue)
+        {
+            parts.Add("Fan " + FormatRpm(fan));
+        }
+
+        if (vramUsed.HasValue || vramTotal.HasValue)
+        {
+            parts.Add("VRAM " + FormatGpuMemory(vramUsed, vramTotal));
+        }
+        else if (vramLoad.HasValue)
+        {
+            parts.Add("VRAM Load " + FormatPercent(vramLoad));
+        }
+
+                return parts.Count == 0 ? $"GPU {name}" : $"GPU {name}: {string.Join(", ", parts)}";
+    }
+
+    static CpuMetrics BuildCpuMetrics(string name, int? load, float? temp, float? packagePower, float? coreVoltage)
+    {
+        return new CpuMetrics
+        {
+            Name = name,
+            Load = load,
+            TempC = temp,
+            PackagePowerW = packagePower,
+            CoreVoltageV = coreVoltage
+        };
+    }
+
+    static GpuMetrics BuildGpuMetrics(
+        string name,
+        int? load,
+        float? temp,
+        float? boardPower,
+        float? fan,
+        int? vramLoad,
+        float? vramUsed,
+        float? vramTotal)
+    {
+        var effectiveMemoryLoad = (vramUsed.HasValue || vramTotal.HasValue) ? null : vramLoad;
+
+        return new GpuMetrics
+        {
+            Name = name,
+            Load = load,
+            TempC = temp,
+            BoardPowerW = boardPower,
+            FanRpm = fan,
+            MemoryLoad = effectiveMemoryLoad,
+            MemoryUsedMb = vramUsed,
+            MemoryTotalMb = vramTotal
+        };
+    }
+
+    static RamMetrics? BuildRamMetrics(int? load, float? used, float? total)
+    {
+        if (!load.HasValue && !used.HasValue && !total.HasValue)
+        {
+            return null;
+        }
+
+        return new RamMetrics
+        {
+            Load = load,
+            UsedGb = used,
+            TotalGb = total
+        };
+    }
+
     static string FormatGigabytes(float value)
     {
         return value.ToString("0.##", CultureInfo.InvariantCulture);
+    }
+
+    static string FormatWatts(float? value)
+    {
+        return value.HasValue
+            ? value.Value.ToString("0.##", CultureInfo.InvariantCulture) + "W"
+            : "n/a";
+    }
+
+    static string FormatVolts(float? value)
+    {
+        return value.HasValue
+            ? value.Value.ToString("0.###", CultureInfo.InvariantCulture) + "V"
+            : "n/a";
+    }
+
+    static string FormatRpm(float? value)
+    {
+        return value.HasValue
+            ? value.Value.ToString("0", CultureInfo.InvariantCulture) + " RPM"
+            : "n/a";
+    }
+
+    static string FormatGpuMemory(float? used, float? total)
+    {
+        if (used.HasValue && total.HasValue && total.Value > 0)
+        {
+            var usedGb = used.Value / 1024f;
+            var totalGb = total.Value / 1024f;
+            var percent = (used.Value / total.Value) * 100f;
+            return percent.ToString("0", CultureInfo.InvariantCulture) + "% (" +
+                usedGb.ToString("0.##", CultureInfo.InvariantCulture) + "/" +
+                totalGb.ToString("0.##", CultureInfo.InvariantCulture) + "GB)";
+        }
+
+        if (used.HasValue)
+        {
+            var usedGb = used.Value / 1024f;
+            return usedGb.ToString("0.##", CultureInfo.InvariantCulture) + "GB";
+        }
+
+        if (total.HasValue)
+        {
+            var totalGb = total.Value / 1024f;
+            return totalGb.ToString("0.##", CultureInfo.InvariantCulture) + "GB";
+        }
+
+        return "n/a";
     }
 
     static async Task PublishToMqttAsync(
@@ -223,7 +469,8 @@ class Program
 
         var payload = JsonSerializer.Serialize(metrics, new JsonSerializerOptions
         {
-            WriteIndented = false
+            WriteIndented = false,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
         });
 
         var message = mqttFactory.CreateApplicationMessageBuilder()
@@ -281,12 +528,24 @@ class Program
             throw new InvalidOperationException("Config missing Topic.");
         }
 
+        config.Sensors ??= new SensorConfig();
+
         if (config.PublishIntervalSeconds <= 0)
         {
             throw new InvalidOperationException("Config PublishIntervalSeconds must be > 0.");
         }
 
         return config;
+    }
+
+    static void LogDebug(bool enabled, string message)
+    {
+        if (!enabled)
+        {
+            return;
+        }
+
+        Console.WriteLine($"[debug] {DateTime.Now:HH:mm:ss} {message}");
     }
 
     sealed class AppConfig
@@ -297,20 +556,62 @@ class Program
         public string Password { get; set; } = string.Empty;
         public string Topic { get; set; } = string.Empty;
         public double PublishIntervalSeconds { get; set; } = 1.0;
+        public bool DebugEnabled { get; set; } = true;
+        public SensorConfig? Sensors { get; set; }
+    }
+
+    sealed class SensorConfig
+    {
+        public bool CpuLoad { get; set; } = true;
+        public bool CpuTemp { get; set; } = true;
+        public bool GpuLoad { get; set; } = true;
+        public bool GpuTemp { get; set; } = true;
+        public bool RamLoad { get; set; } = true;
+        public bool RamUsed { get; set; } = true;
+        public bool RamTotal { get; set; } = true;
+        public bool CpuPackagePower { get; set; } = true;
+        public bool CpuCoreVoltage { get; set; } = true;
+        public bool GpuBoardPower { get; set; } = true;
+        public bool GpuFanSpeed { get; set; } = true;
+        public bool GpuMemoryLoad { get; set; } = true;
+        public bool GpuMemoryUsed { get; set; } = true;
+        public bool GpuMemoryTotal { get; set; } = true;
     }
 
     sealed class MqttMetrics
     {
         public DateTime TimestampUtc { get; set; }
         public string Host { get; set; } = string.Empty;
-        public string CpuName { get; set; } = string.Empty;
-        public float? CpuLoad { get; set; }
-        public float? CpuTempC { get; set; }
-        public string GpuName { get; set; } = string.Empty;
-        public float? GpuLoad { get; set; }
-        public float? GpuTempC { get; set; }
-        public float? RamLoad { get; set; }
-        public float? RamUsedGb { get; set; }
-        public float? RamTotalGb { get; set; }
+        public CpuMetrics? Cpu { get; set; }
+        public GpuMetrics? Gpu { get; set; }
+        public RamMetrics? Ram { get; set; }
+    }
+
+    sealed class CpuMetrics
+    {
+        public string Name { get; set; } = string.Empty;
+        public int? Load { get; set; }
+        public float? TempC { get; set; }
+        public float? PackagePowerW { get; set; }
+        public float? CoreVoltageV { get; set; }
+    }
+
+    sealed class GpuMetrics
+    {
+        public string Name { get; set; } = string.Empty;
+        public int? Load { get; set; }
+        public float? TempC { get; set; }
+        public float? BoardPowerW { get; set; }
+        public float? FanRpm { get; set; }
+        public int? MemoryLoad { get; set; }
+        public float? MemoryUsedMb { get; set; }
+        public float? MemoryTotalMb { get; set; }
+    }
+
+    sealed class RamMetrics
+    {
+        public int? Load { get; set; }
+        public float? UsedGb { get; set; }
+        public float? TotalGb { get; set; }
     }
 }
