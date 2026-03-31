@@ -1,19 +1,16 @@
 using System.Drawing;
 using System.Windows.Forms;
 
-// Manages the system tray icon, native hover tooltip, and the sensors window.
+// Manages the system tray icon, native hover tooltip, and the main window.
 sealed class TrayApp : ApplicationContext
 {
     readonly NotifyIcon _tray;
-    readonly SensorsWindow _sensorsWindow;
-    readonly SettingsWindow _settingsWindow;
-    MqttMetrics? _lastMetrics;
+    readonly MainWindow _window;
     volatile string _statusText = "Starting...";
 
     public TrayApp(CancellationTokenSource shutdown, string configPath, AppConfig config)
     {
-        _sensorsWindow  = new SensorsWindow();
-        _settingsWindow = new SettingsWindow(configPath, config);
+        _window = new MainWindow(configPath, config);
 
         _tray = new NotifyIcon
         {
@@ -22,23 +19,21 @@ sealed class TrayApp : ApplicationContext
             Text = "PC MQTT Monitor"
         };
 
-        // Left-click opens the sensors window.
+        // Left-click opens the sensors tab.
         _tray.MouseClick += (_, e) =>
         {
             if (e.Button == MouseButtons.Left)
-                ShowSensorsWindow();
+                _window.ShowSensorsTab();
         };
 
-        // Status item at the top — disabled so it acts as a label, not a button.
         var statusItem = new ToolStripMenuItem(_statusText) { Enabled = false };
 
         var menu = new ContextMenuStrip();
-        // Refresh the status text just before the menu is shown (avoids cross-thread invoke).
         menu.Opening += (_, _) => statusItem.Text = _statusText;
         menu.Items.Add(statusItem);
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Show Sensors",  null, (_, _) => ShowSensorsWindow());
-        menu.Items.Add("Settings",      null, (_, _) => ShowSettingsWindow());
+        menu.Items.Add("Show Sensors", null, (_, _) => _window.ShowSensorsTab());
+        menu.Items.Add("Settings",     null, (_, _) => _window.ShowSettingsTab());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit", null, (_, _) =>
         {
@@ -55,38 +50,21 @@ sealed class TrayApp : ApplicationContext
     // Called from the MQTT loop thread with the latest sensor snapshot.
     public void UpdateSnapshot(SensorSnapshot snapshot)
     {
-        _lastMetrics = snapshot.Metrics;
-
         // Update the native hover tooltip with a short summary.
         var tooltip = BuildTooltipText(snapshot.Metrics);
         _tray.Text = tooltip.Length > 127 ? tooltip[..127] : tooltip;
 
-        // Update the sensors window if it is currently open.
-        if (_sensorsWindow.Visible && _sensorsWindow.IsHandleCreated)
-            _sensorsWindow.BeginInvoke(() => _sensorsWindow.UpdateMetrics(snapshot.Metrics));
-    }
-
-    void ShowSensorsWindow()
-    {
-        if (_lastMetrics != null)
-            _sensorsWindow.UpdateMetrics(_lastMetrics);
-        _sensorsWindow.Show();
-        _sensorsWindow.BringToFront();
-    }
-
-    void ShowSettingsWindow()
-    {
-        _settingsWindow.Show();
-        _settingsWindow.BringToFront();
+        _window.SetLatestMetrics(snapshot.Metrics);
     }
 
     // Short single-line summary for the native OS tooltip.
     static string BuildTooltipText(MqttMetrics m)
     {
         var parts = new List<string> { "PC MQTT Monitor" };
-        if (m.Cpu?.Load != null) parts.Add($"CPU {m.Cpu.Load}%");
-        if (m.Cpu?.TempC != null) parts.Add($"{m.Cpu.TempC:0}C");
-        if (m.Gpu?.Load != null) parts.Add($"GPU {m.Gpu.Load}%");
+        var cpu = string.Join(" ", new[] { m.Cpu?.Load != null ? $"CPU {m.Cpu.Load}%" : null, m.Cpu?.TempC != null ? $"{m.Cpu.TempC:0}C" : null }.Where(s => s != null));
+        if (cpu.Length > 0) parts.Add(cpu);
+        var gpu = string.Join(" ", new[] { m.Gpu?.Load != null ? $"GPU {m.Gpu.Load}%" : null, m.Gpu?.TempC != null ? $"{m.Gpu.TempC:0}C" : null }.Where(s => s != null));
+        if (gpu.Length > 0) parts.Add(gpu);
         if (m.Ram?.Load != null) parts.Add($"RAM {m.Ram.Load}%");
         return string.Join(" | ", parts);
     }
@@ -105,8 +83,7 @@ sealed class TrayApp : ApplicationContext
         if (disposing)
         {
             _tray.Dispose();
-            _sensorsWindow.Dispose();
-            _settingsWindow.Dispose();
+            _window.Dispose();
         }
         base.Dispose(disposing);
     }
