@@ -19,7 +19,7 @@ class Program
         Log($"Interval: {config.PublishIntervalSeconds}s");
 
         using var shutdown = new CancellationTokenSource();
-        var tray = new TrayApp(shutdown);
+        var tray = new TrayApp(shutdown, configPath, config);
 
         Console.CancelKeyPress += (_, e) =>
         {

@@ -6,12 +6,14 @@ sealed class TrayApp : ApplicationContext
 {
     readonly NotifyIcon _tray;
     readonly SensorsWindow _sensorsWindow;
+    readonly SettingsWindow _settingsWindow;
     MqttMetrics? _lastMetrics;
     volatile string _statusText = "Starting...";
 
-    public TrayApp(CancellationTokenSource shutdown)
+    public TrayApp(CancellationTokenSource shutdown, string configPath, AppConfig config)
     {
-        _sensorsWindow = new SensorsWindow();
+        _sensorsWindow  = new SensorsWindow();
+        _settingsWindow = new SettingsWindow(configPath, config);
 
         _tray = new NotifyIcon
         {
@@ -35,7 +37,8 @@ sealed class TrayApp : ApplicationContext
         menu.Opening += (_, _) => statusItem.Text = _statusText;
         menu.Items.Add(statusItem);
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Show Sensors", null, (_, _) => ShowSensorsWindow());
+        menu.Items.Add("Show Sensors",  null, (_, _) => ShowSensorsWindow());
+        menu.Items.Add("Settings",      null, (_, _) => ShowSettingsWindow());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit", null, (_, _) =>
         {
@@ -65,12 +68,16 @@ sealed class TrayApp : ApplicationContext
 
     void ShowSensorsWindow()
     {
-        // Show the latest data immediately when opening the window.
         if (_lastMetrics != null)
             _sensorsWindow.UpdateMetrics(_lastMetrics);
-
         _sensorsWindow.Show();
         _sensorsWindow.BringToFront();
+    }
+
+    void ShowSettingsWindow()
+    {
+        _settingsWindow.Show();
+        _settingsWindow.BringToFront();
     }
 
     // Short single-line summary for the native OS tooltip.
@@ -99,6 +106,7 @@ sealed class TrayApp : ApplicationContext
         {
             _tray.Dispose();
             _sensorsWindow.Dispose();
+            _settingsWindow.Dispose();
         }
         base.Dispose(disposing);
     }
