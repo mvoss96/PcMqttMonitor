@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.IO;
+using System.Runtime.InteropServices;
 using LibreHardwareMonitor.Hardware;
 
 // Encapsulates all sensor discovery, reading, formatting, and metric construction.
@@ -56,11 +57,9 @@ sealed class SensorService : IDisposable
         var rawGpuTemp = FindSensorValue(_gpu, SensorType.Temperature, "GPU Core")
             ?? FindFirstSensorValue(_gpu, SensorType.Temperature);
 
-        var rawRamLoad = FindSensorValue(_memory, SensorType.Load, "Memory");
-        var rawRamUsed = FindSensorValue(_memory, SensorType.Data, "Memory Used");
-        var rawRamAvailable = FindSensorValue(_memory, SensorType.Data, "Memory Available");
-        var rawRamTotal = FindSensorValue(_memory, SensorType.Data, "Memory Total")
-            ?? (rawRamUsed.HasValue && rawRamAvailable.HasValue ? rawRamUsed + rawRamAvailable : null);
+        // Use Windows API for all RAM values — matches Task Manager exactly.
+        // LHM's values are unreliable (used includes page file, available counts standby differently).
+        var (rawRamLoad, rawRamUsed, rawRamTotal) = GetRamFromWindows();
 
         var rawCpuPackagePower = FindSensorValue(_cpu, SensorType.Power, "Package")
             ?? FindFirstSensorValue(_cpu, SensorType.Power);
@@ -654,6 +653,35 @@ sealed class SensorService : IDisposable
         }
 
         return "n/a";
+    }
+
+    // Ask Windows for RAM load, used and total — matches Task Manager exactly.
+    static (float? load, float? usedGb, float? totalGb) GetRamFromWindows()
+    {
+        var status = new MemoryStatusEx { dwLength = (uint)Marshal.SizeOf<MemoryStatusEx>() };
+        if (!GlobalMemoryStatusEx(ref status)) return (null, null, null);
+        var total = (float)(status.ullTotalPhys / 1024d / 1024d / 1024d);
+        var avail = (float)(status.ullAvailPhys  / 1024d / 1024d / 1024d);
+        var used  = total - avail;
+        var load  = (float)status.dwMemoryLoad;
+        return (load, used, total);
+    }
+
+    [DllImport("kernel32.dll")]
+    static extern bool GlobalMemoryStatusEx(ref MemoryStatusEx lpBuffer);
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct MemoryStatusEx
+    {
+        public uint  dwLength;
+        public uint  dwMemoryLoad;
+        public ulong ullTotalPhys;
+        public ulong ullAvailPhys;
+        public ulong ullTotalPageFile;
+        public ulong ullAvailPageFile;
+        public ulong ullTotalVirtual;
+        public ulong ullAvailVirtual;
+        public ulong ullAvailExtendedVirtual;
     }
 }
 
