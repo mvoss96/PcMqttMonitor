@@ -15,7 +15,7 @@ class Program
         var config = ConfigLoader.Load(configPath);
 
         Log($"Broker:   {config.BrokerHost}:{config.BrokerPort}");
-        Log($"Topic:    {config.Topic}");
+        Log($"TopicRoot: {config.TopicRoot}");
         Log($"Interval: {config.PublishIntervalSeconds}s");
 
         using var shutdown = new CancellationTokenSource();
@@ -82,7 +82,8 @@ class Program
                     await MqttPublisher.PublishAsync(
                         mqttClient,
                         mqttOptions,
-                        config.Topic,
+                        config.TopicRoot,
+                        Environment.MachineName.ToLowerInvariant(),
                         snapshot.Metrics,
                         cancellationToken);
 

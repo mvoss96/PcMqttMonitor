@@ -61,7 +61,7 @@ sealed class MainWindow : Form
         _port         = new NumericUpDown { Minimum = 1, Maximum = 65535, Value = config.BrokerPort, Width = 220 };
         _username     = new TextBox { Text = config.Username, Width = 220 };
         _password     = new TextBox { Text = config.Password, Width = 220, UseSystemPasswordChar = true };
-        _topic        = new TextBox { Text = config.Topic, Width = 220 };
+        _topic        = new TextBox { Text = config.TopicRoot, Width = 220 };
         _interval     = new NumericUpDown { Minimum = 0.5m, Maximum = 3600, Value = (decimal)config.PublishIntervalSeconds, DecimalPlaces = 1, Increment = 0.5m, Width = 220 };
         _debugEnabled = new CheckBox { Text = "Enable debug logging", Checked = config.DebugEnabled, AutoSize = true };
 
@@ -72,7 +72,7 @@ sealed class MainWindow : Form
         AddLabeledRow(brokerTable, "Port",         _port);
         AddLabeledRow(brokerTable, "Username",     _username);
         AddLabeledRow(brokerTable, "Password",     _password);
-        AddLabeledRow(brokerTable, "Topic",        _topic);
+        AddLabeledRow(brokerTable, "Topic Root",    _topic);
         AddLabeledRow(brokerTable, "Interval (s)", _interval);
         brokerTable.Controls.Add(_debugEnabled);
         brokerTable.SetColumnSpan(_debugEnabled, 2);
@@ -306,7 +306,7 @@ sealed class MainWindow : Form
         }
         if (string.IsNullOrWhiteSpace(_topic.Text))
         {
-            MessageBox.Show("Topic cannot be empty.", "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show("Topic Root cannot be empty.", "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
@@ -314,7 +314,7 @@ sealed class MainWindow : Form
         _config.BrokerPort             = (int)_port.Value;
         _config.Username               = _username.Text;
         _config.Password               = _password.Text;
-        _config.Topic                  = _topic.Text.Trim();
+        _config.TopicRoot              = _topic.Text.Trim();
         _config.PublishIntervalSeconds = (double)_interval.Value;
         _config.DebugEnabled           = _debugEnabled.Checked;
 

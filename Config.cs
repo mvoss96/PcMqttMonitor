@@ -32,9 +32,9 @@ static class ConfigLoader
             throw new InvalidOperationException("Config BrokerPort must be > 0.");
         }
 
-        if (string.IsNullOrWhiteSpace(config.Topic))
+        if (string.IsNullOrWhiteSpace(config.TopicRoot))
         {
-            throw new InvalidOperationException("Config missing Topic.");
+            throw new InvalidOperationException("Config missing TopicRoot.");
         }
 
         config.Sensors ??= new SensorConfig();
@@ -55,7 +55,7 @@ sealed class AppConfig
     public int BrokerPort { get; set; } = 1883;
     public string Username { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
-    public string Topic { get; set; } = string.Empty;
+    public string TopicRoot { get; set; } = "pc";
     public double PublishIntervalSeconds { get; set; } = 1.0;
     public bool DebugEnabled { get; set; } = false;
     public SensorConfig? Sensors { get; set; }

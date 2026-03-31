@@ -33,7 +33,7 @@ sealed class TrayApp : ApplicationContext
         menu.Items.Add(statusItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Show Sensors", null, (_, _) => _window.ShowSensorsTab());
-        menu.Items.Add("Settings",     null, (_, _) => _window.ShowSettingsTab());
+        menu.Items.Add("Settings", null, (_, _) => _window.ShowSettingsTab());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit", null, (_, _) =>
         {
@@ -60,12 +60,19 @@ sealed class TrayApp : ApplicationContext
     // Short single-line summary for the native OS tooltip.
     static string BuildTooltipText(MqttMetrics m)
     {
-        var parts = new List<string> { "PC MQTT Monitor" };
-        var cpu = string.Join(" ", new[] { m.Cpu?.Load != null ? $"CPU {m.Cpu.Load}%" : null, m.Cpu?.TempC != null ? $"{m.Cpu.TempC:0}C" : null }.Where(s => s != null));
-        if (cpu.Length > 0) parts.Add(cpu);
-        var gpu = string.Join(" ", new[] { m.Gpu?.Load != null ? $"GPU {m.Gpu.Load}%" : null, m.Gpu?.TempC != null ? $"{m.Gpu.TempC:0}C" : null }.Where(s => s != null));
-        if (gpu.Length > 0) parts.Add(gpu);
-        if (m.Ram?.Load != null) parts.Add($"RAM {m.Ram.Load}%");
+        var cpuString = (m.Cpu != null && (m.Cpu.Load != null || m.Cpu.TempC != null))
+            ? $"CPU{(m.Cpu.Load != null ? $" {m.Cpu.Load}%" : "")}{(m.Cpu.TempC != null ? $" {m.Cpu.TempC:0}C" : "")}"
+            : null;
+
+        var gpuString = (m.Gpu != null && (m.Gpu.Load != null || m.Gpu.TempC != null))
+            ? $"GPU{(m.Gpu.Load != null ? $" {m.Gpu.Load}%" : "")}{(m.Gpu.TempC != null ? $" {m.Gpu.TempC:0}C" : "")}"
+            : null;
+
+        var ramString = m.Ram?.Load != null ? $"RAM {m.Ram.Load}%" : null;
+
+        var parts = new[] { "PC MQTT Monitor", cpuString, gpuString, ramString }
+            .Where(s => !string.IsNullOrEmpty(s));
+
         return string.Join(" | ", parts);
     }
 
