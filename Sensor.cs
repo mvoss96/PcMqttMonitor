@@ -168,12 +168,16 @@ sealed class SensorService : IDisposable
             || hardware.HardwareType == HardwareType.GpuIntel;
     }
 
+    // Returns null for NaN/infinity so downstream code never has to deal with them.
+    static float? SanitiseSensorValue(float? value)
+    {
+        if (value == null || float.IsNaN(value.Value) || float.IsInfinity(value.Value)) return null;
+        return value;
+    }
+
     static float? FindSensorValue(IHardware? hardware, SensorType type, string name)
     {
-        if (hardware == null)
-        {
-            return null;
-        }
+        if (hardware == null) return null;
 
         foreach (var hw in EnumerateHardware(hardware))
         {
@@ -181,7 +185,7 @@ sealed class SensorService : IDisposable
             {
                 if (sensor.SensorType == type && sensor.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
                 {
-                    return sensor.Value;
+                    return SanitiseSensorValue(sensor.Value);
                 }
             }
         }
@@ -191,18 +195,16 @@ sealed class SensorService : IDisposable
 
     static float? FindFirstSensorValue(IHardware? hardware, SensorType type)
     {
-        if (hardware == null)
-        {
-            return null;
-        }
+        if (hardware == null) return null;
 
         foreach (var hw in EnumerateHardware(hardware))
         {
             foreach (var sensor in hw.Sensors)
             {
-                if (sensor.SensorType == type && sensor.Value.HasValue)
+                var value = SanitiseSensorValue(sensor.Value);
+                if (sensor.SensorType == type && value.HasValue)
                 {
-                    return sensor.Value;
+                    return value;
                 }
             }
         }
@@ -237,7 +239,7 @@ sealed class SensorService : IDisposable
                 if (sensor.SensorType == type
                     && sensor.Name.Contains(namePart, StringComparison.OrdinalIgnoreCase))
                 {
-                    return sensor.Value;
+                    return SanitiseSensorValue(sensor.Value);
                 }
             }
         }

@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using MQTTnet;
@@ -20,8 +21,10 @@ static class MqttPublisher
         var baseTopic = $"{topicRoot}/{host}";
         var messages = new List<(string topic, string payload)>
         {
-            // Full JSON snapshot on the base topic.
-            (baseTopic, JsonSerializer.Serialize(metrics, new JsonSerializerOptions
+            // Full JSON snapshot on a dedicated sub-topic so MQTT clients that
+            // auto-expand JSON (e.g. MQTT Explorer) don't create virtual nodes
+            // that collide with the real scalar subtopics under the same prefix.
+            ($"{baseTopic}/status", JsonSerializer.Serialize(metrics, new JsonSerializerOptions
             {
                 WriteIndented = false,
                 DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
@@ -75,7 +78,8 @@ static class MqttPublisher
         {
             var message = new MqttApplicationMessageBuilder()
                 .WithTopic(topic)
-                .WithPayload(payload)
+                .WithPayload(Encoding.UTF8.GetBytes(payload))
+                .WithPayloadFormatIndicator(MqttPayloadFormatIndicator.CharacterData)
                 .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
                 .Build();
 
@@ -92,8 +96,10 @@ static class MqttPublisher
 
     static void AddIfSet(List<(string, string)> messages, string baseTopic, string subTopic, float? value)
     {
-        if (value == null) return;
-        messages.Add(($"{baseTopic}/{subTopic}", value.Value.ToString("0.##", CultureInfo.InvariantCulture)));
+        if (value == null || float.IsNaN(value.Value) || float.IsInfinity(value.Value)) return;
+        // "0.#" (max 1 decimal) keeps output consistent — 2-decimal payloads like "51.88"
+        // confuse some MQTT clients and display as {}.
+        messages.Add(($"{baseTopic}/{subTopic}", value.Value.ToString("0.#", CultureInfo.InvariantCulture)));
     }
 
     static void AddIfSet(List<(string, string)> messages, string baseTopic, string subTopic, string? value)
