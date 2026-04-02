@@ -19,6 +19,7 @@ sealed class MainWindow : Form
     // ── Settings tab ─────────────────────────────────────────────────────────────
     readonly string _configPath;
     readonly AppConfig _config;
+    Label? _connStatus;         // live indicator in the Settings tab
     readonly TextBox _host;
     readonly NumericUpDown _port;
     readonly TextBox _username;
@@ -77,18 +78,45 @@ sealed class MainWindow : Form
         _interval     = new NumericUpDown { Minimum = 0.5m, Maximum = 3600, Value = (decimal)config.PublishIntervalSeconds, DecimalPlaces = 1, Increment = 0.5m, Width = 220 };
         _debugEnabled = new CheckBox { Text = "Enable debug logging", Checked = config.DebugEnabled, AutoSize = true };
 
+        // ── MQTT Broker group ────────────────────────────────────────────────────
+        // Saved only by "Test & Apply" — never by the Save button below.
         var brokerTable = MakeTable(cols: 2);
         brokerTable.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110));
         brokerTable.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        AddLabeledRow(brokerTable, "Host",         _host);
-        AddLabeledRow(brokerTable, "Port",         _port);
-        AddLabeledRow(brokerTable, "Username",     _username);
-        AddLabeledRow(brokerTable, "Password",     _password);
-        AddLabeledRow(brokerTable, "Topic Root",   _topic);
-        AddLabeledRow(brokerTable, "Interval (s)", _interval);
-        brokerTable.Controls.Add(_debugEnabled);
-        brokerTable.SetColumnSpan(_debugEnabled, 2);
 
+        // Live connection status indicator — first row, spans both columns.
+        _connStatus = new Label
+        {
+            Text = "○  Not connected",
+            ForeColor = Color.Gray,
+            AutoSize = true,
+            Margin = new Padding(0, 2, 0, 8)
+        };
+        brokerTable.Controls.Add(_connStatus);
+        brokerTable.SetColumnSpan(_connStatus, 2);
+
+        AddLabeledRow(brokerTable, "Host",       _host);
+        AddLabeledRow(brokerTable, "Port",       _port);
+        AddLabeledRow(brokerTable, "Username",   _username);
+        AddLabeledRow(brokerTable, "Password",   _password);
+        AddLabeledRow(brokerTable, "Topic Root", _topic);
+
+        // "Test & Apply" tests the connection; on success saves these fields and reconnects.
+        var testBtn = new Button { Text = "Test & Apply", AutoSize = true, Margin = new Padding(0, 8, 0, 0) };
+        testBtn.Click += OnTestAndApply;
+        brokerTable.Controls.Add(testBtn);
+        brokerTable.SetColumnSpan(testBtn, 2);
+
+        // ── General group ────────────────────────────────────────────────────────
+        // Saved by the Save button at the bottom.
+        var generalTable = MakeTable(cols: 2);
+        generalTable.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110));
+        generalTable.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        AddLabeledRow(generalTable, "Interval (s)", _interval);
+        generalTable.Controls.Add(_debugEnabled);
+        generalTable.SetColumnSpan(_debugEnabled, 2);
+
+        // ── Sensors group ────────────────────────────────────────────────────────
         var sensorsTable = MakeTable(cols: 2);
         sensorsTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         sensorsTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
@@ -109,10 +137,9 @@ sealed class MainWindow : Form
         AddSensorBox(sensorsTable, sensors, "Motherboard",       c => c.MotherboardName, (c, v) => c.MotherboardName = v);
         AddSensorBox(sensorsTable, sensors, "Drives",            c => c.Drives,          (c, v) => c.Drives = v);
 
-        var testBtn   = new Button { Text = "Test Connection", AutoSize = true };
+        // ── Bottom buttons (General + Sensors only) ──────────────────────────────
         var saveBtn   = new Button { Text = "Save", Width = 75 };
         var cancelBtn = new Button { Text = "Cancel", Width = 75 };
-        testBtn.Click   += OnTestConnection;
         saveBtn.Click   += OnSave;
         cancelBtn.Click += (_, _) => Hide();
 
@@ -123,7 +150,7 @@ sealed class MainWindow : Form
             Dock = DockStyle.Bottom,
             Padding = new Padding(4)
         };
-        buttonRow.Controls.AddRange(new Control[] { cancelBtn, saveBtn, testBtn });
+        buttonRow.Controls.AddRange(new Control[] { cancelBtn, saveBtn });
 
         var settingsScroll = new Panel
         {
@@ -134,6 +161,7 @@ sealed class MainWindow : Form
 
         var settingsLayout = MakeTable(cols: 1);
         settingsLayout.Controls.Add(MakeGroup("MQTT Broker", brokerTable));
+        settingsLayout.Controls.Add(MakeGroup("General", generalTable));
         settingsLayout.Controls.Add(MakeGroup("Sensors", sensorsTable));
         settingsScroll.Controls.Add(settingsLayout);
 
@@ -509,9 +537,48 @@ sealed class MainWindow : Form
         _sensorBoxes.Add((box, setter));
     }
 
-    // ── Save ──────────────────────────────────────────────────────────────────────
+    // Called from TrayApp (any thread) to update the status dot in the Settings tab.
+    public void SetConnectionStatus(bool connected, string broker)
+    {
+        if (_connStatus == null) return;
+        if (!IsHandleCreated) return;
+        BeginInvoke(() =>
+        {
+            if (connected)
+            {
+                _connStatus.Text      = $"●  Connected  ({broker})";
+                _connStatus.ForeColor = Color.FromArgb(16, 124, 16);
+            }
+            else
+            {
+                _connStatus.Text      = "○  Not connected";
+                _connStatus.ForeColor = Color.Gray;
+            }
+        });
+    }
+
+    // ── Save (General + Sensors only) ────────────────────────────────────────────
 
     void OnSave(object? sender, EventArgs e)
+    {
+        _config.PublishIntervalSeconds = (double)_interval.Value;
+        _config.DebugEnabled           = _debugEnabled.Checked;
+        _config.Sensors ??= new SensorConfig();
+        foreach (var (box, setter) in _sensorBoxes)
+            setter(_config.Sensors, box.Checked);
+
+        File.WriteAllText(_configPath,
+            JsonSerializer.Serialize(_config, new JsonSerializerOptions { WriteIndented = true }));
+
+        MessageBox.Show("Settings applied.",
+            "Settings Saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
+    }
+
+    // ── Test & Apply (MQTT Broker settings) ──────────────────────────────────────
+    // Tests the connection with the entered credentials; on success saves those
+    // fields and signals the loop to reconnect. Settings are NOT saved on failure.
+
+    async void OnTestAndApply(object? sender, EventArgs e)
     {
         if (string.IsNullOrWhiteSpace(_host.Text))
         {
@@ -524,35 +591,9 @@ sealed class MainWindow : Form
             return;
         }
 
-        _config.BrokerHost             = _host.Text.Trim();
-        _config.BrokerPort             = (int)_port.Value;
-        _config.Username               = _username.Text;
-        _config.Password               = _password.Text;
-        _config.TopicRoot              = _topic.Text.Trim();
-        _config.PublishIntervalSeconds = (double)_interval.Value;
-        _config.DebugEnabled           = _debugEnabled.Checked;
-
-        _config.Sensors ??= new SensorConfig();
-        foreach (var (box, setter) in _sensorBoxes)
-            setter(_config.Sensors, box.Checked);
-
-        var json = JsonSerializer.Serialize(_config, new JsonSerializerOptions { WriteIndented = true });
-        File.WriteAllText(_configPath, json);
-
-        MessageBox.Show(
-            "Settings saved. Restart the app to apply changes.",
-            "Settings Saved",
-            MessageBoxButtons.OK,
-            MessageBoxIcon.Information);
-    }
-
-    // ── Test Connection ───────────────────────────────────────────────────────────
-
-    async void OnTestConnection(object? sender, EventArgs e)
-    {
         var btn = (Button)sender!;
         btn.Enabled = false;
-        btn.Text = "Testing...";
+        btn.Text    = "Testing...";
 
         try
         {
@@ -566,25 +607,30 @@ sealed class MainWindow : Form
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             await client.ConnectAsync(options, timeout.Token);
             await client.DisconnectAsync();
-
-            MessageBox.Show(
-                $"Connected to {_host.Text}:{_port.Value} successfully.",
-                "Test Connection",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
         }
         catch (Exception ex)
         {
             MessageBox.Show(
-                $"Connection failed:\n{ex.Message}",
-                "Test Connection",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Error);
+                $"Connection failed:\n\n{ex.Message}\n\nSettings were not saved.",
+                "Test & Apply", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
         }
         finally
         {
             btn.Enabled = true;
-            btn.Text = "Test Connection";
+            btn.Text    = "Test & Apply";
         }
+
+        // Connection succeeded — persist the MQTT settings and restart.
+        _config.BrokerHost = _host.Text.Trim();
+        _config.BrokerPort = (int)_port.Value;
+        _config.Username   = _username.Text;
+        _config.Password   = _password.Text;
+        _config.TopicRoot  = _topic.Text.Trim();
+
+        File.WriteAllText(_configPath,
+            JsonSerializer.Serialize(_config, new JsonSerializerOptions { WriteIndented = true }));
+
+        Application.Restart();
     }
 }

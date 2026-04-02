@@ -39,36 +39,52 @@ class Program
         try { mqttTask.Wait(); } catch { }
     }
 
-    static async Task RunMqttLoopAsync(AppConfig config, TrayApp tray, CancellationToken cancellationToken)
-    {
-        var mqttFactory = new MqttClientFactory();
-        using var mqttClient = mqttFactory.CreateMqttClient();
-
-        var mqttOptions = mqttFactory.CreateClientOptionsBuilder()
+    // Builds MQTT client options from the current config — called on connect and reconnect.
+    static MQTTnet.MqttClientOptions BuildMqttOptions(MqttClientFactory factory, AppConfig config) =>
+        factory.CreateClientOptionsBuilder()
             .WithTcpServer(config.BrokerHost, config.BrokerPort)
             .WithCredentials(config.Username, config.Password)
             .WithClientId($"pcmqtt-{Environment.MachineName.ToLowerInvariant()}")
             .Build();
 
+    static async Task RunMqttLoopAsync(AppConfig config, TrayApp tray, CancellationToken cancellationToken)
+    {
+        var mqttFactory = new MqttClientFactory();
+        using var mqttClient = mqttFactory.CreateMqttClient();
+        var mqttOptions = BuildMqttOptions(mqttFactory, config);
+
         Log("Opening sensors (this may take a few seconds)...");
         tray.SetStatus("Opening sensors...");
-
         using var sensors = new SensorService(
             config.Sensors,
-            config.DebugEnabled ? message => LogDebug(message) : null);
+            message => { if (config.DebugEnabled) LogDebug(message); });
         sensors.Open();
-
         Log("Sensors ready.");
 
         try
         {
-            Log($"Connecting to {config.BrokerHost}:{config.BrokerPort}...");
-            tray.SetStatus($"Connecting to {config.BrokerHost}:{config.BrokerPort}...");
-
-            await MqttPublisher.EnsureConnectedAsync(mqttClient, mqttOptions, cancellationToken);
-
-            Log("MQTT connected.");
-            tray.SetStatus($"Connected — {config.BrokerHost}:{config.BrokerPort}");
+            // Connect — settings were validated before being saved, so this should succeed.
+            // If it fails anyway (broker went away), keep retrying until cancelled.
+            while (!mqttClient.IsConnected && !cancellationToken.IsCancellationRequested)
+            {
+                try
+                {
+                    Log($"Connecting to {config.BrokerHost}:{config.BrokerPort}...");
+                    tray.SetStatus($"Connecting to {config.BrokerHost}:{config.BrokerPort}...");
+                    await MqttPublisher.EnsureConnectedAsync(mqttClient, mqttOptions, cancellationToken);
+                    Log("MQTT connected.");
+                    tray.SetStatus($"Connected — {config.BrokerHost}:{config.BrokerPort}");
+                    tray.SetConnectionStatus(true, $"{config.BrokerHost}:{config.BrokerPort}");
+                }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex)
+                {
+                    Log($"[error] Connection failed: {ex.Message}");
+                    tray.SetStatus("Connection failed — open Settings to fix MQTT broker");
+                    tray.SetConnectionStatus(false, "");
+                    await Task.Delay(TimeSpan.FromSeconds(30), cancellationToken);
+                }
+            }
 
             while (!cancellationToken.IsCancellationRequested)
             {
@@ -94,6 +110,8 @@ class Program
                 {
                     Log($"[error] {ex.Message}");
                     tray.SetStatus($"Error: {ex.Message}");
+                    if (!mqttClient.IsConnected)
+                        tray.SetConnectionStatus(false, "");
                 }
 
                 await Task.Delay(TimeSpan.FromSeconds(config.PublishIntervalSeconds), cancellationToken);
@@ -105,6 +123,7 @@ class Program
         }
         finally
         {
+            tray.SetConnectionStatus(false, "");
             if (mqttClient.IsConnected)
             {
                 var disconnectOptions = mqttFactory.CreateClientDisconnectOptionsBuilder().Build();
