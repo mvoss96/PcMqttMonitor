@@ -1,6 +1,5 @@
 using System.Drawing;
 using System.Globalization;
-using System.Text;
 using System.Text.Json;
 using System.Windows.Forms;
 using MQTTnet;
@@ -11,7 +10,11 @@ sealed class MainWindow : Form
     readonly TabControl _tabs;
 
     // ── Sensors tab ──────────────────────────────────────────────────────────────
-    readonly TextBox _sensorsText;
+    readonly Panel _sensorsOuter;
+
+    // Built once; on each refresh we only update label text/colors and bar widths.
+    Action<MqttMetrics>? _sensorUpdater;
+    string? _sensorFingerprint; // structural hash — rebuild only when hardware changes
 
     // ── Settings tab ─────────────────────────────────────────────────────────────
     readonly string _configPath;
@@ -40,18 +43,27 @@ sealed class MainWindow : Form
         Controls.Add(_tabs);
 
         // ── Tab 1: Sensors ───────────────────────────────────────────────────────
-        _sensorsText = new TextBox
+        _sensorsOuter = new Panel
         {
             Dock = DockStyle.Fill,
-            Multiline = true,
-            ReadOnly = true,
-            Font = new Font("Consolas", 9f),
-            ScrollBars = ScrollBars.Vertical,
-            BorderStyle = BorderStyle.None,
-            BackColor = SystemColors.Window
+            AutoScroll = true,
+            BackColor = SystemColors.Window,
+            Padding = new Padding(16, 12, 16, 12)
         };
+        // Reflect DoubleBuffered=true — Panel exposes it only as protected.
+        typeof(Panel)
+            .GetProperty("DoubleBuffered",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+            ?.SetValue(_sensorsOuter, true);
+        _sensorsOuter.ClientSizeChanged += (_, _) =>
+        {
+            if (_sensorsOuter.Controls.Count > 0)
+                _sensorsOuter.Controls[0].Width =
+                    _sensorsOuter.ClientSize.Width - _sensorsOuter.Padding.Horizontal;
+        };
+
         var sensorsPage = new TabPage("Sensors");
-        sensorsPage.Controls.Add(_sensorsText);
+        sensorsPage.Controls.Add(_sensorsOuter);
         _tabs.TabPages.Add(sensorsPage);
 
         // ── Tab 2: Settings ──────────────────────────────────────────────────────
@@ -72,7 +84,7 @@ sealed class MainWindow : Form
         AddLabeledRow(brokerTable, "Port",         _port);
         AddLabeledRow(brokerTable, "Username",     _username);
         AddLabeledRow(brokerTable, "Password",     _password);
-        AddLabeledRow(brokerTable, "Topic Root",    _topic);
+        AddLabeledRow(brokerTable, "Topic Root",   _topic);
         AddLabeledRow(brokerTable, "Interval (s)", _interval);
         brokerTable.Controls.Add(_debugEnabled);
         brokerTable.SetColumnSpan(_debugEnabled, 2);
@@ -147,33 +159,32 @@ sealed class MainWindow : Form
         BringToFront();
     }
 
-    // Called from the MQTT loop thread — use BeginInvoke to update on the UI thread.
+    MqttMetrics? _lastMetrics;
+
+    public void SetLatestMetrics(MqttMetrics m)
+    {
+        _lastMetrics = m;
+        if (!IsHandleCreated) return;
+        BeginInvoke(() => RefreshSensors(m));
+    }
+
     public void UpdateMetrics(MqttMetrics m)
     {
         if (!IsHandleCreated) return;
         BeginInvoke(() =>
         {
             if (Visible && _tabs.SelectedIndex == 0)
-                _sensorsText.Text = FormatMetrics(m);
+                RefreshSensors(m);
         });
-    }
-
-    // Store latest metrics so the sensors tab shows data immediately when opened.
-    MqttMetrics? _lastMetrics;
-    public void SetLatestMetrics(MqttMetrics m)
-    {
-        _lastMetrics = m;
-        UpdateMetrics(m);
     }
 
     protected override void OnShown(EventArgs e)
     {
         base.OnShown(e);
         if (_tabs.SelectedIndex == 0 && _lastMetrics != null)
-            _sensorsText.Text = FormatMetrics(_lastMetrics);
+            RefreshSensors(_lastMetrics);
     }
 
-    // Closing hides the window so it can be reopened from the tray.
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
         if (e.CloseReason == CloseReason.UserClosing)
@@ -185,76 +196,279 @@ sealed class MainWindow : Form
         base.OnFormClosing(e);
     }
 
-    // ── Sensors formatting ────────────────────────────────────────────────────────
+    // ── Sensors UI ────────────────────────────────────────────────────────────────
 
-    static string FormatMetrics(MqttMetrics m)
+    // Custom-drawn, double-buffered progress bar — avoids child-panel resize flicker.
+    sealed class ProgressPanel : Panel
     {
-        var sb = new StringBuilder();
-
-        if (m.Cpu != null)
+        int _percent;
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+        public int Percent
         {
-            sb.AppendLine($"CPU: {m.Cpu.Name}");
-            AddRow(sb, "Load",          Format(m.Cpu.Load, "%"));
-            AddRow(sb, "Temperature",   Format(m.Cpu.TempC, "°C", "0.#"));
-            AddRow(sb, "Package Power", Format(m.Cpu.PackagePowerW, "W", "0.#"));
-            AddRow(sb, "Core Voltage",  Format(m.Cpu.CoreVoltageV, "V", "0.###"));
-            sb.AppendLine();
+            get => _percent;
+            set { _percent = Math.Clamp(value, 0, 100); Invalidate(); }
         }
-
-        if (m.Gpu != null)
+        public ProgressPanel() { DoubleBuffered = true; }
+        protected override void OnPaint(PaintEventArgs e)
         {
-            sb.AppendLine($"GPU: {m.Gpu.Name}");
-            AddRow(sb, "Load",        Format(m.Gpu.Load, "%"));
-            AddRow(sb, "Temperature", Format(m.Gpu.TempC, "°C", "0.#"));
-            AddRow(sb, "Board Power", Format(m.Gpu.BoardPowerW, "W", "0.#"));
-            AddRow(sb, "Fan",         Format(m.Gpu.FanRpm, "RPM", "0"));
-            AddRow(sb, "VRAM Load",   Format(m.Gpu.MemoryLoad, "%"));
-            AddRow(sb, "VRAM Used",   Format(m.Gpu.MemoryUsedMb, "MB", "0"));
-            AddRow(sb, "VRAM Total",  Format(m.Gpu.MemoryTotalMb, "MB", "0"));
-            sb.AppendLine();
+            e.Graphics.Clear(Color.FromArgb(224, 224, 224));
+            if (_percent > 0)
+                e.Graphics.FillRectangle(
+                    new SolidBrush(Color.FromArgb(0, 120, 212)),
+                    0, 0, Width * _percent / 100, Height);
         }
+    }
 
-        if (m.Ram != null)
-        {
-            sb.AppendLine("RAM");
-            AddRow(sb, "Load",  Format(m.Ram.Load, "%"));
-            AddRow(sb, "Used",  Format(m.Ram.UsedGb, "GB", "0.#"));
-            AddRow(sb, "Total", Format(m.Ram.TotalGb, "GB", "0.#"));
-            sb.AppendLine();
-        }
+    // Which top-level sections are present — used to detect structural changes.
+    static string MakeFingerprint(MqttMetrics m) =>
+        $"{m.Cpu != null}|{m.Gpu != null}|{m.Ram != null}|{m.Drives?.Count ?? 0}";
 
-        if (m.Motherboard != null)
-        {
-            sb.AppendLine($"Motherboard: {m.Motherboard.Name}");
-            sb.AppendLine();
-        }
+    // Called every refresh interval.  Only rebuilds controls when hardware
+    // appears/disappears; otherwise updates labels and bar widths in-place.
+    void RefreshSensors(MqttMetrics m)
+    {
+        var fp = MakeFingerprint(m);
+        if (_sensorUpdater == null || fp != _sensorFingerprint)
+            BuildSensorView(m, fp);   // first run or hardware changed
+        else
+            _sensorUpdater(m);        // fast path — no control creation
+    }
 
-        if (m.Drives != null)
+    // Builds the full control tree and captures per-row update delegates.
+    void BuildSensorView(MqttMetrics m, string fp)
+    {
+        var updaters = new List<Action<MqttMetrics>>();
+
+        var main = new TableLayoutPanel
         {
-            sb.AppendLine("Drives");
-            foreach (var d in m.Drives)
+            ColumnCount = 1,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Dock = DockStyle.Top,
+            Padding = Padding.Empty,
+            Margin = Padding.Empty
+        };
+        main.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+
+        if (m.Cpu    != null) main.Controls.Add(BuildSection("CPU",    m.Cpu.Name, CpuRowDefs(),           updaters));
+        if (m.Gpu    != null) main.Controls.Add(BuildSection("GPU",    m.Gpu.Name, GpuRowDefs(),           updaters));
+        if (m.Ram    != null) main.Controls.Add(BuildSection("RAM",    null,        RamRowDefs(),           updaters));
+        if (m.Drives?.Count > 0) main.Controls.Add(BuildSection("Drives", null,    DriveRowDefs(m.Drives), updaters));
+
+        main.Width = _sensorsOuter.ClientSize.Width - _sensorsOuter.Padding.Horizontal;
+
+        _sensorsOuter.SuspendLayout();
+        foreach (Control c in _sensorsOuter.Controls) c.Dispose();
+        _sensorsOuter.Controls.Clear();
+        _sensorsOuter.Controls.Add(main);
+        _sensorsOuter.ResumeLayout();
+
+        _sensorFingerprint = fp;
+        _sensorUpdater = metrics => { foreach (var u in updaters) u(metrics); };
+
+        // Populate initial values immediately after building.
+        _sensorUpdater(m);
+    }
+
+    // Builds one section (e.g. "CPU") and registers per-row updaters.
+    // A row def that says HasBar=true gets a flat progress bar in the middle column.
+    static TableLayoutPanel BuildSection(string category, string? subtitle,
+        IReadOnlyList<RowDef> rowDefs, List<Action<MqttMetrics>> updaters)
+    {
+        var tl = new TableLayoutPanel
+        {
+            ColumnCount = 3,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0, 0, 0, 20),
+            Padding = Padding.Empty
+        };
+        tl.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120)); // label
+        tl.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,  100)); // bar / spacer
+        tl.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 115)); // value
+
+        // Header
+        var headerText = subtitle != null ? $"{category}  ·  {subtitle}" : category;
+        var header = new Label
+        {
+            Text = headerText,
+            Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
+            ForeColor = Color.FromArgb(26, 26, 26),
+            AutoSize = false,
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.BottomLeft,
+            Margin = Padding.Empty,
+            Padding = new Padding(0, 0, 0, 3)
+        };
+        tl.Controls.Add(header);
+        tl.SetColumnSpan(header, 3);
+        tl.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
+
+        // Separator
+        var sep = new Panel { BackColor = Color.FromArgb(220, 220, 220), Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 6) };
+        tl.Controls.Add(sep);
+        tl.SetColumnSpan(sep, 3);
+        tl.RowStyles.Add(new RowStyle(SizeType.Absolute, 9));
+
+        // One row per metric
+        foreach (var def in rowDefs)
+        {
+            tl.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
+
+            tl.Controls.Add(new Label
             {
-                sb.AppendLine($"  {d.Name}");
-                AddRow(sb, "  Used",  Format(d.UsedGb,  "GB", "0.#"), indent: 4);
-                AddRow(sb, "  Free",  Format(d.FreeGb,  "GB", "0.#"), indent: 4);
-                AddRow(sb, "  Total", Format(d.TotalGb, "GB", "0.#"), indent: 4);
+                Text = def.Label,
+                ForeColor = Color.FromArgb(96, 96, 96),
+                TextAlign = ContentAlignment.MiddleLeft,
+                AutoSize = false,
+                Dock = DockStyle.Fill,
+                Margin = new Padding(0, 0, 8, 2)
+            });
+
+            // Bar (middle column) — ProgressPanel is custom-drawn and double-buffered,
+            // so updating Percent just calls Invalidate() with no child-resize flicker.
+            if (def.HasBar)
+            {
+                var bar = new ProgressPanel { Dock = DockStyle.Fill, Margin = new Padding(0, 9, 0, 9) };
+                tl.Controls.Add(bar);
+
+                var capturedBar = bar;
+                var capturedDef = def;
+                var valueLbl    = AddValueLabel(tl);
+
+                updaters.Add(metrics =>
+                {
+                    var (pct, val, col) = capturedDef.GetData(metrics);
+                    capturedBar.Percent = pct ?? 0;
+                    valueLbl.Text       = val ?? "—";
+                    valueLbl.ForeColor  = col;
+                });
+            }
+            else
+            {
+                tl.Controls.Add(new Panel()); // empty spacer
+
+                var capturedDef = def;
+                var valueLbl    = AddValueLabel(tl);
+
+                updaters.Add(metrics =>
+                {
+                    var (_, val, col) = capturedDef.GetData(metrics);
+                    valueLbl.Text      = val ?? "—";
+                    valueLbl.ForeColor = col;
+                });
             }
         }
 
-        return sb.ToString();
+        return tl;
     }
 
-    static void AddRow(StringBuilder sb, string label, string? value, int indent = 2)
+    // Adds and returns the right-aligned value label for a row.
+    static Label AddValueLabel(TableLayoutPanel tl)
     {
-        if (value == null) return;
-        sb.AppendLine($"{new string(' ', indent)}{label,-16}{value}");
+        var lbl = new Label
+        {
+            Text = "—",
+            ForeColor = SystemColors.ControlText,
+            TextAlign = ContentAlignment.MiddleRight,
+            AutoSize = false,
+            Dock = DockStyle.Fill,
+            Margin = new Padding(6, 0, 0, 2)
+        };
+        tl.Controls.Add(lbl);
+        return lbl;
     }
 
-    static string? Format(int? v, string unit)
-        => v == null ? null : $"{v} {unit}";
+    // Temperature threshold colouring: green → amber → red.
+    static Color TempColor(float? c) =>
+        c == null ? SystemColors.ControlText :
+        c <  60   ? Color.FromArgb( 16, 124,  16) :
+        c <  80   ? Color.FromArgb(196,  98,   0) :
+                    Color.FromArgb(196,  43,  28);
 
-    static string? Format(float? v, string unit, string fmt = "0.##")
-        => v == null ? null : $"{v.Value.ToString(fmt, CultureInfo.InvariantCulture)} {unit}";
+    // ── Row definitions ───────────────────────────────────────────────────────────
+
+    // A row definition: static label text, whether it has a progress bar,
+    // and a delegate that extracts (bar %, display value, colour) from metrics.
+    record RowDef(string Label, bool HasBar, Func<MqttMetrics, (int? Pct, string? Value, Color Color)> GetData);
+
+    static (int?, string?, Color) IntVal(int? v, string unit) =>
+        v == null ? (null, null, SystemColors.ControlText)
+                  : (v, $"{v} {unit}", SystemColors.ControlText);
+
+    static (int?, string?, Color) FloatVal(float? v, string unit, string fmt = "0.#", Color? col = null) =>
+        v == null ? (null, null, SystemColors.ControlText)
+                  : (null, $"{v.Value.ToString(fmt, CultureInfo.InvariantCulture)} {unit}", col ?? SystemColors.ControlText);
+
+    static IReadOnlyList<RowDef> CpuRowDefs() =>
+    [
+        new("Load",          true,  m => IntVal  (m.Cpu?.Load,          "%"                                          )),
+        new("Temperature",   false, m => FloatVal(m.Cpu?.TempC,         "°C", "0.#",   TempColor(m.Cpu?.TempC)       )),
+        new("Package Power", false, m => FloatVal(m.Cpu?.PackagePowerW, "W",  "0.#"                                  )),
+        new("Core Voltage",  false, m => FloatVal(m.Cpu?.CoreVoltageV,  "V",  "0.###"                                )),
+    ];
+
+    static IReadOnlyList<RowDef> GpuRowDefs() =>
+    [
+        new("Load",        true,  m => IntVal  (m.Gpu?.Load,        "%"                                        )),
+        new("Temperature", false, m => FloatVal(m.Gpu?.TempC,       "°C", "0.#", TempColor(m.Gpu?.TempC)      )),
+        new("Board Power", false, m => FloatVal(m.Gpu?.BoardPowerW, "W",  "0.#"                                )),
+        new("Fan",         false, m => FloatVal(m.Gpu?.FanRpm,      "RPM","0"                                  )),
+        new("VRAM Load",   true,  m => IntVal  (m.Gpu?.MemoryLoad,  "%"                                        )),
+        new("VRAM",        false, m => GpuVramRow(m.Gpu)                                                        ),
+    ];
+
+    static (int?, string?, Color) GpuVramRow(GpuMetrics? g)
+    {
+        if (g == null || (g.MemoryUsedMb == null && g.MemoryTotalMb == null))
+            return (null, null, SystemColors.ControlText);
+        var used  = g.MemoryUsedMb  != null ? $"{g.MemoryUsedMb.Value  / 1024f:0.#}" : "?";
+        var total = g.MemoryTotalMb != null ? $"{g.MemoryTotalMb.Value / 1024f:0.#}" : "?";
+        return (null, $"{used} / {total} GB", SystemColors.ControlText);
+    }
+
+    static IReadOnlyList<RowDef> RamRowDefs() =>
+    [
+        new("Load",        true,  m => IntVal(m.Ram?.Load, "%")),
+        new("Used / Total",false, m => RamUsageRow(m.Ram)),
+    ];
+
+    static (int?, string?, Color) RamUsageRow(RamMetrics? r)
+    {
+        if (r == null || (r.UsedGb == null && r.TotalGb == null))
+            return (null, null, SystemColors.ControlText);
+        var used  = r.UsedGb  != null ? $"{r.UsedGb.Value.ToString("0.#",  CultureInfo.InvariantCulture)}" : "?";
+        var total = r.TotalGb != null ? $"{r.TotalGb.Value.ToString("0.#", CultureInfo.InvariantCulture)}" : "?";
+        return (null, $"{used} / {total} GB", SystemColors.ControlText);
+    }
+
+    static IReadOnlyList<RowDef> DriveRowDefs(List<StorageMetrics> drives) =>
+        drives.Select(d => new RowDef(
+            d.Name.TrimEnd('\\'),
+            true,
+            m =>
+            {
+                var drive = m.Drives?.FirstOrDefault(x => x.Name == d.Name);
+                if (drive == null) return (null, null, SystemColors.ControlText);
+
+                string text;
+                if (drive.UsedGb != null && drive.TotalGb != null)
+                {
+                    var used  = drive.UsedGb.Value.ToString("0.#",  CultureInfo.InvariantCulture);
+                    var total = drive.TotalGb.Value.ToString("0.#", CultureInfo.InvariantCulture);
+                    text = $"{used} / {total} GB";
+                }
+                else if (drive.UsedGb != null)
+                    text = $"{drive.UsedGb.Value.ToString("0.#", CultureInfo.InvariantCulture)} GB used";
+                else if (drive.TotalGb != null)
+                    text = $"{drive.TotalGb.Value.ToString("0.#", CultureInfo.InvariantCulture)} GB";
+                else
+                    return (null, null, SystemColors.ControlText);
+
+                return (drive.UsedPercent, text, SystemColors.ControlText);
+            }
+        )).ToArray();
 
     // ── Settings helpers ──────────────────────────────────────────────────────────
 
