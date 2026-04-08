@@ -1,11 +1,21 @@
+using System.Runtime.InteropServices;
 using MQTTnet;
 using System.Windows.Forms;
 
 class Program
 {
+    [DllImport("kernel32.dll")] static extern bool AttachConsole(int pid);
+
     [STAThread]
-    static void Main()
+    static void Main(string[] args)
     {
+        // Pass --console to see log output in the terminal that launched the app.
+        // Without it no console is allocated (WinExe) so output is silenced.
+        if (args.Contains("--console"))
+            AttachConsole(-1); // -1 = attach to parent process' console
+        else
+            Console.SetOut(TextWriter.Null);
+
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
 
@@ -93,17 +103,25 @@ class Program
                     var snapshot = sensors.ReadSnapshot();
                     if (!string.IsNullOrWhiteSpace(snapshot.Summary))
                         Console.WriteLine(snapshot.Summary);
-                    tray.UpdateSnapshot(snapshot);
+                    tray.UpdateSnapshot(snapshot);  // always update UI and tooltip
 
-                    await MqttPublisher.PublishAsync(
-                        mqttClient,
-                        mqttOptions,
-                        config.TopicRoot,
-                        Environment.MachineName.ToLowerInvariant(),
-                        snapshot.Metrics,
-                        cancellationToken);
+                    if (!tray.IsPaused)
+                    {
+                        await MqttPublisher.PublishAsync(
+                            mqttClient,
+                            mqttOptions,
+                            config.TopicRoot,
+                            Environment.MachineName.ToLowerInvariant(),
+                            snapshot.Metrics,
+                            cancellationToken);
 
-                    LogDebug("Publish complete.");
+                        LogDebug("Publish complete.");
+                        tray.SetStatus($"Connected — {config.BrokerHost}:{config.BrokerPort}");
+                    }
+                    else
+                    {
+                        tray.SetStatus("Paused");
+                    }
                 }
                 catch (OperationCanceledException) { throw; }
                 catch (Exception ex)
@@ -114,7 +132,11 @@ class Program
                         tray.SetConnectionStatus(false, "");
                 }
 
-                await Task.Delay(TimeSpan.FromSeconds(config.PublishIntervalSeconds), cancellationToken);
+                // Poll more frequently while paused so resume feels instant.
+                var delay = tray.IsPaused
+                    ? TimeSpan.FromSeconds(1)
+                    : TimeSpan.FromSeconds(config.PublishIntervalSeconds);
+                await Task.Delay(delay, cancellationToken);
             }
         }
         catch (OperationCanceledException)

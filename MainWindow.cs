@@ -2,6 +2,7 @@ using System.Drawing;
 using System.Globalization;
 using System.Text.Json;
 using System.Windows.Forms;
+using Microsoft.Win32;
 using MQTTnet;
 
 // Single window with two tabs: live sensor readings and settings.
@@ -27,6 +28,7 @@ sealed class MainWindow : Form
     readonly TextBox _topic;
     readonly NumericUpDown _interval;
     readonly CheckBox _debugEnabled;
+    readonly CheckBox _autoStart;
     readonly List<(CheckBox Box, Action<SensorConfig, bool> Setter)> _sensorBoxes = new();
 
     public MainWindow(string configPath, AppConfig config)
@@ -34,7 +36,9 @@ sealed class MainWindow : Form
         _configPath = configPath;
         _config = config;
 
-        Text = "PC MQTT Monitor";
+        var version = typeof(MainWindow).Assembly.GetName().Version;
+        Text = version != null ? $"PC MQTT Monitor  v{version.ToString(3)}" : "PC MQTT Monitor";
+        Icon = TrayApp.CreateIcon();
         Size = new Size(460, 580);
         MinimumSize = new Size(380, 460);
         StartPosition = FormStartPosition.CenterScreen;
@@ -70,78 +74,116 @@ sealed class MainWindow : Form
         // ── Tab 2: Settings ──────────────────────────────────────────────────────
         var sensors = config.Sensors ?? new SensorConfig();
 
-        _host         = new TextBox { Text = config.BrokerHost, Width = 220 };
-        _port         = new NumericUpDown { Minimum = 1, Maximum = 65535, Value = config.BrokerPort, Width = 220 };
-        _username     = new TextBox { Text = config.Username, Width = 220 };
-        _password     = new TextBox { Text = config.Password, Width = 220, UseSystemPasswordChar = true };
-        _topic        = new TextBox { Text = config.TopicRoot, Width = 220 };
-        _interval     = new NumericUpDown { Minimum = 0.5m, Maximum = 3600, Value = (decimal)config.PublishIntervalSeconds, DecimalPlaces = 1, Increment = 0.5m, Width = 220 };
+        _host         = new TextBox { Text = config.BrokerHost, Anchor = AnchorStyles.Left | AnchorStyles.Right };
+        _port         = new NumericUpDown { Minimum = 1, Maximum = 65535, Value = config.BrokerPort, Anchor = AnchorStyles.Left | AnchorStyles.Right };
+        _username     = new TextBox { Text = config.Username, Anchor = AnchorStyles.Left | AnchorStyles.Right };
+        _password     = new TextBox { Text = config.Password, Anchor = AnchorStyles.Left | AnchorStyles.Right, UseSystemPasswordChar = true };
+        _topic        = new TextBox { Text = config.TopicRoot, Anchor = AnchorStyles.Left | AnchorStyles.Right };
+        _interval     = new NumericUpDown { Minimum = 0.5m, Maximum = 3600, Value = (decimal)config.PublishIntervalSeconds, DecimalPlaces = 1, Increment = 0.5m, Anchor = AnchorStyles.Left | AnchorStyles.Right };
         _debugEnabled = new CheckBox { Text = "Enable debug logging", Checked = config.DebugEnabled, AutoSize = true };
+        _autoStart    = new CheckBox { Text = "Start with Windows",   Checked = IsAutoStartEnabled(),  AutoSize = true };
 
-        // ── MQTT Broker group ────────────────────────────────────────────────────
-        // Saved only by "Test & Apply" — never by the Save button below.
-        var brokerTable = MakeTable(cols: 2);
-        brokerTable.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110));
-        brokerTable.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-
-        // Live connection status indicator — first row, spans both columns.
+        // ── MQTT Broker section ──────────────────────────────────────────────────
         _connStatus = new Label
         {
             Text = "○  Not connected",
             ForeColor = Color.Gray,
             AutoSize = true,
-            Margin = new Padding(0, 2, 0, 8)
+            Margin = new Padding(0, 0, 0, 6)
         };
+        var brokerTable = MakeSettingsTable();
         brokerTable.Controls.Add(_connStatus);
         brokerTable.SetColumnSpan(_connStatus, 2);
+        AddRow(brokerTable, "Host",       _host);
+        AddRow(brokerTable, "Port",       _port);
+        AddRow(brokerTable, "Username",   _username);
+        AddRow(brokerTable, "Password",   _password);
+        AddRow(brokerTable, "Topic root", _topic);
 
-        AddLabeledRow(brokerTable, "Host",       _host);
-        AddLabeledRow(brokerTable, "Port",       _port);
-        AddLabeledRow(brokerTable, "Username",   _username);
-        AddLabeledRow(brokerTable, "Password",   _password);
-        AddLabeledRow(brokerTable, "Topic Root", _topic);
-
-        // "Test & Apply" tests the connection; on success saves these fields and reconnects.
-        var testBtn = new Button { Text = "Test & Apply", AutoSize = true, Margin = new Padding(0, 8, 0, 0) };
+        var testBtn = new Button { Text = "Test && Apply", AutoSize = true, Margin = new Padding(0, 10, 0, 2) };
         testBtn.Click += OnTestAndApply;
         brokerTable.Controls.Add(testBtn);
         brokerTable.SetColumnSpan(testBtn, 2);
 
-        // ── General group ────────────────────────────────────────────────────────
-        // Saved by the Save button at the bottom.
-        var generalTable = MakeTable(cols: 2);
-        generalTable.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110));
-        generalTable.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        AddLabeledRow(generalTable, "Interval (s)", _interval);
+        var mqttHint = new Label
+        {
+            Text = "Tests connection, saves these settings and restarts the app.",
+            ForeColor = SystemColors.GrayText,
+            Font = new Font("Segoe UI", 7.5f),
+            AutoSize = true,
+            Margin = new Padding(0, 2, 0, 4)
+        };
+        brokerTable.Controls.Add(mqttHint);
+        brokerTable.SetColumnSpan(mqttHint, 2);
+
+        // ── General section ──────────────────────────────────────────────────────
+        var generalTable = MakeSettingsTable();
+        AddRow(generalTable, "Interval (s)", _interval);
+        generalTable.Controls.Add(_autoStart);
+        generalTable.SetColumnSpan(_autoStart, 2);
         generalTable.Controls.Add(_debugEnabled);
         generalTable.SetColumnSpan(_debugEnabled, 2);
 
-        // ── Sensors group ────────────────────────────────────────────────────────
-        var sensorsTable = MakeTable(cols: 2);
+        // ── Sensors section ──────────────────────────────────────────────────────
+        var sensorsTable = new TableLayoutPanel
+        {
+            ColumnCount = 2,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Dock = DockStyle.Fill,
+            Padding = Padding.Empty
+        };
         sensorsTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         sensorsTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        AddSensorBox(sensorsTable, sensors, "CPU Load",          c => c.CpuLoad,         (c, v) => c.CpuLoad = v);
-        AddSensorBox(sensorsTable, sensors, "CPU Temp",          c => c.CpuTemp,         (c, v) => c.CpuTemp = v);
-        AddSensorBox(sensorsTable, sensors, "CPU Package Power", c => c.CpuPackagePower, (c, v) => c.CpuPackagePower = v);
-        AddSensorBox(sensorsTable, sensors, "CPU Core Voltage",  c => c.CpuCoreVoltage,  (c, v) => c.CpuCoreVoltage = v);
-        AddSensorBox(sensorsTable, sensors, "GPU Load",          c => c.GpuLoad,         (c, v) => c.GpuLoad = v);
-        AddSensorBox(sensorsTable, sensors, "GPU Temp",          c => c.GpuTemp,         (c, v) => c.GpuTemp = v);
-        AddSensorBox(sensorsTable, sensors, "GPU Board Power",   c => c.GpuBoardPower,   (c, v) => c.GpuBoardPower = v);
-        AddSensorBox(sensorsTable, sensors, "GPU Fan Speed",     c => c.GpuFanSpeed,     (c, v) => c.GpuFanSpeed = v);
-        AddSensorBox(sensorsTable, sensors, "GPU Memory Load",   c => c.GpuMemoryLoad,   (c, v) => c.GpuMemoryLoad = v);
-        AddSensorBox(sensorsTable, sensors, "GPU Memory Used",   c => c.GpuMemoryUsed,   (c, v) => c.GpuMemoryUsed = v);
-        AddSensorBox(sensorsTable, sensors, "GPU Memory Total",  c => c.GpuMemoryTotal,  (c, v) => c.GpuMemoryTotal = v);
-        AddSensorBox(sensorsTable, sensors, "RAM Load",          c => c.RamLoad,         (c, v) => c.RamLoad = v);
-        AddSensorBox(sensorsTable, sensors, "RAM Used",          c => c.RamUsed,         (c, v) => c.RamUsed = v);
-        AddSensorBox(sensorsTable, sensors, "RAM Total",         c => c.RamTotal,        (c, v) => c.RamTotal = v);
-        AddSensorBox(sensorsTable, sensors, "Motherboard",       c => c.MotherboardName, (c, v) => c.MotherboardName = v);
-        AddSensorBox(sensorsTable, sensors, "Drives",            c => c.Drives,          (c, v) => c.Drives = v);
 
-        // ── Bottom buttons (General + Sensors only) ──────────────────────────────
-        var saveBtn   = new Button { Text = "Save", Width = 75 };
-        var cancelBtn = new Button { Text = "Cancel", Width = 75 };
-        saveBtn.Click   += OnSave;
-        cancelBtn.Click += (_, _) => Hide();
+        AddSensorGroup(sensorsTable, "CPU");
+        AddSensorBox(sensorsTable, sensors, "Load",          c => c.CpuLoad,         (c, v) => c.CpuLoad = v);
+        AddSensorBox(sensorsTable, sensors, "Temperature",   c => c.CpuTemp,         (c, v) => c.CpuTemp = v);
+        AddSensorBox(sensorsTable, sensors, "Package power", c => c.CpuPackagePower, (c, v) => c.CpuPackagePower = v);
+        AddSensorBox(sensorsTable, sensors, "Core voltage",  c => c.CpuCoreVoltage,  (c, v) => c.CpuCoreVoltage = v);
+
+        AddSensorGroup(sensorsTable, "GPU");
+        AddSensorBox(sensorsTable, sensors, "Load",         c => c.GpuLoad,        (c, v) => c.GpuLoad = v);
+        AddSensorBox(sensorsTable, sensors, "Temperature",  c => c.GpuTemp,        (c, v) => c.GpuTemp = v);
+        AddSensorBox(sensorsTable, sensors, "Board power",  c => c.GpuBoardPower,  (c, v) => c.GpuBoardPower = v);
+        AddSensorBox(sensorsTable, sensors, "Fan speed",    c => c.GpuFanSpeed,    (c, v) => c.GpuFanSpeed = v);
+        AddSensorBox(sensorsTable, sensors, "Memory load",  c => c.GpuMemoryLoad,  (c, v) => c.GpuMemoryLoad = v);
+        AddSensorBox(sensorsTable, sensors, "Memory used",  c => c.GpuMemoryUsed,  (c, v) => c.GpuMemoryUsed = v);
+        AddSensorBox(sensorsTable, sensors, "Memory total", c => c.GpuMemoryTotal, (c, v) => c.GpuMemoryTotal = v);
+
+        AddSensorGroup(sensorsTable, "RAM");
+        AddSensorBox(sensorsTable, sensors, "Load",  c => c.RamLoad,  (c, v) => c.RamLoad = v);
+        AddSensorBox(sensorsTable, sensors, "Used",  c => c.RamUsed,  (c, v) => c.RamUsed = v);
+        AddSensorBox(sensorsTable, sensors, "Total", c => c.RamTotal, (c, v) => c.RamTotal = v);
+
+        AddSensorGroup(sensorsTable, "Other");
+        AddSensorBox(sensorsTable, sensors, "Motherboard", c => c.MotherboardName, (c, v) => c.MotherboardName = v);
+        AddSensorBox(sensorsTable, sensors, "Drives",      c => c.Drives,          (c, v) => c.Drives = v);
+
+        // ── Outer layout ─────────────────────────────────────────────────────────
+        var settingsMain = new TableLayoutPanel
+        {
+            ColumnCount = 1,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Dock = DockStyle.Top,
+            Padding = Padding.Empty
+        };
+        settingsMain.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        settingsMain.Controls.Add(MakeSectionHeader("MQTT Broker"));
+        settingsMain.Controls.Add(MakeSeparator());
+        settingsMain.Controls.Add(brokerTable);
+        settingsMain.Controls.Add(MakeSectionHeader("General"));
+        settingsMain.Controls.Add(MakeSeparator());
+        settingsMain.Controls.Add(generalTable);
+        settingsMain.Controls.Add(MakeSectionHeader("Sensors to publish"));
+        settingsMain.Controls.Add(MakeSeparator());
+        settingsMain.Controls.Add(sensorsTable);
+
+        var saveBtn  = new Button { Text = "Save", Width = 75 };
+        var closeBtn = new Button { Text = "Close", Width = 75 };
+        saveBtn.Click  += OnSave;
+        closeBtn.Click += (_, _) => Hide();
 
         var buttonRow = new FlowLayoutPanel
         {
@@ -150,25 +192,18 @@ sealed class MainWindow : Form
             Dock = DockStyle.Bottom,
             Padding = new Padding(4)
         };
-        buttonRow.Controls.AddRange(new Control[] { cancelBtn, saveBtn });
+        buttonRow.Controls.AddRange(new Control[] { closeBtn, saveBtn });
 
-        var settingsScroll = new Panel
-        {
-            Dock = DockStyle.Fill,
-            AutoScroll = true,
-            Padding = new Padding(8)
-        };
-
-        var settingsLayout = MakeTable(cols: 1);
-        settingsLayout.Controls.Add(MakeGroup("MQTT Broker", brokerTable));
-        settingsLayout.Controls.Add(MakeGroup("General", generalTable));
-        settingsLayout.Controls.Add(MakeGroup("Sensors", sensorsTable));
-        settingsScroll.Controls.Add(settingsLayout);
+        var settingsScroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(12) };
+        settingsScroll.Controls.Add(settingsMain);
 
         var settingsPage = new TabPage("Settings");
         settingsPage.Controls.Add(buttonRow);
         settingsPage.Controls.Add(settingsScroll);
         _tabs.TabPages.Add(settingsPage);
+
+        // Force handle creation so BeginInvoke works before the window is first shown.
+        _ = Handle;
     }
 
     // ── Public API ────────────────────────────────────────────────────────────────
@@ -500,39 +535,70 @@ sealed class MainWindow : Form
 
     // ── Settings helpers ──────────────────────────────────────────────────────────
 
-    static TableLayoutPanel MakeTable(int cols) => new()
+    // Two-column table: fixed label column on the left, stretching input on the right.
+    static TableLayoutPanel MakeSettingsTable()
     {
-        AutoSize = true,
-        AutoSizeMode = AutoSizeMode.GrowAndShrink,
-        ColumnCount = cols,
-        Padding = new Padding(4)
-    };
+        var t = new TableLayoutPanel
+        {
+            ColumnCount = 2,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Dock = DockStyle.Fill,
+            Padding = new Padding(0, 4, 0, 8)
+        };
+        t.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 100));
+        t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        return t;
+    }
 
-    static GroupBox MakeGroup(string title, Control content) => new()
+    static Label MakeSectionHeader(string title) => new()
     {
         Text = title,
+        Font = new Font("Segoe UI", 9f, FontStyle.Bold),
+        ForeColor = Color.FromArgb(26, 26, 26),
         AutoSize = true,
-        AutoSizeMode = AutoSizeMode.GrowAndShrink,
-        Padding = new Padding(8),
-        Controls = { content }
+        Margin = new Padding(0, 14, 0, 2)
     };
 
-    static void AddLabeledRow(TableLayoutPanel table, string label, Control control)
+    static Panel MakeSeparator() => new()
+    {
+        Height = 1,
+        Dock = DockStyle.Fill,
+        BackColor = Color.FromArgb(218, 218, 218),
+        Margin = new Padding(0, 0, 0, 6)
+    };
+
+    static void AddRow(TableLayoutPanel table, string label, Control control)
     {
         table.Controls.Add(new Label
         {
             Text = label,
             TextAlign = ContentAlignment.MiddleRight,
             AutoSize = true,
-            Margin = new Padding(0, 0, 6, 3)
+            Margin = new Padding(0, 0, 8, 3)
         });
         table.Controls.Add(control);
+    }
+
+    // Adds a full-width italic sub-heading row to the sensor checkbox grid.
+    static void AddSensorGroup(TableLayoutPanel table, string title)
+    {
+        var lbl = new Label
+        {
+            Text = title,
+            Font = new Font("Segoe UI", 8f, FontStyle.Bold),
+            ForeColor = Color.FromArgb(80, 80, 80),
+            AutoSize = true,
+            Margin = new Padding(2, 8, 0, 2)
+        };
+        table.Controls.Add(lbl);
+        table.SetColumnSpan(lbl, 2);
     }
 
     void AddSensorBox(TableLayoutPanel table, SensorConfig sensors, string label,
         Func<SensorConfig, bool> getter, Action<SensorConfig, bool> setter)
     {
-        var box = new CheckBox { Text = label, Checked = getter(sensors), AutoSize = true };
+        var box = new CheckBox { Text = label, Checked = getter(sensors), AutoSize = true, Margin = new Padding(4, 1, 4, 1) };
         table.Controls.Add(box);
         _sensorBoxes.Add((box, setter));
     }
@@ -570,6 +636,8 @@ sealed class MainWindow : Form
         File.WriteAllText(_configPath,
             JsonSerializer.Serialize(_config, new JsonSerializerOptions { WriteIndented = true }));
 
+        ApplyAutoStart(_autoStart.Checked);
+
         MessageBox.Show("Settings applied.",
             "Settings Saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
@@ -577,6 +645,28 @@ sealed class MainWindow : Form
     // ── Test & Apply (MQTT Broker settings) ──────────────────────────────────────
     // Tests the connection with the entered credentials; on success saves those
     // fields and signals the loop to reconnect. Settings are NOT saved on failure.
+
+    // ── Autostart helpers ─────────────────────────────────────────────────────────
+
+    const string AutoStartName   = "PcMqttMonitor";
+    const string AutoStartRegKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
+
+    static bool IsAutoStartEnabled()
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(AutoStartRegKey);
+        return key?.GetValue(AutoStartName) is string val
+            && val.Trim('"').Equals(Environment.ProcessPath ?? "", StringComparison.OrdinalIgnoreCase);
+    }
+
+    static void ApplyAutoStart(bool enable)
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(AutoStartRegKey, writable: true);
+        if (key == null) return;
+        if (enable)
+            key.SetValue(AutoStartName, $"\"{Environment.ProcessPath}\"");
+        else
+            key.DeleteValue(AutoStartName, throwOnMissingValue: false);
+    }
 
     async void OnTestAndApply(object? sender, EventArgs e)
     {

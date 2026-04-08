@@ -1,13 +1,20 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
+    <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+    <Version>1.0.0</Version>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="tools\**" />
+    <None Remove="tools\**" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.5" />
