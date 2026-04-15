@@ -7,42 +7,17 @@ static class ConfigLoader
     public static AppConfig Load(string path)
     {
         if (!File.Exists(path))
-        {
-            throw new FileNotFoundException($"Config file not found: {path}");
-        }
+            return new AppConfig { Sensors = new SensorConfig() };
 
         var json = File.ReadAllText(path);
         var config = JsonSerializer.Deserialize<AppConfig>(json, new JsonSerializerOptions
         {
             PropertyNameCaseInsensitive = true
-        });
-
-        if (config == null)
-        {
-            throw new InvalidOperationException("Config file is empty or invalid JSON.");
-        }
-
-        if (string.IsNullOrWhiteSpace(config.BrokerHost))
-        {
-            throw new InvalidOperationException("Config missing BrokerHost.");
-        }
-
-        if (config.BrokerPort <= 0)
-        {
-            throw new InvalidOperationException("Config BrokerPort must be > 0.");
-        }
-
-        if (string.IsNullOrWhiteSpace(config.TopicRoot))
-        {
-            throw new InvalidOperationException("Config missing TopicRoot.");
-        }
+        }) ?? new AppConfig();
 
         config.Sensors ??= new SensorConfig();
-
         if (config.PublishIntervalSeconds <= 0)
-        {
-            throw new InvalidOperationException("Config PublishIntervalSeconds must be > 0.");
-        }
+            config.PublishIntervalSeconds = 1.0;
 
         return config;
     }

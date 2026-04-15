@@ -5,7 +5,12 @@
       "Bash(git commit:*)",
       "Bash(dotnet build:*)",
       "Bash(powershell -Command \"Remove-Item ''C:\\\\Repos\\\\git\\\\PcMqttMonitor\\\\SensorsWindow.cs'',''C:\\\\Repos\\\\git\\\\PcMqttMonitor\\\\SettingsWindow.cs'' -ErrorAction SilentlyContinue; dotnet build ''C:\\\\Repos\\\\git\\\\PcMqttMonitor'' 2>&1 | Select-String -Pattern ''error CS|Fehler|succeeded''\")",
-      "Bash(dotnet run:*)"
+      "Bash(dotnet run:*)",
+      "Bash(schtasks /Query /TN \"PcMqttMonitor\" /V /FO LIST)",
+      "Bash(cmd /c \"schtasks /Query /TN PcMqttMonitor /V /FO LIST\")",
+      "Bash(cmd /c \"schtasks /Query /TN \\\\\"PcMqttMonitor\\\\\" /V /FO LIST 2>&1\")",
+      "Bash(cmd /c schtasks /Query /TN PcMqttMonitor /V /FO LIST)",
+      "Bash(powershell -Command \"schtasks /Query /TN 'PcMqttMonitor' /V /FO LIST\")"
     ]
   }
 }

@@ -2,7 +2,6 @@ using System.Drawing;
 using System.Globalization;
 using System.Text.Json;
 using System.Windows.Forms;
-using Microsoft.Win32;
 using MQTTnet;
 
 // Single window with two tabs: live sensor readings and settings.
@@ -647,25 +646,53 @@ sealed class MainWindow : Form
     // fields and signals the loop to reconnect. Settings are NOT saved on failure.
 
     // ── Autostart helpers ─────────────────────────────────────────────────────────
+    // The app requires elevation (requireAdministrator manifest), so the HKCU\Run
+    // registry key does not work — Windows silently skips elevated apps at logon.
+    // Task Scheduler with /RL HIGHEST is the correct solution for elevated autostart.
 
-    const string AutoStartName   = "PcMqttMonitor";
-    const string AutoStartRegKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
+    const string AutoStartTaskName = "PcMqttMonitor";
 
     static bool IsAutoStartEnabled()
     {
-        using var key = Registry.CurrentUser.OpenSubKey(AutoStartRegKey);
-        return key?.GetValue(AutoStartName) is string val
-            && val.Trim('"').Equals(Environment.ProcessPath ?? "", StringComparison.OrdinalIgnoreCase);
+        using var proc = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+        {
+            FileName               = "schtasks.exe",
+            Arguments              = $"/Query /TN \"{AutoStartTaskName}\"",
+            CreateNoWindow         = true,
+            UseShellExecute        = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError  = true,
+        });
+        proc?.WaitForExit();
+        return proc?.ExitCode == 0;
     }
 
     static void ApplyAutoStart(bool enable)
     {
-        using var key = Registry.CurrentUser.OpenSubKey(AutoStartRegKey, writable: true);
-        if (key == null) return;
+        string args;
         if (enable)
-            key.SetValue(AutoStartName, $"\"{Environment.ProcessPath}\"");
+        {
+            var exePath = Environment.ProcessPath ?? Application.ExecutablePath;
+            // /SC ONLOGON  — trigger: current user logs on
+            // /RL HIGHEST  — run with highest available privileges (elevation)
+            // /DELAY       — small delay so the desktop and network are ready
+            // /F           — overwrite if the task already exists
+            args = $"/Create /F /TN \"{AutoStartTaskName}\" /TR \"\\\"{exePath}\\\"\" " +
+                   $"/SC ONLOGON /RU \"{Environment.UserName}\" /RL HIGHEST /DELAY 0000:10";
+        }
         else
-            key.DeleteValue(AutoStartName, throwOnMissingValue: false);
+        {
+            args = $"/Delete /F /TN \"{AutoStartTaskName}\"";
+        }
+
+        using var proc = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+        {
+            FileName        = "schtasks.exe",
+            Arguments       = args,
+            CreateNoWindow  = true,
+            UseShellExecute = false,
+        });
+        proc?.WaitForExit();
     }
 
     async void OnTestAndApply(object? sender, EventArgs e)

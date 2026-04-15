@@ -16,12 +16,20 @@ class Program
         else
             Console.SetOut(TextWriter.Null);
 
+        // Show a message box for any unhandled exception so crashes are never silent.
+        Application.ThreadException += (_, e) =>
+            MessageBox.Show(e.Exception.ToString(), "PC MQTT Monitor — Unhandled Error",
+                MessageBoxButtons.OK, MessageBoxIcon.Error);
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            MessageBox.Show(e.ExceptionObject.ToString(), "PC MQTT Monitor — Fatal Error",
+                MessageBoxButtons.OK, MessageBoxIcon.Error);
+
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
 
-        var configPath = File.Exists("config.json")
-            ? "config.json"
-            : Path.Combine(AppContext.BaseDirectory, "config.json");
+        // Config always lives next to the exe — survives rebuilds (dotnet build never
+        // deletes extra files), only lost on an explicit dotnet clean.
+        var configPath = Path.Combine(AppContext.BaseDirectory, "config.json");
         var config = ConfigLoader.Load(configPath);
 
         Log($"Broker:   {config.BrokerHost}:{config.BrokerPort}");
