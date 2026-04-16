@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.IO;
+using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
 using LibreHardwareMonitor.Hardware;
 
@@ -15,6 +16,10 @@ sealed class SensorService : IDisposable
     IHardware? _memory;
     IHardware? _motherboard;
     List<IHardware> _storages = new();
+
+    long _netLastBytesSent = -1;
+    long _netLastBytesReceived = -1;
+    DateTime _netLastTime;
 
     public SensorService(SensorConfig? config, Action<string>? log = null)
     {
@@ -96,6 +101,10 @@ sealed class SensorService : IDisposable
         var motherboardName = _config.MotherboardName ? _motherboard?.Name : null;
         var driveMetrics = _config.Drives ? CollectDriveMetrics(_storages) : new List<StorageMetrics>();
 
+        var (rawNetUp, rawNetDown) = GetNetworkSpeed();
+        var netUp   = _config.NetworkUpload   ? rawNetUp   : null;
+        var netDown = _config.NetworkDownload ? rawNetDown : null;
+
         var summaryParts = new List<string>();
 
         var cpuSummary = BuildCpuSummary(cpuName, cpuLoad, cpuTemp, cpuPackagePower, cpuCoreVoltage);
@@ -126,6 +135,10 @@ sealed class SensorService : IDisposable
             summaryParts.Add(BuildDrivesSummary(driveMetrics));
         }
 
+        var netSummary = BuildNetworkSummary(netUp, netDown);
+        if (netSummary != null)
+            summaryParts.Add(netSummary);
+
         var metrics = new MqttMetrics
         {
             TimestampUtc = DateTime.UtcNow,
@@ -134,11 +147,53 @@ sealed class SensorService : IDisposable
             Gpu = BuildGpuMetrics(gpuName, gpuLoad, gpuTemp, gpuBoardPower, gpuFan, gpuMemLoad, gpuMemUsed, gpuMemTotal),
             Ram = BuildRamMetrics(ramLoad, ramUsed, ramTotal),
             Motherboard = BuildMotherboardMetrics(motherboardName),
-            Drives = driveMetrics.Count > 0 ? driveMetrics : null
+            Drives = driveMetrics.Count > 0 ? driveMetrics : null,
+            Network = BuildNetworkMetrics(netUp, netDown)
         };
 
         var summary = summaryParts.Count > 0 ? string.Join(" || ", summaryParts) : string.Empty;
         return new SensorSnapshot(summary, metrics);
+    }
+
+    (float? uploadKbps, float? downloadKbps) GetNetworkSpeed()
+    {
+        long sent = 0, received = 0;
+        foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
+        {
+            if (ni.OperationalStatus != OperationalStatus.Up) continue;
+            if (ni.NetworkInterfaceType == NetworkInterfaceType.Loopback) continue;
+            if (ni.NetworkInterfaceType == NetworkInterfaceType.Tunnel) continue;
+            try
+            {
+                var stats = ni.GetIPv4Statistics();
+                sent     += stats.BytesSent;
+                received += stats.BytesReceived;
+            }
+            catch { /* some virtual adapters throw */ }
+        }
+
+        var now = DateTime.UtcNow;
+
+        if (_netLastBytesSent < 0)
+        {
+            // First call — store baseline, return null (no delta yet).
+            _netLastBytesSent     = sent;
+            _netLastBytesReceived = received;
+            _netLastTime          = now;
+            return (null, null);
+        }
+
+        var elapsed = (now - _netLastTime).TotalSeconds;
+        if (elapsed <= 0) return (null, null);
+
+        var uploadKbps   = (float)Math.Max(0, (sent     - _netLastBytesSent)     / elapsed / 1024.0);
+        var downloadKbps = (float)Math.Max(0, (received - _netLastBytesReceived) / elapsed / 1024.0);
+
+        _netLastBytesSent     = sent;
+        _netLastBytesReceived = received;
+        _netLastTime          = now;
+
+        return (uploadKbps, downloadKbps);
     }
 
     public void Dispose()
@@ -541,6 +596,27 @@ sealed class SensorService : IDisposable
         };
     }
 
+    static NetworkMetrics? BuildNetworkMetrics(float? uploadKbps, float? downloadKbps)
+    {
+        if (!uploadKbps.HasValue && !downloadKbps.HasValue) return null;
+        return new NetworkMetrics { UploadKbps = uploadKbps, DownloadKbps = downloadKbps };
+    }
+
+    static string? BuildNetworkSummary(float? uploadKbps, float? downloadKbps)
+    {
+        if (!uploadKbps.HasValue && !downloadKbps.HasValue) return null;
+        var up   = uploadKbps.HasValue   ? FormatNetworkSpeed(uploadKbps.Value)   : "n/a";
+        var down = downloadKbps.HasValue ? FormatNetworkSpeed(downloadKbps.Value) : "n/a";
+        return $"Net Up {up} Down {down}";
+    }
+
+    static string FormatNetworkSpeed(float kbps)
+    {
+        if (kbps >= 1024)
+            return (kbps / 1024f).ToString("0.##", CultureInfo.InvariantCulture) + " MB/s";
+        return kbps.ToString("0.#", CultureInfo.InvariantCulture) + " KB/s";
+    }
+
     static string FormatPercent(float? value)
     {
         return value.HasValue
@@ -699,6 +775,7 @@ sealed class MqttMetrics
     public RamMetrics? Ram { get; set; }
     public MotherboardMetrics? Motherboard { get; set; }
     public List<StorageMetrics>? Drives { get; set; }
+    public NetworkMetrics? Network { get; set; }
 }
 
 // CPU metrics payload.
@@ -756,4 +833,11 @@ sealed class OsDriveSnapshot
     public float TotalGb { get; set; }
     public float FreeGb { get; set; }
     public float UsedGb { get; set; }
+}
+
+// Network throughput metrics payload.
+sealed class NetworkMetrics
+{
+    public float? UploadKbps { get; set; }
+    public float? DownloadKbps { get; set; }
 }

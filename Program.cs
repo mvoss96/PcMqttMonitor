@@ -27,8 +27,9 @@ class Program
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
 
-        // Config always lives next to the exe — survives rebuilds (dotnet build never
-        // deletes extra files), only lost on an explicit dotnet clean.
+        // Config lives next to the exe — which is %LocalAppData%\PcMqttMonitor\ when
+        // installed, or bin\Debug\ during development. Survives upgrades because the
+        // installer only replaces the exe, never config.json.
         var configPath = Path.Combine(AppContext.BaseDirectory, "config.json");
         var config = ConfigLoader.Load(configPath);
 

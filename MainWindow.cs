@@ -38,8 +38,8 @@ sealed class MainWindow : Form
         var version = typeof(MainWindow).Assembly.GetName().Version;
         Text = version != null ? $"PC MQTT Monitor  v{version.ToString(3)}" : "PC MQTT Monitor";
         Icon = TrayApp.CreateIcon();
-        Size = new Size(460, 580);
-        MinimumSize = new Size(380, 460);
+        Size = new Size(500, 700);
+        MinimumSize = new Size(420, 500);
         StartPosition = FormStartPosition.CenterScreen;
         ShowInTaskbar = true;
 
@@ -69,6 +69,7 @@ sealed class MainWindow : Form
         var sensorsPage = new TabPage("Sensors");
         sensorsPage.Controls.Add(_sensorsOuter);
         _tabs.TabPages.Add(sensorsPage);
+        ShowSensorsPlaceholder("Opening sensors — this may take a few seconds...");
 
         // ── Tab 2: Settings ──────────────────────────────────────────────────────
         var sensors = config.Sensors ?? new SensorConfig();
@@ -156,8 +157,10 @@ sealed class MainWindow : Form
         AddSensorBox(sensorsTable, sensors, "Total", c => c.RamTotal, (c, v) => c.RamTotal = v);
 
         AddSensorGroup(sensorsTable, "Other");
-        AddSensorBox(sensorsTable, sensors, "Motherboard", c => c.MotherboardName, (c, v) => c.MotherboardName = v);
-        AddSensorBox(sensorsTable, sensors, "Drives",      c => c.Drives,          (c, v) => c.Drives = v);
+        AddSensorBox(sensorsTable, sensors, "Motherboard",       c => c.MotherboardName,  (c, v) => c.MotherboardName  = v);
+        AddSensorBox(sensorsTable, sensors, "Drives",            c => c.Drives,           (c, v) => c.Drives           = v);
+        AddSensorBox(sensorsTable, sensors, "Network Upload",    c => c.NetworkUpload,    (c, v) => c.NetworkUpload    = v);
+        AddSensorBox(sensorsTable, sensors, "Network Download",  c => c.NetworkDownload,  (c, v) => c.NetworkDownload  = v);
 
         // ── Outer layout ─────────────────────────────────────────────────────────
         var settingsMain = new TableLayoutPanel
@@ -281,9 +284,25 @@ sealed class MainWindow : Form
         }
     }
 
+    void ShowSensorsPlaceholder(string message)
+    {
+        var lbl = new Label
+        {
+            Text      = message,
+            ForeColor = Color.Gray,
+            Font      = new Font("Segoe UI", 10f),
+            AutoSize  = false,
+            Dock      = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleCenter,
+        };
+        foreach (Control c in _sensorsOuter.Controls) c.Dispose();
+        _sensorsOuter.Controls.Clear();
+        _sensorsOuter.Controls.Add(lbl);
+    }
+
     // Which top-level sections are present — used to detect structural changes.
     static string MakeFingerprint(MqttMetrics m) =>
-        $"{m.Cpu != null}|{m.Gpu != null}|{m.Ram != null}|{m.Drives?.Count ?? 0}";
+        $"{m.Cpu != null}|{m.Gpu != null}|{m.Ram != null}|{m.Drives?.Count ?? 0}|{m.Network != null}";
 
     // Called every refresh interval.  Only rebuilds controls when hardware
     // appears/disappears; otherwise updates labels and bar widths in-place.
@@ -315,7 +334,8 @@ sealed class MainWindow : Form
         if (m.Cpu    != null) main.Controls.Add(BuildSection("CPU",    m.Cpu.Name, CpuRowDefs(),           updaters));
         if (m.Gpu    != null) main.Controls.Add(BuildSection("GPU",    m.Gpu.Name, GpuRowDefs(),           updaters));
         if (m.Ram    != null) main.Controls.Add(BuildSection("RAM",    null,        RamRowDefs(),           updaters));
-        if (m.Drives?.Count > 0) main.Controls.Add(BuildSection("Drives", null,    DriveRowDefs(m.Drives), updaters));
+        if (m.Drives?.Count > 0) main.Controls.Add(BuildSection("Drives",  null, DriveRowDefs(m.Drives), updaters));
+        if (m.Network != null)   main.Controls.Add(BuildSection("Network", null, NetworkRowDefs(),        updaters));
 
         main.Width = _sensorsOuter.ClientSize.Width - _sensorsOuter.Padding.Horizontal;
 
@@ -529,8 +549,24 @@ sealed class MainWindow : Form
                     return (null, null, SystemColors.ControlText);
 
                 return (drive.UsedPercent, text, SystemColors.ControlText);
+
             }
         )).ToArray();
+
+    static IReadOnlyList<RowDef> NetworkRowDefs() =>
+    [
+        new("Upload",   false, m => NetSpeedRow(m.Network?.UploadKbps)),
+        new("Download", false, m => NetSpeedRow(m.Network?.DownloadKbps)),
+    ];
+
+    static (int?, string?, Color) NetSpeedRow(float? kbps)
+    {
+        if (kbps == null) return (null, null, SystemColors.ControlText);
+        var text = kbps.Value >= 1024
+            ? $"{kbps.Value / 1024f:0.##} MB/s"
+            : $"{kbps.Value:0.#} KB/s";
+        return (null, text, SystemColors.ControlText);
+    }
 
     // ── Settings helpers ──────────────────────────────────────────────────────────
 

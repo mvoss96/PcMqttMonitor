@@ -55,4 +55,6 @@ sealed class SensorConfig
     public bool GpuMemoryTotal { get; set; } = true;
     public bool MotherboardName { get; set; } = true;
     public bool Drives { get; set; } = true;
+    public bool NetworkUpload { get; set; } = true;
+    public bool NetworkDownload { get; set; } = true;
 }
