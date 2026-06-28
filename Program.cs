@@ -16,13 +16,37 @@ class Program
         else
             Console.SetOut(TextWriter.Null);
 
-        // Show a message box for any unhandled exception so crashes are never silent.
         Application.ThreadException += (_, e) =>
-            MessageBox.Show(e.Exception.ToString(), "PC MQTT Monitor — Unhandled Error",
+        {
+            WriteCrashLog(e.Exception.ToString());
+            MessageBox.Show(
+                $"{e.Exception.Message}\n\nDetails gespeichert in:\n{CrashLogPath}",
+                "PC MQTT Monitor — Fehler",
                 MessageBoxButtons.OK, MessageBoxIcon.Error);
+        };
+
+        // Crashes on LibreHardwareMonitor background threads (storage device-change events,
+        // GPU driver updates, …) cannot be caught with try/catch — they arrive here.
+        // For known hardware/driver crashes: log, wait briefly, then restart automatically.
+        // For everything else: show a dialog with the crash log path.
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
-            MessageBox.Show(e.ExceptionObject.ToString(), "PC MQTT Monitor — Fatal Error",
+        {
+            var msg = e.ExceptionObject.ToString() ?? "";
+            WriteCrashLog(msg);
+
+            if (IsHardwareDriverCrash(msg))
+            {
+                Log("Hardware/driver crash detected — restarting in 10 s...");
+                Task.Delay(10_000).Wait();
+                Application.Restart();
+                return;
+            }
+
+            MessageBox.Show(
+                $"{msg}\n\nDetails gespeichert in:\n{CrashLogPath}",
+                "PC MQTT Monitor — Kritischer Fehler",
                 MessageBoxButtons.OK, MessageBoxIcon.Error);
+        };
 
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
@@ -33,6 +57,7 @@ class Program
         var configPath = Path.Combine(AppContext.BaseDirectory, "config.json");
         var config = ConfigLoader.Load(configPath);
 
+        Log($"=== PC MQTT Monitor v{typeof(Program).Assembly.GetName().Version?.ToString(3)} starting ===");
         Log($"Broker:   {config.BrokerHost}:{config.BrokerPort}");
         Log($"TopicRoot: {config.TopicRoot}");
         Log($"Interval: {config.PublishIntervalSeconds}s");
@@ -48,7 +73,11 @@ class Program
         };
 
         // Run the MQTT + sensor loop on a background thread so the UI stays responsive.
-        var mqttTask = Task.Run(() => RunMqttLoopAsync(config, tray, shutdown.Token));
+        var mqttTask = Task.Run(async () =>
+        {
+            try { await RunMqttLoopAsync(config, tray, shutdown.Token); }
+            catch (Exception ex) { Log($"[fatal] Background task crashed: {ex}"); }
+        });
 
         // Blocks here until the user clicks Exit in the tray (or Ctrl+C).
         Application.Run(tray);
@@ -68,9 +97,18 @@ class Program
 
     static async Task RunMqttLoopAsync(AppConfig config, TrayApp tray, CancellationToken cancellationToken)
     {
-        var mqttFactory = new MqttClientFactory();
-        using var mqttClient = mqttFactory.CreateMqttClient();
-        var mqttOptions = BuildMqttOptions(mqttFactory, config);
+        Log("Background task started.");
+
+        // On a fresh boot, storage drivers may not be ready yet.
+        // Wait until the system has been up for at least 30 seconds.
+        var uptimeSec = Environment.TickCount64 / 1000.0;
+        if (uptimeSec < 30)
+        {
+            var waitSec = (int)Math.Ceiling(30 - uptimeSec);
+            Log($"System just booted — waiting {waitSec}s for drivers to settle...");
+            tray.SetStatus($"Waiting for system drivers ({waitSec}s)...");
+            await Task.Delay(TimeSpan.FromSeconds(waitSec), cancellationToken);
+        }
 
         Log("Opening sensors (this may take a few seconds)...");
         tray.SetStatus("Opening sensors...");
@@ -80,65 +118,96 @@ class Program
         sensors.Open();
         Log("Sensors ready.");
 
+        // MQTT is optional — skip entirely if no broker is configured.
+        bool hasBroker = !string.IsNullOrWhiteSpace(config.BrokerHost);
+        var mqttFactory = new MqttClientFactory();
+        using var mqttClient = mqttFactory.CreateMqttClient();
+        MqttClientOptions? mqttOptions = null;
+        if (hasBroker)
+        {
+            try { mqttOptions = BuildMqttOptions(mqttFactory, config); }
+            catch (Exception ex)
+            {
+                Log($"[error] Invalid MQTT config: {ex.Message}");
+                hasBroker = false;
+            }
+        }
+
+        if (!hasBroker)
+        {
+            Log("No broker configured — sensor-only mode.");
+            tray.SetStatus("No broker configured — sensors only");
+        }
+
         try
         {
-            // Connect — settings were validated before being saved, so this should succeed.
-            // If it fails anyway (broker went away), keep retrying until cancelled.
-            while (!mqttClient.IsConnected && !cancellationToken.IsCancellationRequested)
-            {
-                try
-                {
-                    Log($"Connecting to {config.BrokerHost}:{config.BrokerPort}...");
-                    tray.SetStatus($"Connecting to {config.BrokerHost}:{config.BrokerPort}...");
-                    await MqttPublisher.EnsureConnectedAsync(mqttClient, mqttOptions, cancellationToken);
-                    Log("MQTT connected.");
-                    tray.SetStatus($"Connected — {config.BrokerHost}:{config.BrokerPort}");
-                    tray.SetConnectionStatus(true, $"{config.BrokerHost}:{config.BrokerPort}");
-                }
-                catch (OperationCanceledException) { throw; }
-                catch (Exception ex)
-                {
-                    Log($"[error] Connection failed: {ex.Message}");
-                    tray.SetStatus("Connection failed — open Settings to fix MQTT broker");
-                    tray.SetConnectionStatus(false, "");
-                    await Task.Delay(TimeSpan.FromSeconds(30), cancellationToken);
-                }
-            }
-
             while (!cancellationToken.IsCancellationRequested)
             {
+                // Always read sensors and update the UI — regardless of MQTT status.
+                SensorSnapshot snapshot;
                 try
                 {
-                    var snapshot = sensors.ReadSnapshot();
+                    snapshot = sensors.ReadSnapshot();
                     if (!string.IsNullOrWhiteSpace(snapshot.Summary))
                         Console.WriteLine(snapshot.Summary);
-                    tray.UpdateSnapshot(snapshot);  // always update UI and tooltip
-
-                    if (!tray.IsPaused)
-                    {
-                        await MqttPublisher.PublishAsync(
-                            mqttClient,
-                            mqttOptions,
-                            config.TopicRoot,
-                            Environment.MachineName.ToLowerInvariant(),
-                            snapshot.Metrics,
-                            cancellationToken);
-
-                        LogDebug("Publish complete.");
-                        tray.SetStatus($"Connected — {config.BrokerHost}:{config.BrokerPort}");
-                    }
-                    else
-                    {
-                        tray.SetStatus("Paused");
-                    }
+                    tray.UpdateSnapshot(snapshot);
                 }
                 catch (OperationCanceledException) { throw; }
                 catch (Exception ex)
                 {
-                    Log($"[error] {ex.Message}");
-                    tray.SetStatus($"Error: {ex.Message}");
+                    Log($"[error] sensor read: {ex.Message}");
+                    snapshot = new SensorSnapshot("", new MqttMetrics { Host = Environment.MachineName });
+                }
+
+                if (!tray.IsPaused && hasBroker && mqttOptions != null)
+                {
+                    // Connect/reconnect if needed — one attempt per cycle, non-blocking.
                     if (!mqttClient.IsConnected)
-                        tray.SetConnectionStatus(false, "");
+                    {
+                        try
+                        {
+                            Log($"Connecting to {config.BrokerHost}:{config.BrokerPort}...");
+                            tray.SetStatus($"Connecting to {config.BrokerHost}:{config.BrokerPort}...");
+                            await mqttClient.ConnectAsync(mqttOptions, cancellationToken);
+                            Log("MQTT connected.");
+                            tray.SetConnectionStatus(true, $"{config.BrokerHost}:{config.BrokerPort}");
+                        }
+                        catch (OperationCanceledException) { throw; }
+                        catch (Exception ex)
+                        {
+                            Log($"[error] Connection failed: {ex.Message}");
+                            tray.SetStatus("Disconnected — open Settings to configure MQTT broker");
+                            tray.SetConnectionStatus(false, "");
+                        }
+                    }
+
+                    if (mqttClient.IsConnected)
+                    {
+                        try
+                        {
+                            await MqttPublisher.PublishAsync(
+                                mqttClient,
+                                mqttOptions,
+                                config.TopicRoot,
+                                Environment.MachineName.ToLowerInvariant(),
+                                snapshot.Metrics,
+                                cancellationToken);
+                            LogDebug("Publish complete.");
+                            tray.SetStatus($"Connected — {config.BrokerHost}:{config.BrokerPort}");
+                        }
+                        catch (OperationCanceledException) { throw; }
+                        catch (Exception ex)
+                        {
+                            Log($"[error] publish: {ex.Message}");
+                            tray.SetStatus($"Error: {ex.Message}");
+                            if (!mqttClient.IsConnected)
+                                tray.SetConnectionStatus(false, "");
+                        }
+                    }
+                }
+                else if (tray.IsPaused)
+                {
+                    tray.SetStatus("Paused");
                 }
 
                 // Poll more frequently while paused so resume feels instant.
@@ -165,8 +234,45 @@ class Program
     }
 
     static void Log(string message)
-        => Console.WriteLine($"{DateTime.Now:HH:mm:ss} {message}");
+    {
+        var line = $"{DateTime.Now:HH:mm:ss} {message}";
+        Console.WriteLine(line);
+        AppLog.Write(message);
+    }
 
     static void LogDebug(string message)
-        => Console.WriteLine($"[debug] {DateTime.Now:HH:mm:ss} {message}");
+    {
+        var line = $"[debug] {DateTime.Now:HH:mm:ss} {message}";
+        Console.WriteLine(line);
+        AppLog.Write($"[debug] {message}");
+    }
+
+    // ── Crash logging ─────────────────────────────────────────────────────────────
+
+    static string CrashLogPath =>
+        Path.Combine(AppContext.BaseDirectory, "crash.log");
+
+    static void WriteCrashLog(string message)
+    {
+        try
+        {
+            var entry = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}]\n{message}\n\n";
+            File.AppendAllText(CrashLogPath, entry);
+        }
+        catch { }
+        AppLog.Write($"[crash] {message.Split('\n')[0]}"); // first line only — full detail in crash.log
+    }
+
+    // Hardware/driver crashes originate on LibreHardwareMonitor's own threads and
+    // cannot be caught with try/catch in our code. Restarting is the right response:
+    // the driver is usually ready again within seconds (update finished, device re-enumerated).
+    static bool IsHardwareDriverCrash(string msg) =>
+        msg.Contains("DiskInfoToolkit")                              ||  // storage at boot
+        msg.Contains("StorageManager")                               ||  // storage device change
+        msg.Contains("NvApi",      StringComparison.OrdinalIgnoreCase) || // NVIDIA driver
+        msg.Contains("NvidiaGpu",  StringComparison.OrdinalIgnoreCase) ||
+        msg.Contains("AmdGpu",     StringComparison.OrdinalIgnoreCase) || // AMD driver
+        msg.Contains("IntelGpu",   StringComparison.OrdinalIgnoreCase) ||
+        msg.Contains("LibreHardwareMonitor.Hardware.Gpu")            ||  // generic GPU LHM crash
+        msg.Contains("AccessViolationException");                         // native driver fault
 }

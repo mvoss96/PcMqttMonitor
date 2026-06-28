@@ -15,7 +15,6 @@ sealed class SensorService : IDisposable
     IHardware? _gpu;
     IHardware? _memory;
     IHardware? _motherboard;
-    List<IHardware> _storages = new();
 
     long _netLastBytesSent = -1;
     long _netLastBytesReceived = -1;
@@ -31,7 +30,6 @@ sealed class SensorService : IDisposable
             IsGpuEnabled = true,
             IsMemoryEnabled = true,
             IsMotherboardEnabled = true,
-            IsStorageEnabled = true
         };
     }
 
@@ -42,7 +40,6 @@ sealed class SensorService : IDisposable
         _gpu = _computer.Hardware.FirstOrDefault(IsGpuHardware);
         _memory = _computer.Hardware.FirstOrDefault(h => h.HardwareType == HardwareType.Memory);
         _motherboard = _computer.Hardware.FirstOrDefault(h => h.HardwareType == HardwareType.Motherboard);
-        _storages = _computer.Hardware.Where(h => h.HardwareType == HardwareType.Storage).ToList();
     }
 
     public SensorSnapshot ReadSnapshot()
@@ -99,7 +96,7 @@ sealed class SensorService : IDisposable
         var cpuName = _cpu?.Name ?? "CPU";
         var gpuName = _gpu?.Name ?? "GPU";
         var motherboardName = _config.MotherboardName ? _motherboard?.Name : null;
-        var driveMetrics = _config.Drives ? CollectDriveMetrics(_storages) : new List<StorageMetrics>();
+        var driveMetrics = _config.Drives ? CollectDriveMetrics() : new List<StorageMetrics>();
 
         var (rawNetUp, rawNetDown) = GetNetworkSpeed();
         var netUp   = _config.NetworkUpload   ? rawNetUp   : null;
@@ -280,162 +277,32 @@ sealed class SensorService : IDisposable
         }
     }
 
-    static float? FindSensorValueContains(IHardware? hardware, SensorType type, string namePart)
-    {
-        if (hardware == null)
-        {
-            return null;
-        }
-
-        foreach (var hw in EnumerateHardware(hardware))
-        {
-            foreach (var sensor in hw.Sensors)
-            {
-                if (sensor.SensorType == type
-                    && sensor.Name.Contains(namePart, StringComparison.OrdinalIgnoreCase))
-                {
-                    return SanitiseSensorValue(sensor.Value);
-                }
-            }
-        }
-
-        return null;
-    }
-
-    static float? FindStorageValue(IHardware hardware, params string[] names)
-    {
-        foreach (var name in names)
-        {
-            var exact = FindSensorValue(hardware, SensorType.Data, name)
-                ?? FindSensorValue(hardware, SensorType.SmallData, name);
-            if (exact.HasValue)
-            {
-                return exact;
-            }
-        }
-
-        foreach (var name in names)
-        {
-            var partial = FindSensorValueContains(hardware, SensorType.Data, name)
-                ?? FindSensorValueContains(hardware, SensorType.SmallData, name);
-            if (partial.HasValue)
-            {
-                return partial;
-            }
-        }
-
-        return null;
-    }
-
-    static List<StorageMetrics> CollectDriveMetrics(IEnumerable<IHardware> storages)
+    // Reads drive space directly from the OS — no LHM storage backend needed.
+    // This avoids the DiskInfoToolkit NullReferenceException that fires on device-change events.
+    static List<StorageMetrics> CollectDriveMetrics()
     {
         var results = new List<StorageMetrics>();
-        var osDrives = GetOsDrives();
-
-        foreach (var storage in storages)
-        {
-            var used = FindStorageValue(storage, "Used Space", "Used", "Usage");
-            var free = FindStorageValue(storage, "Available Space", "Free Space", "Available", "Free");
-            var total = FindStorageValue(storage, "Total Capacity", "Total");
-
-            if (!total.HasValue && used.HasValue && free.HasValue)
-            {
-                total = used + free;
-            }
-
-            if (!used.HasValue && total.HasValue && free.HasValue)
-            {
-                used = total - free;
-            }
-
-            if (!free.HasValue && total.HasValue && used.HasValue)
-            {
-                free = total - used;
-            }
-
-            if ((!used.HasValue || !free.HasValue || !total.HasValue) && osDrives.Count > 0)
-            {
-                var match = MatchDriveBySize(total, osDrives);
-                if (match != null)
-                {
-                    total ??= match.TotalGb;
-                    free ??= match.FreeGb;
-                    used ??= match.UsedGb;
-                }
-            }
-
-            var usedPercent = (used.HasValue && total.HasValue && total.Value > 0)
-                ? RoundPercentToInt((used.Value / total.Value) * 100f)
-                : null;
-
-            if (!used.HasValue && !free.HasValue && !total.HasValue)
-            {
-                continue;
-            }
-
-            results.Add(new StorageMetrics
-            {
-                Name = storage.Name,
-                UsedGb = used,
-                FreeGb = free,
-                TotalGb = total,
-                UsedPercent = usedPercent
-            });
-        }
-
-        return results;
-    }
-
-    static List<OsDriveSnapshot> GetOsDrives()
-    {
-        var results = new List<OsDriveSnapshot>();
-
         foreach (var drive in DriveInfo.GetDrives())
         {
-            if (!drive.IsReady)
+            if (!drive.IsReady) continue;
+            var totalGb    = (float)(drive.TotalSize          / 1024d / 1024d / 1024d);
+            var freeGb     = (float)(drive.AvailableFreeSpace / 1024d / 1024d / 1024d);
+            var usedGb     = totalGb - freeGb;
+            var usedPct    = totalGb > 0 ? RoundPercentToInt(usedGb / totalGb * 100f) : null;
+            var driveLetter = drive.Name.TrimEnd(Path.DirectorySeparatorChar);
+            var name       = string.IsNullOrEmpty(drive.VolumeLabel)
+                ? driveLetter
+                : $"{drive.VolumeLabel} ({driveLetter})";
+            results.Add(new StorageMetrics
             {
-                continue;
-            }
-
-            var totalGb = (float)(drive.TotalSize / 1024d / 1024d / 1024d);
-            var freeGb = (float)(drive.AvailableFreeSpace / 1024d / 1024d / 1024d);
-            var usedGb = totalGb - freeGb;
-
-            results.Add(new OsDriveSnapshot
-            {
-                Name = drive.Name,
-                Label = drive.VolumeLabel,
-                TotalGb = totalGb,
-                FreeGb = freeGb,
-                UsedGb = usedGb
+                Name        = name,
+                UsedGb      = usedGb,
+                FreeGb      = freeGb,
+                TotalGb     = totalGb,
+                UsedPercent = usedPct,
             });
         }
-
         return results;
-    }
-
-    static OsDriveSnapshot? MatchDriveBySize(float? totalGb, List<OsDriveSnapshot> osDrives)
-    {
-        if (!totalGb.HasValue || totalGb.Value <= 0)
-        {
-            return null;
-        }
-
-        var bestDiff = float.MaxValue;
-        OsDriveSnapshot? best = null;
-        var threshold = Math.Max(1f, totalGb.Value * 0.02f);
-
-        foreach (var drive in osDrives)
-        {
-            var diff = Math.Abs(totalGb.Value - drive.TotalGb);
-            if (diff <= threshold && diff < bestDiff)
-            {
-                bestDiff = diff;
-                best = drive;
-            }
-        }
-
-        return best;
     }
 
     static string? BuildRamSummary(int? load, float? used, float? total)
@@ -823,16 +690,6 @@ sealed class StorageMetrics
     public float? FreeGb { get; set; }
     public float? TotalGb { get; set; }
     public int? UsedPercent { get; set; }
-}
-
-// Snapshot of OS drive usage for fallback matching.
-sealed class OsDriveSnapshot
-{
-    public string Name { get; set; } = string.Empty;
-    public string Label { get; set; } = string.Empty;
-    public float TotalGb { get; set; }
-    public float FreeGb { get; set; }
-    public float UsedGb { get; set; }
 }
 
 // Network throughput metrics payload.

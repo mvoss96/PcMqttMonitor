@@ -10,7 +10,8 @@
       "Bash(cmd /c \"schtasks /Query /TN PcMqttMonitor /V /FO LIST\")",
       "Bash(cmd /c \"schtasks /Query /TN \\\\\"PcMqttMonitor\\\\\" /V /FO LIST 2>&1\")",
       "Bash(cmd /c schtasks /Query /TN PcMqttMonitor /V /FO LIST)",
-      "Bash(powershell -Command \"schtasks /Query /TN 'PcMqttMonitor' /V /FO LIST\")"
+      "Bash(powershell -Command \"schtasks /Query /TN 'PcMqttMonitor' /V /FO LIST\")",
+      "PowerShell(Test-Path \"$env:LOCALAPPDATA\\\\PcMqttMonitor\\\\PcMqttMonitor.exe\")"
     ]
   }
 }

@@ -12,9 +12,8 @@ sealed class MainWindow : Form
     // ── Sensors tab ──────────────────────────────────────────────────────────────
     readonly Panel _sensorsOuter;
 
-    // Built once; on each refresh we only update label text/colors and bar widths.
-    Action<MqttMetrics>? _sensorUpdater;
-    string? _sensorFingerprint; // structural hash — rebuild only when hardware changes
+    // Owner-drawn dashboard — created on first reading, then updated via Invalidate().
+    SensorsView? _sensorsView;
 
     // ── Settings tab ─────────────────────────────────────────────────────────────
     readonly string _configPath;
@@ -29,6 +28,11 @@ sealed class MainWindow : Form
     readonly CheckBox _debugEnabled;
     readonly CheckBox _autoStart;
     readonly List<(CheckBox Box, Action<SensorConfig, bool> Setter)> _sensorBoxes = new();
+
+    // Settings-tab layout freeze (see constructor) — avoids a ~3 s relayout on every show.
+    bool _settingsFrozen;
+    Action? _freezeSettingsLayout;
+    Action? _reflowSettingsLayout;
 
     public MainWindow(string configPath, AppConfig config)
     {
@@ -81,7 +85,7 @@ sealed class MainWindow : Form
         _topic        = new TextBox { Text = config.TopicRoot, Anchor = AnchorStyles.Left | AnchorStyles.Right };
         _interval     = new NumericUpDown { Minimum = 0.5m, Maximum = 3600, Value = (decimal)config.PublishIntervalSeconds, DecimalPlaces = 1, Increment = 0.5m, Anchor = AnchorStyles.Left | AnchorStyles.Right };
         _debugEnabled = new CheckBox { Text = "Enable debug logging", Checked = config.DebugEnabled, AutoSize = true };
-        _autoStart    = new CheckBox { Text = "Start with Windows",   Checked = IsAutoStartEnabled(),  AutoSize = true };
+        _autoStart    = new CheckBox { Text = "Start with Windows",   Checked = false,                 AutoSize = true };
 
         // ── MQTT Broker section ──────────────────────────────────────────────────
         _connStatus = new Label
@@ -125,42 +129,90 @@ sealed class MainWindow : Form
         generalTable.SetColumnSpan(_debugEnabled, 2);
 
         // ── Sensors section ──────────────────────────────────────────────────────
-        var sensorsTable = new TableLayoutPanel
+        // Each group: bold title with a horizontal rule extending to the right,
+        // then checkboxes in a wrapping flow (auto-arrange, no rigid columns).
+        var sensorsContainer = new TableLayoutPanel
         {
-            ColumnCount = 2,
-            AutoSize = true,
+            ColumnCount = 1, AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            Dock = DockStyle.Fill,
-            Padding = Padding.Empty
+            Dock = DockStyle.Top, Padding = Padding.Empty
         };
-        sensorsTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        sensorsTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        sensorsContainer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
-        AddSensorGroup(sensorsTable, "CPU");
-        AddSensorBox(sensorsTable, sensors, "Load",          c => c.CpuLoad,         (c, v) => c.CpuLoad = v);
-        AddSensorBox(sensorsTable, sensors, "Temperature",   c => c.CpuTemp,         (c, v) => c.CpuTemp = v);
-        AddSensorBox(sensorsTable, sensors, "Package power", c => c.CpuPackagePower, (c, v) => c.CpuPackagePower = v);
-        AddSensorBox(sensorsTable, sensors, "Core voltage",  c => c.CpuCoreVoltage,  (c, v) => c.CpuCoreVoltage = v);
+        FlowLayoutPanel AddGroup(string title)
+        {
+            // Title + extending separator on the same row
+            var headerRow = new TableLayoutPanel
+            {
+                ColumnCount = 2, AutoSize = true, Dock = DockStyle.Fill,
+                Margin = new Padding(0, 12, 0, 4), Padding = Padding.Empty
+            };
+            headerRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            headerRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            headerRow.Controls.Add(new Label
+            {
+                Text = title, AutoSize = true,
+                Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
+                ForeColor = Color.FromArgb(60, 60, 60),
+                Margin = new Padding(0, 0, 8, 0)
+            });
+            headerRow.Controls.Add(new Panel
+            {
+                Height = 1, Dock = DockStyle.Fill,
+                BackColor = Color.FromArgb(218, 218, 218),
+                Margin = new Padding(0, 7, 0, 0)
+            });
+            sensorsContainer.Controls.Add(headerRow);
 
-        AddSensorGroup(sensorsTable, "GPU");
-        AddSensorBox(sensorsTable, sensors, "Load",         c => c.GpuLoad,        (c, v) => c.GpuLoad = v);
-        AddSensorBox(sensorsTable, sensors, "Temperature",  c => c.GpuTemp,        (c, v) => c.GpuTemp = v);
-        AddSensorBox(sensorsTable, sensors, "Board power",  c => c.GpuBoardPower,  (c, v) => c.GpuBoardPower = v);
-        AddSensorBox(sensorsTable, sensors, "Fan speed",    c => c.GpuFanSpeed,    (c, v) => c.GpuFanSpeed = v);
-        AddSensorBox(sensorsTable, sensors, "Memory load",  c => c.GpuMemoryLoad,  (c, v) => c.GpuMemoryLoad = v);
-        AddSensorBox(sensorsTable, sensors, "Memory used",  c => c.GpuMemoryUsed,  (c, v) => c.GpuMemoryUsed = v);
-        AddSensorBox(sensorsTable, sensors, "Memory total", c => c.GpuMemoryTotal, (c, v) => c.GpuMemoryTotal = v);
+            var flow = new FlowLayoutPanel
+            {
+                AutoSize = true, Dock = DockStyle.Fill,
+                WrapContents = true, FlowDirection = FlowDirection.LeftToRight,
+                Padding = new Padding(2, 0, 0, 0), Margin = Padding.Empty
+            };
+            sensorsContainer.Controls.Add(flow);
+            return flow;
+        }
 
-        AddSensorGroup(sensorsTable, "RAM");
-        AddSensorBox(sensorsTable, sensors, "Load",  c => c.RamLoad,  (c, v) => c.RamLoad = v);
-        AddSensorBox(sensorsTable, sensors, "Used",  c => c.RamUsed,  (c, v) => c.RamUsed = v);
-        AddSensorBox(sensorsTable, sensors, "Total", c => c.RamTotal, (c, v) => c.RamTotal = v);
+        void AddBox(FlowLayoutPanel flow, string label,
+            Func<SensorConfig, bool> getter, Action<SensorConfig, bool> setter)
+        {
+            var box = new CheckBox
+            {
+                Text = label, Checked = getter(sensors),
+                AutoSize = true, Margin = new Padding(0, 2, 20, 2)
+            };
+            flow.Controls.Add(box);
+            _sensorBoxes.Add((box, setter));
+        }
 
-        AddSensorGroup(sensorsTable, "Other");
-        AddSensorBox(sensorsTable, sensors, "Motherboard",       c => c.MotherboardName,  (c, v) => c.MotherboardName  = v);
-        AddSensorBox(sensorsTable, sensors, "Drives",            c => c.Drives,           (c, v) => c.Drives           = v);
-        AddSensorBox(sensorsTable, sensors, "Network Upload",    c => c.NetworkUpload,    (c, v) => c.NetworkUpload    = v);
-        AddSensorBox(sensorsTable, sensors, "Network Download",  c => c.NetworkDownload,  (c, v) => c.NetworkDownload  = v);
+        var cpuFlow = AddGroup("CPU");
+        AddBox(cpuFlow, "Load",          c => c.CpuLoad,         (c, v) => c.CpuLoad = v);
+        AddBox(cpuFlow, "Temperature",   c => c.CpuTemp,         (c, v) => c.CpuTemp = v);
+        AddBox(cpuFlow, "Package Power", c => c.CpuPackagePower, (c, v) => c.CpuPackagePower = v);
+        AddBox(cpuFlow, "Core Voltage",  c => c.CpuCoreVoltage,  (c, v) => c.CpuCoreVoltage = v);
+
+        var gpuFlow = AddGroup("GPU");
+        AddBox(gpuFlow, "Load",         c => c.GpuLoad,        (c, v) => c.GpuLoad = v);
+        AddBox(gpuFlow, "Temperature",  c => c.GpuTemp,        (c, v) => c.GpuTemp = v);
+        AddBox(gpuFlow, "Board Power",  c => c.GpuBoardPower,  (c, v) => c.GpuBoardPower = v);
+        AddBox(gpuFlow, "Fan Speed",    c => c.GpuFanSpeed,    (c, v) => c.GpuFanSpeed = v);
+        AddBox(gpuFlow, "Memory Load",  c => c.GpuMemoryLoad,  (c, v) => c.GpuMemoryLoad = v);
+        AddBox(gpuFlow, "Memory Used",  c => c.GpuMemoryUsed,  (c, v) => c.GpuMemoryUsed = v);
+        AddBox(gpuFlow, "Memory Total", c => c.GpuMemoryTotal, (c, v) => c.GpuMemoryTotal = v);
+
+        var ramFlow = AddGroup("RAM");
+        AddBox(ramFlow, "Load",  c => c.RamLoad,  (c, v) => c.RamLoad = v);
+        AddBox(ramFlow, "Used",  c => c.RamUsed,  (c, v) => c.RamUsed = v);
+        AddBox(ramFlow, "Total", c => c.RamTotal, (c, v) => c.RamTotal = v);
+
+        var netFlow = AddGroup("Network");
+        AddBox(netFlow, "Upload",   c => c.NetworkUpload,   (c, v) => c.NetworkUpload = v);
+        AddBox(netFlow, "Download", c => c.NetworkDownload, (c, v) => c.NetworkDownload = v);
+
+        var otherFlow = AddGroup("Other");
+        AddBox(otherFlow, "Motherboard", c => c.MotherboardName, (c, v) => c.MotherboardName = v);
+        AddBox(otherFlow, "Drives",      c => c.Drives,          (c, v) => c.Drives = v);
 
         // ── Outer layout ─────────────────────────────────────────────────────────
         var settingsMain = new TableLayoutPanel
@@ -180,7 +232,7 @@ sealed class MainWindow : Form
         settingsMain.Controls.Add(generalTable);
         settingsMain.Controls.Add(MakeSectionHeader("Sensors to publish"));
         settingsMain.Controls.Add(MakeSeparator());
-        settingsMain.Controls.Add(sensorsTable);
+        settingsMain.Controls.Add(sensorsContainer);
 
         var saveBtn  = new Button { Text = "Save", Width = 75 };
         var closeBtn = new Button { Text = "Close", Width = 75 };
@@ -204,8 +256,69 @@ sealed class MainWindow : Form
         settingsPage.Controls.Add(settingsScroll);
         _tabs.TabPages.Add(settingsPage);
 
+        // The Settings tab is built once and never changes structure, yet every time it
+        // becomes visible WinForms runs ~30 expensive layout passes over the deeply nested
+        // AutoSize TableLayoutPanels (~90 ms each → a ~3 s freeze on every switch).  Fix:
+        // let it lay out ONCE, then keep its layout permanently suspended so subsequent
+        // shows skip the cascade.  Width re-flow on window resize is handled in OnResize.
+        _freezeSettingsLayout = () =>
+        {
+            if (_settingsFrozen) return;
+            _settingsFrozen = true;
+            settingsMain.SuspendLayout();
+            settingsScroll.SuspendLayout();
+        };
+        _reflowSettingsLayout = () =>
+        {
+            if (!_settingsFrozen) return;
+            // One layout pass at the new width, then re-freeze.
+            settingsMain.ResumeLayout(true);
+            settingsScroll.ResumeLayout(true);
+            settingsMain.SuspendLayout();
+            settingsScroll.SuspendLayout();
+        };
+
+        _tabs.Selected += (_, e) =>
+        {
+            // Returning to the sensors tab: apply the most recent reading right away.
+            if (e.TabPageIndex == 0 && _lastMetrics != null)
+            {
+                try { RefreshSensors(_lastMetrics); } catch { }
+            }
+            // First time the Settings tab is shown it lays out fully; freeze it afterward
+            // so every later switch is instant.
+            else if (e.TabPageIndex == 1 && !_settingsFrozen)
+            {
+                BeginInvoke(() => _freezeSettingsLayout());
+            }
+        };
+
         // Force handle creation so BeginInvoke works before the window is first shown.
         _ = Handle;
+
+        // TabControl creates child handles lazily (only for the selected tab).
+        // Pre-create the Settings tab controls up front.
+        settingsPage.CreateControl();
+
+        // Pre-warm the Settings layout while the window is still hidden, so even the FIRST
+        // user-initiated open is instant.  We lay it out once now and freeze it; later shows
+        // skip the expensive ~30-pass cascade entirely.
+        BeginInvoke(() =>
+        {
+            if (_settingsFrozen || Visible) return;   // user already opened it — leave it alone
+            _tabs.SelectedIndex = 1;
+            settingsScroll.PerformLayout();
+            _freezeSettingsLayout();
+            _tabs.SelectedIndex = 0;                  // Sensors is the default tab
+        });
+
+        // Check autostart state off the UI thread — schtasks.exe can take 1-2 seconds.
+        Task.Run(() => IsAutoStartEnabled())
+            .ContinueWith(t =>
+            {
+                if (!t.IsFaulted && !IsDisposed)
+                    BeginInvoke(() => _autoStart.Checked = t.Result);
+            });
     }
 
     // ── Public API ────────────────────────────────────────────────────────────────
@@ -230,16 +343,13 @@ sealed class MainWindow : Form
     {
         _lastMetrics = m;
         if (!IsHandleCreated) return;
-        BeginInvoke(() => RefreshSensors(m));
-    }
-
-    public void UpdateMetrics(MqttMetrics m)
-    {
-        if (!IsHandleCreated) return;
+        // Only touch the sensor UI when it's actually visible. While the window is
+        // hidden or the Settings tab is showing, updating it just burns the UI thread.
+        if (!Visible || _tabs.SelectedIndex != 0) return;
         BeginInvoke(() =>
         {
-            if (Visible && _tabs.SelectedIndex == 0)
-                RefreshSensors(m);
+            try { RefreshSensors(m); }
+            catch (Exception ex) { AppLog.Write($"[UI] RefreshSensors failed: {ex}"); }
         });
     }
 
@@ -248,6 +358,16 @@ sealed class MainWindow : Form
         base.OnShown(e);
         if (_tabs.SelectedIndex == 0 && _lastMetrics != null)
             RefreshSensors(_lastMetrics);
+        // The pre-warm laid Settings out at the hidden design width; re-flow once now
+        // that we know the real shown width so it's correct.
+        _reflowSettingsLayout?.Invoke();
+    }
+
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        // The settings layout is normally frozen; re-flow it once at the new width.
+        _reflowSettingsLayout?.Invoke();
     }
 
     protected override void OnFormClosing(FormClosingEventArgs e)
@@ -263,24 +383,148 @@ sealed class MainWindow : Form
 
     // ── Sensors UI ────────────────────────────────────────────────────────────────
 
-    // Custom-drawn, double-buffered progress bar — avoids child-panel resize flicker.
-    sealed class ProgressPanel : Panel
+    // A single owner-drawn dashboard control.  Replaces the old tree of dozens of nested
+    // AutoSize TableLayoutPanels + Labels, whose layout engine made every per-second update
+    // and tab switch cost hundreds of milliseconds.  Here a refresh is just: copy values,
+    // call Invalidate() — one fast paint, no layout, no flicker.
+    sealed class SensorsView : Control
     {
-        int _percent;
-        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
-        public int Percent
+        // Geometry — mirrors the old TableLayoutPanel column widths / row heights.
+        const int LabelW     = 120;
+        const int ValueW     = 115;
+        const int RowH       = 26;
+        const int HeaderH    = 30;
+        const int SepH       = 9;
+        const int SectionGap = 20;
+        const int BarVPad    = 9;
+
+        static readonly Font  HeaderFont = new("Segoe UI", 9.5f, FontStyle.Bold);
+        static readonly Color HeaderColor = Color.FromArgb(26, 26, 26);
+        static readonly Color LabelColor  = Color.FromArgb(96, 96, 96);
+        static readonly Color SepColor    = Color.FromArgb(220, 220, 220);
+        static readonly Color BarBgColor  = Color.FromArgb(224, 224, 224);
+        static readonly Color BarFgColor  = Color.FromArgb(0, 120, 212);
+
+        sealed class Row
         {
-            get => _percent;
-            set { _percent = Math.Clamp(value, 0, 100); Invalidate(); }
+            public readonly string Label;
+            public readonly bool   HasBar;
+            public readonly Func<MqttMetrics, (int? Pct, string? Value, Color Color)> Get;
+            public int?   Pct;
+            public string Value = "—";
+            public Color  Color = SystemColors.ControlText;
+            public Row(RowDef d) { Label = d.Label; HasBar = d.HasBar; Get = d.GetData; }
         }
-        public ProgressPanel() { DoubleBuffered = true; }
+        sealed class Section
+        {
+            public readonly string  Title;
+            public readonly string? Subtitle;
+            public readonly List<Row> Rows;
+            public Section(string title, string? subtitle, List<Row> rows)
+                { Title = title; Subtitle = subtitle; Rows = rows; }
+        }
+
+        List<Section> _sections = new();
+        string? _fingerprint;
+
+        public SensorsView()
+        {
+            SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint
+                   | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
+            BackColor = SystemColors.Window;
+        }
+
+        public void SetMetrics(MqttMetrics m)
+        {
+            var fp = MakeFingerprint(m);
+            if (_fingerprint != fp)
+                Rebuild(m, fp);
+            else
+                foreach (var s in _sections)
+                    foreach (var r in s.Rows)
+                    {
+                        var (p, v, c) = r.Get(m);
+                        r.Pct = p; r.Value = v ?? "—"; r.Color = c;
+                    }
+            Invalidate();
+        }
+
+        void Rebuild(MqttMetrics m, string fp)
+        {
+            _sections = new List<Section>();
+            void Add(string title, string? sub, IReadOnlyList<RowDef> defs)
+                => _sections.Add(new Section(title, sub, defs.Select(d => new Row(d)).ToList()));
+
+            if (m.Cpu     != null)    Add("CPU",     m.Cpu.Name, CpuRowDefs());
+            if (m.Gpu     != null)    Add("GPU",     m.Gpu.Name, GpuRowDefs());
+            if (m.Ram     != null)    Add("RAM",     null,        RamRowDefs());
+            if (m.Drives?.Count > 0)  Add("Drives",  null,        DriveRowDefs(m.Drives));
+            if (m.Network != null)    Add("Network", null,        NetworkRowDefs());
+
+            _fingerprint = fp;
+            foreach (var s in _sections)
+                foreach (var r in s.Rows)
+                {
+                    var (p, v, c) = r.Get(m);
+                    r.Pct = p; r.Value = v ?? "—"; r.Color = c;
+                }
+            Height = ContentHeight();   // so the parent AutoScroll panel can scroll us
+        }
+
+        int ContentHeight()
+        {
+            int h = 0;
+            foreach (var s in _sections)
+                h += HeaderH + SepH + s.Rows.Count * RowH + SectionGap;
+            return h;
+        }
+
         protected override void OnPaint(PaintEventArgs e)
         {
-            e.Graphics.Clear(Color.FromArgb(224, 224, 224));
-            if (_percent > 0)
-                e.Graphics.FillRectangle(
-                    new SolidBrush(Color.FromArgb(0, 120, 212)),
-                    0, 0, Width * _percent / 100, Height);
+            var g = e.Graphics;
+            g.Clear(BackColor);
+            int w = Width, y = 0;
+
+            const TextFormatFlags leftMid  = TextFormatFlags.Left  | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis;
+            const TextFormatFlags rightMid = TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis;
+            const TextFormatFlags botLeft  = TextFormatFlags.Left  | TextFormatFlags.Bottom         | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis;
+
+            foreach (var s in _sections)
+            {
+                var headerText = s.Subtitle != null ? $"{s.Title}  ·  {s.Subtitle}" : s.Title;
+                TextRenderer.DrawText(g, headerText, HeaderFont,
+                    new Rectangle(0, y, w, HeaderH - 3), HeaderColor, botLeft);
+                y += HeaderH;
+
+                using (var sep = new SolidBrush(SepColor))
+                    g.FillRectangle(sep, 0, y, w, 2);
+                y += SepH;
+
+                foreach (var r in s.Rows)
+                {
+                    TextRenderer.DrawText(g, r.Label, Font,
+                        new Rectangle(0, y, LabelW - 8, RowH), LabelColor, leftMid);
+
+                    if (r.HasBar)
+                    {
+                        int barX = LabelW;
+                        int barW = Math.Max(0, w - LabelW - ValueW);
+                        int barY = y + BarVPad;
+                        int barH = RowH - BarVPad * 2;
+                        using (var bg = new SolidBrush(BarBgColor))
+                            g.FillRectangle(bg, barX, barY, barW, barH);
+                        int pct = Math.Clamp(r.Pct ?? 0, 0, 100);
+                        if (pct > 0)
+                            using (var fg = new SolidBrush(BarFgColor))
+                                g.FillRectangle(fg, barX, barY, barW * pct / 100, barH);
+                    }
+
+                    TextRenderer.DrawText(g, r.Value, Font,
+                        new Rectangle(w - ValueW, y, ValueW, RowH), r.Color, rightMid);
+                    y += RowH;
+                }
+                y += SectionGap;
+            }
         }
     }
 
@@ -295,171 +539,37 @@ sealed class MainWindow : Form
             Dock      = DockStyle.Fill,
             TextAlign = ContentAlignment.MiddleCenter,
         };
-        foreach (Control c in _sensorsOuter.Controls) c.Dispose();
-        _sensorsOuter.Controls.Clear();
-        _sensorsOuter.Controls.Add(lbl);
+        ReplaceSensorsContent(lbl);
+    }
+
+    // Safely swap the single child of _sensorsOuter.
+    // Control.Dispose() removes the control from its parent's Controls collection —
+    // iterating while disposing would throw InvalidOperationException (swallowed by BeginInvoke).
+    void ReplaceSensorsContent(Control newContent)
+    {
+        _sensorsOuter.SuspendLayout();
+        var old = _sensorsOuter.Controls.Cast<Control>().ToArray();
+        _sensorsOuter.Controls.Clear();          // remove all before disposing
+        _sensorsOuter.Controls.Add(newContent);
+        _sensorsOuter.ResumeLayout();
+        foreach (var c in old) c.Dispose();      // safe: already removed from collection
     }
 
     // Which top-level sections are present — used to detect structural changes.
     static string MakeFingerprint(MqttMetrics m) =>
         $"{m.Cpu != null}|{m.Gpu != null}|{m.Ram != null}|{m.Drives?.Count ?? 0}|{m.Network != null}";
 
-    // Called every refresh interval.  Only rebuilds controls when hardware
-    // appears/disappears; otherwise updates labels and bar widths in-place.
+    // Called every refresh interval.  Owner-drawn — just hand the new reading to the
+    // dashboard, which copies values and invalidates (one fast paint, no layout).
     void RefreshSensors(MqttMetrics m)
     {
-        var fp = MakeFingerprint(m);
-        if (_sensorUpdater == null || fp != _sensorFingerprint)
-            BuildSensorView(m, fp);   // first run or hardware changed
-        else
-            _sensorUpdater(m);        // fast path — no control creation
-    }
-
-    // Builds the full control tree and captures per-row update delegates.
-    void BuildSensorView(MqttMetrics m, string fp)
-    {
-        var updaters = new List<Action<MqttMetrics>>();
-
-        var main = new TableLayoutPanel
+        if (_sensorsView == null)
         {
-            ColumnCount = 1,
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            Dock = DockStyle.Top,
-            Padding = Padding.Empty,
-            Margin = Padding.Empty
-        };
-        main.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-
-        if (m.Cpu    != null) main.Controls.Add(BuildSection("CPU",    m.Cpu.Name, CpuRowDefs(),           updaters));
-        if (m.Gpu    != null) main.Controls.Add(BuildSection("GPU",    m.Gpu.Name, GpuRowDefs(),           updaters));
-        if (m.Ram    != null) main.Controls.Add(BuildSection("RAM",    null,        RamRowDefs(),           updaters));
-        if (m.Drives?.Count > 0) main.Controls.Add(BuildSection("Drives",  null, DriveRowDefs(m.Drives), updaters));
-        if (m.Network != null)   main.Controls.Add(BuildSection("Network", null, NetworkRowDefs(),        updaters));
-
-        main.Width = _sensorsOuter.ClientSize.Width - _sensorsOuter.Padding.Horizontal;
-
-        _sensorsOuter.SuspendLayout();
-        foreach (Control c in _sensorsOuter.Controls) c.Dispose();
-        _sensorsOuter.Controls.Clear();
-        _sensorsOuter.Controls.Add(main);
-        _sensorsOuter.ResumeLayout();
-
-        _sensorFingerprint = fp;
-        _sensorUpdater = metrics => { foreach (var u in updaters) u(metrics); };
-
-        // Populate initial values immediately after building.
-        _sensorUpdater(m);
-    }
-
-    // Builds one section (e.g. "CPU") and registers per-row updaters.
-    // A row def that says HasBar=true gets a flat progress bar in the middle column.
-    static TableLayoutPanel BuildSection(string category, string? subtitle,
-        IReadOnlyList<RowDef> rowDefs, List<Action<MqttMetrics>> updaters)
-    {
-        var tl = new TableLayoutPanel
-        {
-            ColumnCount = 3,
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            Dock = DockStyle.Fill,
-            Margin = new Padding(0, 0, 0, 20),
-            Padding = Padding.Empty
-        };
-        tl.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120)); // label
-        tl.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,  100)); // bar / spacer
-        tl.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 115)); // value
-
-        // Header
-        var headerText = subtitle != null ? $"{category}  ·  {subtitle}" : category;
-        var header = new Label
-        {
-            Text = headerText,
-            Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
-            ForeColor = Color.FromArgb(26, 26, 26),
-            AutoSize = false,
-            Dock = DockStyle.Fill,
-            TextAlign = ContentAlignment.BottomLeft,
-            Margin = Padding.Empty,
-            Padding = new Padding(0, 0, 0, 3)
-        };
-        tl.Controls.Add(header);
-        tl.SetColumnSpan(header, 3);
-        tl.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
-
-        // Separator
-        var sep = new Panel { BackColor = Color.FromArgb(220, 220, 220), Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 6) };
-        tl.Controls.Add(sep);
-        tl.SetColumnSpan(sep, 3);
-        tl.RowStyles.Add(new RowStyle(SizeType.Absolute, 9));
-
-        // One row per metric
-        foreach (var def in rowDefs)
-        {
-            tl.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
-
-            tl.Controls.Add(new Label
-            {
-                Text = def.Label,
-                ForeColor = Color.FromArgb(96, 96, 96),
-                TextAlign = ContentAlignment.MiddleLeft,
-                AutoSize = false,
-                Dock = DockStyle.Fill,
-                Margin = new Padding(0, 0, 8, 2)
-            });
-
-            // Bar (middle column) — ProgressPanel is custom-drawn and double-buffered,
-            // so updating Percent just calls Invalidate() with no child-resize flicker.
-            if (def.HasBar)
-            {
-                var bar = new ProgressPanel { Dock = DockStyle.Fill, Margin = new Padding(0, 9, 0, 9) };
-                tl.Controls.Add(bar);
-
-                var capturedBar = bar;
-                var capturedDef = def;
-                var valueLbl    = AddValueLabel(tl);
-
-                updaters.Add(metrics =>
-                {
-                    var (pct, val, col) = capturedDef.GetData(metrics);
-                    capturedBar.Percent = pct ?? 0;
-                    valueLbl.Text       = val ?? "—";
-                    valueLbl.ForeColor  = col;
-                });
-            }
-            else
-            {
-                tl.Controls.Add(new Panel()); // empty spacer
-
-                var capturedDef = def;
-                var valueLbl    = AddValueLabel(tl);
-
-                updaters.Add(metrics =>
-                {
-                    var (_, val, col) = capturedDef.GetData(metrics);
-                    valueLbl.Text      = val ?? "—";
-                    valueLbl.ForeColor = col;
-                });
-            }
+            _sensorsView = new SensorsView { Dock = DockStyle.Top };
+            _sensorsView.Width = _sensorsOuter.ClientSize.Width - _sensorsOuter.Padding.Horizontal;
+            ReplaceSensorsContent(_sensorsView);
         }
-
-        return tl;
-    }
-
-    // Adds and returns the right-aligned value label for a row.
-    static Label AddValueLabel(TableLayoutPanel tl)
-    {
-        var lbl = new Label
-        {
-            Text = "—",
-            ForeColor = SystemColors.ControlText,
-            TextAlign = ContentAlignment.MiddleRight,
-            AutoSize = false,
-            Dock = DockStyle.Fill,
-            Margin = new Padding(6, 0, 0, 2)
-        };
-        tl.Controls.Add(lbl);
-        return lbl;
+        _sensorsView.SetMetrics(m);
     }
 
     // Temperature threshold colouring: green → amber → red.
@@ -613,29 +723,6 @@ sealed class MainWindow : Form
             Margin = new Padding(0, 0, 8, 3)
         });
         table.Controls.Add(control);
-    }
-
-    // Adds a full-width italic sub-heading row to the sensor checkbox grid.
-    static void AddSensorGroup(TableLayoutPanel table, string title)
-    {
-        var lbl = new Label
-        {
-            Text = title,
-            Font = new Font("Segoe UI", 8f, FontStyle.Bold),
-            ForeColor = Color.FromArgb(80, 80, 80),
-            AutoSize = true,
-            Margin = new Padding(2, 8, 0, 2)
-        };
-        table.Controls.Add(lbl);
-        table.SetColumnSpan(lbl, 2);
-    }
-
-    void AddSensorBox(TableLayoutPanel table, SensorConfig sensors, string label,
-        Func<SensorConfig, bool> getter, Action<SensorConfig, bool> setter)
-    {
-        var box = new CheckBox { Text = label, Checked = getter(sensors), AutoSize = true, Margin = new Padding(4, 1, 4, 1) };
-        table.Controls.Add(box);
-        _sensorBoxes.Add((box, setter));
     }
 
     // Called from TrayApp (any thread) to update the status dot in the Settings tab.
