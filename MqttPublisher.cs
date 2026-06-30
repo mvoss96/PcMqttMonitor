@@ -10,14 +10,13 @@ static class MqttPublisher
 {
     public static async Task PublishAsync(
         IMqttClient mqttClient,
-        MqttClientOptions mqttOptions,
         string topicRoot,
         string host,
         MqttMetrics metrics,
         CancellationToken cancellationToken)
     {
-        await EnsureConnectedAsync(mqttClient, mqttOptions, cancellationToken);
-
+        // The caller (RunMqttLoopAsync) owns connection state — it only calls us when
+        // the client is connected, and handles connect/reconnect itself each cycle.
         var baseTopic = $"{topicRoot}/{host}";
         var messages = new List<(string topic, string payload)>
         {
@@ -106,27 +105,5 @@ static class MqttPublisher
     {
         if (string.IsNullOrEmpty(value)) return;
         messages.Add(($"{baseTopic}/{subTopic}", value));
-    }
-
-    public static async Task EnsureConnectedAsync(
-        IMqttClient mqttClient,
-        MqttClientOptions mqttOptions,
-        CancellationToken cancellationToken)
-    {
-        if (mqttClient.IsConnected) return;
-
-        for (int attempt = 1; attempt <= 5; attempt++)
-        {
-            try
-            {
-                await mqttClient.ConnectAsync(mqttOptions, cancellationToken);
-                return;
-            }
-            catch (OperationCanceledException) { throw; }
-            catch when (attempt < 5)
-            {
-                await Task.Delay(TimeSpan.FromSeconds(attempt * 2), cancellationToken);
-            }
-        }
     }
 }

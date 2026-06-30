@@ -11,7 +11,11 @@
       "Bash(cmd /c \"schtasks /Query /TN \\\\\"PcMqttMonitor\\\\\" /V /FO LIST 2>&1\")",
       "Bash(cmd /c schtasks /Query /TN PcMqttMonitor /V /FO LIST)",
       "Bash(powershell -Command \"schtasks /Query /TN 'PcMqttMonitor' /V /FO LIST\")",
-      "PowerShell(Test-Path \"$env:LOCALAPPDATA\\\\PcMqttMonitor\\\\PcMqttMonitor.exe\")"
+      "PowerShell(Test-Path \"$env:LOCALAPPDATA\\\\PcMqttMonitor\\\\PcMqttMonitor.exe\")",
+      "Bash(ls -la \"C:/Repos/local/marioAI/detectors/\" \"C:/Repos/local/marioAI/recordings/\")",
+      "Read(//c/Repos/local/marioAI/**)",
+      "Bash(.venv/Scripts/python.exe \"C:/Users/mvoss/AppData/Local/Temp/claude/C--Repos-git-PcMqttMonitor/c8e93be3-9177-4890-a9f5-ff62748556a5/scratchpad/closeup.py\")",
+      "Bash(.venv/Scripts/python.exe -)"
     ]
   }
 }

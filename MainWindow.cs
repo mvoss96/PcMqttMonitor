@@ -34,6 +34,10 @@ sealed class MainWindow : Form
     Action? _freezeSettingsLayout;
     Action? _reflowSettingsLayout;
 
+    // True while the window is shown AND the Sensors tab is active.  Maintained on the UI
+    // thread and read from the background thread, so it must not touch live control state.
+    volatile bool _sensorsTabActive;
+
     public MainWindow(string configPath, AppConfig config)
     {
         _configPath = configPath;
@@ -280,6 +284,7 @@ sealed class MainWindow : Form
 
         _tabs.Selected += (_, e) =>
         {
+            UpdateSensorsTabActive();
             // Returning to the sensors tab: apply the most recent reading right away.
             if (e.TabPageIndex == 0 && _lastMetrics != null)
             {
@@ -343,9 +348,10 @@ sealed class MainWindow : Form
     {
         _lastMetrics = m;
         if (!IsHandleCreated) return;
-        // Only touch the sensor UI when it's actually visible. While the window is
-        // hidden or the Settings tab is showing, updating it just burns the UI thread.
-        if (!Visible || _tabs.SelectedIndex != 0) return;
+        // Only touch the sensor UI when it's actually visible. While the window is hidden
+        // or the Settings tab is showing, updating it just burns the UI thread.  We read a
+        // plain volatile flag here — never live control state — because we're off the UI thread.
+        if (!_sensorsTabActive) return;
         BeginInvoke(() =>
         {
             try { RefreshSensors(m); }
@@ -353,9 +359,19 @@ sealed class MainWindow : Form
         });
     }
 
+    // Keep the background-thread-readable flag in sync.  Must be called on the UI thread.
+    void UpdateSensorsTabActive() => _sensorsTabActive = Visible && _tabs.SelectedIndex == 0;
+
+    protected override void OnVisibleChanged(EventArgs e)
+    {
+        base.OnVisibleChanged(e);
+        UpdateSensorsTabActive();
+    }
+
     protected override void OnShown(EventArgs e)
     {
         base.OnShown(e);
+        UpdateSensorsTabActive();
         if (_tabs.SelectedIndex == 0 && _lastMetrics != null)
             RefreshSensors(_lastMetrics);
         // The pre-warm laid Settings out at the hidden design width; re-flow once now
@@ -401,9 +417,11 @@ sealed class MainWindow : Form
         static readonly Font  HeaderFont = new("Segoe UI", 9.5f, FontStyle.Bold);
         static readonly Color HeaderColor = Color.FromArgb(26, 26, 26);
         static readonly Color LabelColor  = Color.FromArgb(96, 96, 96);
-        static readonly Color SepColor    = Color.FromArgb(220, 220, 220);
-        static readonly Color BarBgColor  = Color.FromArgb(224, 224, 224);
-        static readonly Color BarFgColor  = Color.FromArgb(0, 120, 212);
+
+        // Brushes are constant — cache them rather than allocating per row per paint.
+        static readonly SolidBrush SepBrush   = new(Color.FromArgb(220, 220, 220));
+        static readonly SolidBrush BarBgBrush = new(Color.FromArgb(224, 224, 224));
+        static readonly SolidBrush BarFgBrush = new(Color.FromArgb(0, 120, 212));
 
         sealed class Row
         {
@@ -496,8 +514,7 @@ sealed class MainWindow : Form
                     new Rectangle(0, y, w, HeaderH - 3), HeaderColor, botLeft);
                 y += HeaderH;
 
-                using (var sep = new SolidBrush(SepColor))
-                    g.FillRectangle(sep, 0, y, w, 2);
+                g.FillRectangle(SepBrush, 0, y, w, 2);
                 y += SepH;
 
                 foreach (var r in s.Rows)
@@ -511,12 +528,10 @@ sealed class MainWindow : Form
                         int barW = Math.Max(0, w - LabelW - ValueW);
                         int barY = y + BarVPad;
                         int barH = RowH - BarVPad * 2;
-                        using (var bg = new SolidBrush(BarBgColor))
-                            g.FillRectangle(bg, barX, barY, barW, barH);
+                        g.FillRectangle(BarBgBrush, barX, barY, barW, barH);
                         int pct = Math.Clamp(r.Pct ?? 0, 0, 100);
                         if (pct > 0)
-                            using (var fg = new SolidBrush(BarFgColor))
-                                g.FillRectangle(fg, barX, barY, barW * pct / 100, barH);
+                            g.FillRectangle(BarFgBrush, barX, barY, barW * pct / 100, barH);
                     }
 
                     TextRenderer.DrawText(g, r.Value, Font,
@@ -758,7 +773,9 @@ sealed class MainWindow : Form
         File.WriteAllText(_configPath,
             JsonSerializer.Serialize(_config, new JsonSerializerOptions { WriteIndented = true }));
 
-        ApplyAutoStart(_autoStart.Checked);
+        // schtasks.exe takes 1-2 s — run it off the UI thread so Save doesn't freeze.
+        var enableAutoStart = _autoStart.Checked;
+        Task.Run(() => ApplyAutoStart(enableAutoStart));
 
         MessageBox.Show("Settings applied.",
             "Settings Saved", MessageBoxButtons.OK, MessageBoxIcon.Information);

@@ -187,7 +187,6 @@ class Program
                         {
                             await MqttPublisher.PublishAsync(
                                 mqttClient,
-                                mqttOptions,
                                 config.TopicRoot,
                                 Environment.MachineName.ToLowerInvariant(),
                                 snapshot.Metrics,
