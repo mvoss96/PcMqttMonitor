@@ -11,10 +11,20 @@ Use minor version bumps (`1.x.0`) for larger feature additions.
 
 ## Build & Deploy
 
+Deployment goes through the Inno Setup installer (install location: `C:\Program Files\PcMqttMonitor`):
+
 ```powershell
-# Publish self-contained single-file exe to the install location
-dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o "$env:LOCALAPPDATA\PcMqttMonitor"
+# 1. Publish self-contained single-file exe into publish\
+dotnet publish PcMqttMonitor.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
+
+# 2. Compile the installer
+& "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" installer.iss
+
+# 3. Run installer-output\PcMqttMonitorSetup-<version>.exe (UAC prompt; kills the
+#    running app automatically, replaces the exe, leaves config.json untouched)
 ```
+
+Do not publish directly into the install directory — writing to Program Files needs an elevated shell; the installer handles that.
 
 ## Project Structure
 
@@ -31,7 +41,9 @@ dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=
 
 ## Key Decisions
 
-- **Config location**: next to the exe (`AppContext.BaseDirectory`). Survives `dotnet build`; only lost on `dotnet clean`.
+- **Config location**: next to the exe (`AppContext.BaseDirectory`) — also under Program Files, which works because the app always runs elevated. Survives `dotnet build` and installer upgrades; only lost on `dotnet clean`.
+- **Install location**: `C:\Program Files\PcMqttMonitor` (`{autopf}`, `UsePreviousAppDir=no`). Not LocalAppData — an exe that runs elevated must not be writable by non-admin processes.
+- **Elevation is genuinely required**: without admin, LHM cannot load its Ring0 driver — CPU temp and package power silently read 0 and voltages show VID defaults instead of measurements (verified empirically). GPU (NVAPI), RAM, drives and network work unelevated, but CPU metrics are core functionality.
 - **Autostart**: Windows Task Scheduler (`schtasks /RL HIGHEST /SC ONLOGON`) — not the registry Run key, because `requireAdministrator` apps are silently skipped there.
 - **Settings apply**: MQTT settings require "Test & Apply" which restarts the app (`Application.Restart()`). General/sensor settings use a regular Save.
 - **Hardware crashes**: LibreHardwareMonitor background threads can crash on driver updates or at boot. The `AppDomain.UnhandledException` handler detects these and auto-restarts. All crashes are logged to `crash.log` next to the exe.

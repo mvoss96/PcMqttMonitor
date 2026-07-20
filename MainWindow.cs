@@ -571,8 +571,10 @@ sealed class MainWindow : Form
     }
 
     // Which top-level sections are present — used to detect structural changes.
+    // Drive NAMES (not just the count) must be part of the fingerprint: swapping one
+    // USB drive for another keeps the count identical but needs a row rebuild.
     static string MakeFingerprint(MqttMetrics m) =>
-        $"{m.Cpu != null}|{m.Gpu != null}|{m.Ram != null}|{m.Drives?.Count ?? 0}|{m.Network != null}";
+        $"{m.Cpu != null}|{m.Gpu != null}|{m.Ram != null}|{string.Join(",", m.Drives?.Select(d => d.Name) ?? [])}|{m.Network != null}";
 
     // Called every refresh interval.  Owner-drawn — just hand the new reading to the
     // dashboard, which copies values and invalidates (one fast paint, no layout).
@@ -783,7 +785,7 @@ sealed class MainWindow : Form
 
     // ── Test & Apply (MQTT Broker settings) ──────────────────────────────────────
     // Tests the connection with the entered credentials; on success saves those
-    // fields and signals the loop to reconnect. Settings are NOT saved on failure.
+    // fields and restarts the app. Settings are NOT saved on failure.
 
     // ── Autostart helpers ─────────────────────────────────────────────────────────
     // The app requires elevation (requireAdministrator manifest), so the HKCU\Run

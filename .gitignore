@@ -1,6 +1,8 @@
 # Build outputs
 bin/
 obj/
+publish/
+installer-output/
 
 # Visual Studio / VS Code
 .vs/

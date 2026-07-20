@@ -73,8 +73,9 @@ sealed class SensorService : IDisposable
             ?? FindFirstSensorValue(_gpu, SensorType.Power);
         var rawGpuFan = FindSensorValue(_gpu, SensorType.Fan, "GPU Fan 1")
             ?? FindFirstSensorValue(_gpu, SensorType.Fan);
-        var rawGpuMemLoad = FindSensorValue(_gpu, SensorType.Load, "GPU Memory")
-            ?? FindFirstSensorValue(_gpu, SensorType.Load);
+        // No fallback here: FindFirstSensorValue(Load) would return "GPU Core" load,
+        // which is not the memory load.
+        var rawGpuMemLoad = FindSensorValue(_gpu, SensorType.Load, "GPU Memory");
         var rawGpuMemUsed = FindSensorValue(_gpu, SensorType.SmallData, "GPU Memory Used");
         var rawGpuMemTotal = FindSensorValue(_gpu, SensorType.SmallData, "GPU Memory Total");
 

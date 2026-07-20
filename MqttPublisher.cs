@@ -8,6 +8,12 @@ using MQTTnet.Protocol;
 // Publishes metrics to the configured MQTT broker.
 static class MqttPublisher
 {
+    static readonly JsonSerializerOptions StatusJsonOptions = new()
+    {
+        WriteIndented = false,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
+
     public static async Task PublishAsync(
         IMqttClient mqttClient,
         string topicRoot,
@@ -23,11 +29,7 @@ static class MqttPublisher
             // Full JSON snapshot on a dedicated sub-topic so MQTT clients that
             // auto-expand JSON (e.g. MQTT Explorer) don't create virtual nodes
             // that collide with the real scalar subtopics under the same prefix.
-            ($"{baseTopic}/status", JsonSerializer.Serialize(metrics, new JsonSerializerOptions
-            {
-                WriteIndented = false,
-                DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-            }))
+            ($"{baseTopic}/status", JsonSerializer.Serialize(metrics, StatusJsonOptions))
         };
 
         // Individual subtopics — plain scalar values, easy to consume in HA etc.
@@ -37,7 +39,8 @@ static class MqttPublisher
             AddIfSet(messages, baseTopic, "cpu/load",     c.Load);
             AddIfSet(messages, baseTopic, "cpu/temp",     c.TempC);
             AddIfSet(messages, baseTopic, "cpu/power",    c.PackagePowerW);
-            AddIfSet(messages, baseTopic, "cpu/voltage",  c.CoreVoltageV);
+            // Voltage needs 3 decimals — the default "0.#" would turn 1.225 V into "1.2".
+            AddIfSet(messages, baseTopic, "cpu/voltage",  c.CoreVoltageV, "0.###");
         }
 
         if (metrics.Gpu != null)
@@ -73,6 +76,13 @@ static class MqttPublisher
             }
         }
 
+        if (metrics.Network != null)
+        {
+            var n = metrics.Network;
+            AddIfSet(messages, baseTopic, "net/up",   n.UploadKbps);
+            AddIfSet(messages, baseTopic, "net/down", n.DownloadKbps);
+        }
+
         foreach (var (topic, payload) in messages)
         {
             var message = new MqttApplicationMessageBuilder()
@@ -93,12 +103,12 @@ static class MqttPublisher
         messages.Add(($"{baseTopic}/{subTopic}", value.Value.ToString(CultureInfo.InvariantCulture)));
     }
 
-    static void AddIfSet(List<(string, string)> messages, string baseTopic, string subTopic, float? value)
+    static void AddIfSet(List<(string, string)> messages, string baseTopic, string subTopic, float? value, string format = "0.#")
     {
         if (value == null || float.IsNaN(value.Value) || float.IsInfinity(value.Value)) return;
         // "0.#" (max 1 decimal) keeps output consistent — 2-decimal payloads like "51.88"
         // confuse some MQTT clients and display as {}.
-        messages.Add(($"{baseTopic}/{subTopic}", value.Value.ToString("0.#", CultureInfo.InvariantCulture)));
+        messages.Add(($"{baseTopic}/{subTopic}", value.Value.ToString(format, CultureInfo.InvariantCulture)));
     }
 
     static void AddIfSet(List<(string, string)> messages, string baseTopic, string subTopic, string? value)
