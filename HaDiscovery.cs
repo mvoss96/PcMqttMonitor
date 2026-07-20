@@ -131,6 +131,11 @@ static class HaDiscovery
             if (n.DownloadKbps != null) Sensor("net_down", "Network Download", "net/down", "KiB/s", "data_rate");
         }
 
+        if (m.System is { } s)
+        {
+            if (s.UptimeSec != null) Sensor("uptime", "Uptime", "system/uptime", "s", "duration");
+        }
+
         return cmps;
     }
 }

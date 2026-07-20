@@ -103,6 +103,8 @@ sealed class SensorService : IDisposable
         var netUp   = _config.NetworkUpload   ? rawNetUp   : null;
         var netDown = _config.NetworkDownload ? rawNetDown : null;
 
+        var uptimeSec = _config.Uptime ? (int?)(Environment.TickCount64 / 1000) : null;
+
         var summaryParts = new List<string>();
 
         var cpuSummary = BuildCpuSummary(cpuName, cpuLoad, cpuTemp, cpuPackagePower, cpuCoreVoltage);
@@ -146,7 +148,8 @@ sealed class SensorService : IDisposable
             Ram = BuildRamMetrics(ramLoad, ramUsed, ramTotal),
             Motherboard = BuildMotherboardMetrics(motherboardName),
             Drives = driveMetrics.Count > 0 ? driveMetrics : null,
-            Network = BuildNetworkMetrics(netUp, netDown)
+            Network = BuildNetworkMetrics(netUp, netDown),
+            System = uptimeSec != null ? new SystemMetrics { UptimeSec = uptimeSec } : null
         };
 
         var summary = summaryParts.Count > 0 ? string.Join(" || ", summaryParts) : string.Empty;
@@ -644,6 +647,13 @@ sealed class MqttMetrics
     public MotherboardMetrics? Motherboard { get; set; }
     public List<StorageMetrics>? Drives { get; set; }
     public NetworkMetrics? Network { get; set; }
+    public SystemMetrics? System { get; set; }
+}
+
+// System-level metrics payload.
+sealed class SystemMetrics
+{
+    public int? UptimeSec { get; set; }
 }
 
 // CPU metrics payload.

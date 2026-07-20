@@ -28,6 +28,8 @@ sealed class AppConfig
 {
     public string BrokerHost { get; set; } = string.Empty;
     public int BrokerPort { get; set; } = 1883;
+    // TLS-encrypted connection to the broker (typically port 8883).
+    public bool UseTls { get; set; } = false;
     public string Username { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
     public string TopicRoot { get; set; } = "pc";
@@ -58,6 +60,7 @@ sealed class SensorConfig
     public bool GpuMemoryTotal { get; set; } = true;
     public bool MotherboardName { get; set; } = true;
     public bool Drives { get; set; } = true;
+    public bool Uptime { get; set; } = true;
     public bool NetworkUpload { get; set; } = true;
     public bool NetworkDownload { get; set; } = true;
 }

@@ -101,6 +101,9 @@ static class MqttPublisher
             AddIfSet(messages, baseTopic, "net/down", n.DownloadKbps);
         }
 
+        if (metrics.System != null)
+            AddIfSet(messages, baseTopic, "system/uptime", metrics.System.UptimeSec);
+
         foreach (var (topic, payload) in messages)
         {
             var message = new MqttApplicationMessageBuilder()

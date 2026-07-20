@@ -26,6 +26,7 @@ sealed class MainWindow : Form
     Label? _connStatus;         // live indicator in the Settings tab
     readonly TextBox _host;
     readonly NumericUpDown _port;
+    readonly CheckBox _useTls;
     readonly TextBox _username;
     readonly TextBox _password;
     readonly TextBox _topic;
@@ -124,6 +125,7 @@ sealed class MainWindow : Form
 
         _host         = new TextBox { Text = config.BrokerHost, Anchor = AnchorStyles.Left | AnchorStyles.Right };
         _port         = new NumericUpDown { Minimum = 1, Maximum = 65535, Value = config.BrokerPort, Anchor = AnchorStyles.Left | AnchorStyles.Right };
+        _useTls       = new CheckBox { Text = "Use TLS (typically port 8883)", Checked = config.UseTls, AutoSize = true };
         _username     = new TextBox { Text = config.Username, Anchor = AnchorStyles.Left | AnchorStyles.Right };
         _password     = new TextBox { Text = config.Password, Anchor = AnchorStyles.Left | AnchorStyles.Right, UseSystemPasswordChar = true };
         _topic        = new TextBox { Text = config.TopicRoot, Anchor = AnchorStyles.Left | AnchorStyles.Right };
@@ -145,6 +147,8 @@ sealed class MainWindow : Form
         brokerTable.SetColumnSpan(_connStatus, 2);
         AddRow(brokerTable, "Host",       _host);
         AddRow(brokerTable, "Port",       _port);
+        brokerTable.Controls.Add(_useTls);
+        brokerTable.SetColumnSpan(_useTls, 2);
         AddRow(brokerTable, "Username",   _username);
         AddRow(brokerTable, "Password",   _password);
         AddRow(brokerTable, "Topic root", _topic);
@@ -271,6 +275,7 @@ sealed class MainWindow : Form
         var otherFlow = AddGroup("Other");
         AddBox(otherFlow, "Motherboard", c => c.MotherboardName, (c, v) => c.MotherboardName = v);
         AddBox(otherFlow, "Drives",      c => c.Drives,          (c, v) => c.Drives = v);
+        AddBox(otherFlow, "Uptime",      c => c.Uptime,          (c, v) => c.Uptime = v);
 
         // ── Outer layout ─────────────────────────────────────────────────────────
         var settingsMain = new TableLayoutPanel
@@ -535,6 +540,7 @@ sealed class MainWindow : Form
             if (m.Ram     != null)    Add("RAM",     null,        RamRowDefs());
             if (m.Drives?.Count > 0)  Add("Drives",  null,        DriveRowDefs(m.Drives));
             if (m.Network != null)    Add("Network", null,        NetworkRowDefs());
+            if (m.System  != null)    Add("System",  null,        SystemRowDefs());
 
             _fingerprint = fp;
             foreach (var s in _sections)
@@ -631,7 +637,7 @@ sealed class MainWindow : Form
     // Drive NAMES (not just the count) must be part of the fingerprint: swapping one
     // USB drive for another keeps the count identical but needs a row rebuild.
     static string MakeFingerprint(MqttMetrics m) =>
-        $"{m.Cpu != null}|{m.Gpu != null}|{m.Ram != null}|{string.Join(",", m.Drives?.Select(d => d.Name) ?? [])}|{m.Network != null}";
+        $"{m.Cpu != null}|{m.Gpu != null}|{m.Ram != null}|{string.Join(",", m.Drives?.Select(d => d.Name) ?? [])}|{m.Network != null}|{m.System != null}";
 
     // Called every refresh interval.  Owner-drawn — just hand the new reading to the
     // dashboard, which copies values and invalidates (one fast paint, no layout).
@@ -742,6 +748,21 @@ sealed class MainWindow : Form
         new("Upload",   false, m => NetSpeedRow(m.Network?.UploadKbps)),
         new("Download", false, m => NetSpeedRow(m.Network?.DownloadKbps)),
     ];
+
+    static IReadOnlyList<RowDef> SystemRowDefs() =>
+    [
+        new("Uptime", false, m => UptimeRow(m.System?.UptimeSec)),
+    ];
+
+    static (int?, string?, Color) UptimeRow(int? sec)
+    {
+        if (sec == null) return (null, null, SystemColors.ControlText);
+        var t = TimeSpan.FromSeconds(sec.Value);
+        var text = t.Days  > 0 ? $"{t.Days}d {t.Hours}h {t.Minutes}m"
+                 : t.Hours > 0 ? $"{t.Hours}h {t.Minutes}m"
+                 :               $"{t.Minutes}m {t.Seconds}s";
+        return (null, text, SystemColors.ControlText);
+    }
 
     static (int?, string?, Color) NetSpeedRow(float? kbps)
     {
@@ -916,10 +937,12 @@ sealed class MainWindow : Form
         {
             var factory = new MqttClientFactory();
             using var client = factory.CreateMqttClient();
-            var options = factory.CreateClientOptionsBuilder()
+            var optionsBuilder = factory.CreateClientOptionsBuilder()
                 .WithTcpServer(_host.Text.Trim(), (int)_port.Value)
-                .WithCredentials(_username.Text, _password.Text)
-                .Build();
+                .WithCredentials(_username.Text, _password.Text);
+            if (_useTls.Checked)
+                optionsBuilder = optionsBuilder.WithTlsOptions(o => o.UseTls());
+            var options = optionsBuilder.Build();
 
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             await client.ConnectAsync(options, timeout.Token);
@@ -941,6 +964,7 @@ sealed class MainWindow : Form
         // Connection succeeded — persist the MQTT settings and restart.
         _config.BrokerHost = _host.Text.Trim();
         _config.BrokerPort = (int)_port.Value;
+        _config.UseTls     = _useTls.Checked;
         _config.Username   = _username.Text;
         _config.Password   = _password.Text;
         _config.TopicRoot  = _topic.Text.Trim();

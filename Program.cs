@@ -88,8 +88,9 @@ class Program
     }
 
     // Builds MQTT client options from the current config — called on connect and reconnect.
-    static MQTTnet.MqttClientOptions BuildMqttOptions(MqttClientFactory factory, AppConfig config) =>
-        factory.CreateClientOptionsBuilder()
+    static MQTTnet.MqttClientOptions BuildMqttOptions(MqttClientFactory factory, AppConfig config)
+    {
+        var builder = factory.CreateClientOptionsBuilder()
             .WithTcpServer(config.BrokerHost, config.BrokerPort)
             .WithCredentials(config.Username, config.Password)
             .WithClientId($"pcmqtt-{Environment.MachineName.ToLowerInvariant()}")
@@ -99,8 +100,11 @@ class Program
             .WithWillTopic(MqttPublisher.AvailabilityTopic(config.TopicRoot, Environment.MachineName.ToLowerInvariant()))
             .WithWillPayload("offline")
             .WithWillRetain(true)
-            .WithWillQualityOfServiceLevel(MQTTnet.Protocol.MqttQualityOfServiceLevel.AtLeastOnce)
-            .Build();
+            .WithWillQualityOfServiceLevel(MQTTnet.Protocol.MqttQualityOfServiceLevel.AtLeastOnce);
+        if (config.UseTls)
+            builder = builder.WithTlsOptions(o => o.UseTls());
+        return builder.Build();
+    }
 
     static async Task RunMqttLoopAsync(AppConfig config, TrayApp tray, CancellationToken cancellationToken)
     {
