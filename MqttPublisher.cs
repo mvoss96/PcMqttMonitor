@@ -14,6 +14,24 @@ static class MqttPublisher
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
+    // Retained "online"/"offline" marker. The LWT (see BuildMqttOptions) sets it
+    // to "offline" if we die without saying goodbye; HA uses it as availability_topic.
+    public static string AvailabilityTopic(string topicRoot, string host)
+        => $"{topicRoot}/{host}/availability";
+
+    public static Task PublishAvailabilityAsync(
+        IMqttClient mqttClient, string topicRoot, string host, bool online,
+        CancellationToken cancellationToken)
+    {
+        var message = new MqttApplicationMessageBuilder()
+            .WithTopic(AvailabilityTopic(topicRoot, host))
+            .WithPayload(online ? "online" : "offline")
+            .WithRetainFlag(true)
+            .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
+            .Build();
+        return mqttClient.PublishAsync(message, cancellationToken);
+    }
+
     public static async Task PublishAsync(
         IMqttClient mqttClient,
         string topicRoot,
@@ -90,6 +108,11 @@ static class MqttPublisher
                 .WithPayload(Encoding.UTF8.GetBytes(payload))
                 .WithPayloadFormatIndicator(MqttPayloadFormatIndicator.CharacterData)
                 .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
+                // Retained: the broker keeps the last value, so subscribers (e.g. HA
+                // after a restart) get current readings immediately instead of
+                // "unknown" until the next publish cycle. Combined with the
+                // availability topic, stale values are shown as "unavailable".
+                .WithRetainFlag(true)
                 .Build();
 
             await mqttClient.PublishAsync(message, cancellationToken);

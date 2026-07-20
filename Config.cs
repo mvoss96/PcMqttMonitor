@@ -33,6 +33,9 @@ sealed class AppConfig
     public string TopicRoot { get; set; } = "pc";
     public double PublishIntervalSeconds { get; set; } = 1.0;
     public bool DebugEnabled { get; set; } = false;
+    // Opt-in: publish a Home Assistant device-discovery config so all sensors
+    // appear in HA automatically. Off by default — enabled via the Settings tab.
+    public bool HaDiscoveryEnabled { get; set; } = false;
     public SensorConfig? Sensors { get; set; }
 }
 

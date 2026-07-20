@@ -93,6 +93,13 @@ class Program
             .WithTcpServer(config.BrokerHost, config.BrokerPort)
             .WithCredentials(config.Username, config.Password)
             .WithClientId($"pcmqtt-{Environment.MachineName.ToLowerInvariant()}")
+            // LWT: if the connection dies without a clean disconnect (crash, power
+            // loss), the broker publishes "offline" on our behalf once the
+            // keep-alive times out — subscribers always learn we are gone.
+            .WithWillTopic(MqttPublisher.AvailabilityTopic(config.TopicRoot, Environment.MachineName.ToLowerInvariant()))
+            .WithWillPayload("offline")
+            .WithWillRetain(true)
+            .WithWillQualityOfServiceLevel(MQTTnet.Protocol.MqttQualityOfServiceLevel.AtLeastOnce)
             .Build();
 
     static async Task RunMqttLoopAsync(AppConfig config, TrayApp tray, CancellationToken cancellationToken)
@@ -139,6 +146,15 @@ class Program
             tray.SetStatus("No broker configured — sensors only");
         }
 
+        var host = Environment.MachineName.ToLowerInvariant();
+        bool wasPaused = false;
+        // Discovery state: republish when the toggle or the advertised component
+        // set changes; sync once after every (re)connect so the retained config
+        // on the broker always matches the current setting.
+        bool discoveryActive = false;
+        string discoveryFingerprint = "";
+        bool needsDiscoverySync = true;
+
         try
         {
             while (!cancellationToken.IsCancellationRequested)
@@ -159,7 +175,26 @@ class Program
                     snapshot = new SensorSnapshot("", new MqttMetrics { Host = Environment.MachineName });
                 }
 
-                if (!tray.IsPaused && hasBroker && mqttOptions != null)
+                bool paused = tray.IsPaused;
+
+                if (hasBroker && mqttOptions != null)
+                {
+                    // Reflect pause transitions on the availability topic while the
+                    // connection is still up, so HA shows the PC as unavailable.
+                    if (paused != wasPaused && mqttClient.IsConnected)
+                    {
+                        try
+                        {
+                            await MqttPublisher.PublishAvailabilityAsync(
+                                mqttClient, config.TopicRoot, host, online: !paused, cancellationToken);
+                        }
+                        catch (OperationCanceledException) { throw; }
+                        catch (Exception ex) { Log($"[error] availability publish: {ex.Message}"); }
+                    }
+                    wasPaused = paused;
+                }
+
+                if (!paused && hasBroker && mqttOptions != null)
                 {
                     // Connect/reconnect if needed — one attempt per cycle, non-blocking.
                     if (!mqttClient.IsConnected)
@@ -171,6 +206,9 @@ class Program
                             await mqttClient.ConnectAsync(mqttOptions, cancellationToken);
                             Log("MQTT connected.");
                             tray.SetConnectionStatus(true, $"{config.BrokerHost}:{config.BrokerPort}");
+                            await MqttPublisher.PublishAvailabilityAsync(
+                                mqttClient, config.TopicRoot, host, online: true, cancellationToken);
+                            needsDiscoverySync = true;
                         }
                         catch (OperationCanceledException) { throw; }
                         catch (Exception ex)
@@ -183,12 +221,42 @@ class Program
 
                     if (mqttClient.IsConnected)
                     {
+                        // Keep the HA discovery config on the broker in sync with the
+                        // (live-editable) setting and the advertised component set.
+                        try
+                        {
+                            bool want = config.HaDiscoveryEnabled;
+                            var fingerprint = HaDiscovery.Fingerprint(snapshot.Metrics);
+                            if (needsDiscoverySync || want != discoveryActive
+                                || (want && fingerprint != discoveryFingerprint))
+                            {
+                                if (want)
+                                {
+                                    await HaDiscovery.PublishConfigAsync(
+                                        mqttClient, config.TopicRoot, host, snapshot.Metrics,
+                                        typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.0.0",
+                                        cancellationToken);
+                                    Log("HA discovery config published.");
+                                }
+                                else
+                                {
+                                    await HaDiscovery.RemoveAsync(mqttClient, host, cancellationToken);
+                                    if (discoveryActive) Log("HA discovery config removed.");
+                                }
+                                discoveryActive = want;
+                                discoveryFingerprint = fingerprint;
+                                needsDiscoverySync = false;
+                            }
+                        }
+                        catch (OperationCanceledException) { throw; }
+                        catch (Exception ex) { Log($"[error] discovery publish: {ex.Message}"); }
+
                         try
                         {
                             await MqttPublisher.PublishAsync(
                                 mqttClient,
                                 config.TopicRoot,
-                                Environment.MachineName.ToLowerInvariant(),
+                                host,
                                 snapshot.Metrics,
                                 cancellationToken);
                             LogDebug("Publish complete.");
@@ -204,7 +272,7 @@ class Program
                         }
                     }
                 }
-                else if (tray.IsPaused)
+                else if (paused)
                 {
                     tray.SetStatus("Paused");
                 }
@@ -225,6 +293,14 @@ class Program
             tray.SetConnectionStatus(false, "");
             if (mqttClient.IsConnected)
             {
+                // Graceful goodbye: mark ourselves offline before disconnecting —
+                // a clean disconnect does NOT fire the LWT, so we say it ourselves.
+                try
+                {
+                    await MqttPublisher.PublishAvailabilityAsync(
+                        mqttClient, config.TopicRoot, host, online: false, CancellationToken.None);
+                }
+                catch { }
                 var disconnectOptions = mqttFactory.CreateClientDisconnectOptionsBuilder().Build();
                 await mqttClient.DisconnectAsync(disconnectOptions, CancellationToken.None);
                 Log("MQTT disconnected.");

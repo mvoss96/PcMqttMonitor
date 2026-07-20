@@ -11,6 +11,11 @@ sealed class MainWindow : Form
 
     // ── Sensors tab ──────────────────────────────────────────────────────────────
     readonly Panel _sensorsOuter;
+    readonly Panel _pauseBanner;
+
+    // Set by TrayApp — routes pause/resume requests from the banner to the
+    // central pause switch so tray menu, icon and banner stay in sync.
+    public Action<bool>? PauseChangeRequested;
 
     // Owner-drawn dashboard — created on first reading, then updated via Invalidate().
     SensorsView? _sensorsView;
@@ -27,6 +32,7 @@ sealed class MainWindow : Form
     readonly NumericUpDown _interval;
     readonly CheckBox _debugEnabled;
     readonly CheckBox _autoStart;
+    readonly CheckBox _haDiscovery;
     readonly List<(CheckBox Box, Action<SensorConfig, bool> Setter)> _sensorBoxes = new();
 
     // Settings-tab layout freeze (see constructor) — avoids a ~3 s relayout on every show.
@@ -74,8 +80,42 @@ sealed class MainWindow : Form
                     _sensorsOuter.ClientSize.Width - _sensorsOuter.Padding.Horizontal;
         };
 
+        // Banner shown while publishing is paused (tray menu or the button here).
+        // Added AFTER the fill-docked panel so DockStyle.Top wins the layout.
+        _pauseBanner = new Panel
+        {
+            Dock      = DockStyle.Top,
+            Height    = 38,
+            BackColor = Color.FromArgb(255, 244, 199),
+            Visible   = false,
+            Padding   = new Padding(12, 0, 12, 0)
+        };
+        var pauseLabel = new Label
+        {
+            Text      = "Publishing is paused",
+            AutoSize  = true,
+            ForeColor = Color.FromArgb(102, 77, 3),
+            Location  = new Point(12, 11)
+        };
+        var resumeBtn = new Button
+        {
+            Text     = "Resume",
+            AutoSize = true,
+            Anchor   = AnchorStyles.Top | AnchorStyles.Right
+        };
+        resumeBtn.Click += (_, _) => PauseChangeRequested?.Invoke(false);
+        _pauseBanner.Controls.Add(pauseLabel);
+        _pauseBanner.Controls.Add(resumeBtn);
+        _pauseBanner.Resize += (_, _) =>
+        {
+            resumeBtn.Location = new Point(
+                _pauseBanner.ClientSize.Width - resumeBtn.Width - 12,
+                (_pauseBanner.ClientSize.Height - resumeBtn.Height) / 2);
+        };
+
         var sensorsPage = new TabPage("Sensors");
         sensorsPage.Controls.Add(_sensorsOuter);
+        sensorsPage.Controls.Add(_pauseBanner);
         _tabs.TabPages.Add(sensorsPage);
         ShowSensorsPlaceholder("Opening sensors — this may take a few seconds...");
 
@@ -90,6 +130,7 @@ sealed class MainWindow : Form
         _interval     = new NumericUpDown { Minimum = 0.5m, Maximum = 3600, Value = (decimal)config.PublishIntervalSeconds, DecimalPlaces = 1, Increment = 0.5m, Anchor = AnchorStyles.Left | AnchorStyles.Right };
         _debugEnabled = new CheckBox { Text = "Enable debug logging", Checked = config.DebugEnabled, AutoSize = true };
         _autoStart    = new CheckBox { Text = "Start with Windows",   Checked = false,                 AutoSize = true };
+        _haDiscovery  = new CheckBox { Text = "Home Assistant MQTT Discovery", Checked = config.HaDiscoveryEnabled, AutoSize = true };
 
         // ── MQTT Broker section ──────────────────────────────────────────────────
         _connStatus = new Label
@@ -131,6 +172,19 @@ sealed class MainWindow : Form
         generalTable.SetColumnSpan(_autoStart, 2);
         generalTable.Controls.Add(_debugEnabled);
         generalTable.SetColumnSpan(_debugEnabled, 2);
+        generalTable.Controls.Add(_haDiscovery);
+        generalTable.SetColumnSpan(_haDiscovery, 2);
+        var discoveryHint = new Label
+        {
+            Text = "Auto-creates all sensors as one device in Home Assistant. Applies on Save; unchecking removes the device from HA.",
+            ForeColor = SystemColors.GrayText,
+            Font = new Font("Segoe UI", 7.5f),
+            AutoSize = true,
+            MaximumSize = new Size(360, 0),
+            Margin = new Padding(18, 0, 0, 4)
+        };
+        generalTable.Controls.Add(discoveryHint);
+        generalTable.SetColumnSpan(discoveryHint, 2);
 
         // ── Sensors section ──────────────────────────────────────────────────────
         // Each group: bold title with a horizontal rule extending to the right,
@@ -358,6 +412,9 @@ sealed class MainWindow : Form
             catch (Exception ex) { AppLog.Write($"[UI] RefreshSensors failed: {ex}"); }
         });
     }
+
+    // Called by TrayApp's central pause switch. UI thread only (menu/button click).
+    public void SetPauseState(bool paused) => _pauseBanner.Visible = paused;
 
     // Keep the background-thread-readable flag in sync.  Must be called on the UI thread.
     void UpdateSensorsTabActive() => _sensorsTabActive = Visible && _tabs.SelectedIndex == 0;
@@ -768,6 +825,7 @@ sealed class MainWindow : Form
     {
         _config.PublishIntervalSeconds = (double)_interval.Value;
         _config.DebugEnabled           = _debugEnabled.Checked;
+        _config.HaDiscoveryEnabled     = _haDiscovery.Checked;
         _config.Sensors ??= new SensorConfig();
         foreach (var (box, setter) in _sensorBoxes)
             setter(_config.Sensors, box.Checked);

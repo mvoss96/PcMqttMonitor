@@ -9,6 +9,7 @@ sealed class TrayApp : ApplicationContext
     readonly MainWindow _window;
     readonly Icon _normalIcon;
     readonly Icon _pausedIcon;
+    readonly ToolStripMenuItem _pauseItem;
     volatile string _statusText = "Starting...";
     volatile bool _paused;
 
@@ -37,13 +38,12 @@ sealed class TrayApp : ApplicationContext
 
         var statusItem = new ToolStripMenuItem(_statusText) { Enabled = false };
         var pauseItem  = new ToolStripMenuItem("Pause Publishing");
+        _pauseItem = pauseItem;
 
-        pauseItem.Click += (_, _) =>
-        {
-            _paused = !_paused;
-            pauseItem.Text  = _paused ? "Resume Publishing" : "Pause Publishing";
-            _tray.Icon      = _paused ? _pausedIcon : _normalIcon;
-        };
+        pauseItem.Click += (_, _) => SetPaused(!_paused);
+
+        // The main window's pause banner can request a state change too.
+        _window.PauseChangeRequested = SetPaused;
 
         var menu = new ContextMenuStrip();
         menu.Opening += (_, _) => statusItem.Text = _statusText;
@@ -60,6 +60,16 @@ sealed class TrayApp : ApplicationContext
             Application.Exit();
         });
         _tray.ContextMenuStrip = menu;
+    }
+
+    // Central pause switch — keeps tray menu, tray icon and the main window's
+    // banner in sync no matter where the change was triggered. UI thread only.
+    void SetPaused(bool paused)
+    {
+        _paused         = paused;
+        _pauseItem.Text = paused ? "Resume Publishing" : "Pause Publishing";
+        _tray.Icon      = paused ? _pausedIcon : _normalIcon;
+        _window.SetPauseState(paused);
     }
 
     // Called from any thread to update the status shown in the context menu.
