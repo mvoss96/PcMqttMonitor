@@ -1,3 +1,6 @@
+using System.Net;
+using System.Net.NetworkInformation;
+using System.Net.Sockets;
 using System.Text.Json;
 using MQTTnet;
 using MQTTnet.Protocol;
@@ -22,19 +25,27 @@ static class HaDiscovery
 
     public static Task PublishConfigAsync(
         IMqttClient client, string topicRoot, string host, MqttMetrics metrics,
-        string version, CancellationToken cancellationToken)
+        string version, string brokerHost, int brokerPort,
+        CancellationToken cancellationToken)
     {
         var baseTopic = $"{topicRoot}/{host}";
+        var dev = new Dictionary<string, object>
+        {
+            ["ids"] = new[] { $"pcmqtt_{host}" },
+            ["name"] = Environment.MachineName,
+            ["mf"] = "PC MQTT Monitor",
+            ["mdl"] = metrics.Cpu?.Name ?? "PC",
+            ["sw"] = version,
+        };
+        // "cns" (connections) with the active NIC's MAC lets HA merge this device
+        // with entries other integrations register under the same MAC (router
+        // presence tracker, Wake-on-LAN) — one device page instead of several.
+        if (PrimaryMac(brokerHost, brokerPort) is { } mac)
+            dev["cns"] = new[] { new[] { "mac", mac } };
+
         var payload = new Dictionary<string, object>
         {
-            ["dev"] = new Dictionary<string, object>
-            {
-                ["ids"] = new[] { $"pcmqtt_{host}" },
-                ["name"] = Environment.MachineName,
-                ["mf"] = "PC MQTT Monitor",
-                ["mdl"] = metrics.Cpu?.Name ?? "PC",
-                ["sw"] = version,
-            },
+            ["dev"] = dev,
             ["o"] = new Dictionary<string, object>
             {
                 ["name"] = "PC MQTT Monitor",
@@ -48,6 +59,36 @@ static class HaDiscovery
 
         return PublishRetainedAsync(client, ConfigTopic(host),
             JsonSerializer.Serialize(payload), cancellationToken);
+    }
+
+    // MAC of the NIC that carries the broker connection, "aa:bb:cc:dd:ee:ff"
+    // (HA's registry format). Connecting a UDP socket sends no packets but makes
+    // the OS resolve the outgoing route, so the local address identifies the
+    // interface actually in use — on a machine with LAN + WLAN this picks the
+    // active one. Null if detection fails (payload then simply omits "cns").
+    static string? PrimaryMac(string brokerHost, int brokerPort)
+    {
+        try
+        {
+            // Explicitly IPv4: the dual-stack default reports the local address as
+            // IPv6-mapped ("::ffff:192.168.x.x"), which never Equals the adapters'
+            // IPv4 unicast addresses below.
+            using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+            socket.Connect(brokerHost, brokerPort);
+            var localAddress = ((IPEndPoint)socket.LocalEndPoint!).Address;
+            var mac = NetworkInterface.GetAllNetworkInterfaces()
+                .Where(nic => nic.OperationalStatus == OperationalStatus.Up)
+                .FirstOrDefault(nic => nic.GetIPProperties().UnicastAddresses
+                    .Any(a => a.Address.Equals(localAddress)))
+                ?.GetPhysicalAddress().GetAddressBytes();
+            return mac is { Length: 6 }
+                ? string.Join(":", mac.Select(b => b.ToString("x2")))
+                : null;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     // Empty retained payload removes the device (and clears the retained config).

@@ -239,6 +239,7 @@ class Program
                                     await HaDiscovery.PublishConfigAsync(
                                         mqttClient, config.TopicRoot, host, snapshot.Metrics,
                                         typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.0.0",
+                                        config.BrokerHost, config.BrokerPort,
                                         cancellationToken);
                                     Log("HA discovery config published.");
                                 }
