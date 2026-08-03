@@ -1,0 +1,42 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      # The in-app update checker compares the release tag against the assembly
+      # version, so a tag that doesn't match the project files would either
+      # nag users forever or never notify them.
+      - name: Verify tag matches project version
+        run: |
+          $tagVersion    = $env:GITHUB_REF_NAME.TrimStart('v')
+          $csprojVersion = (Select-Xml -Path PcMqttMonitor.csproj -XPath '//Version').Node.InnerText
+          $issVersion    = (Select-String -Path installer.iss -Pattern '#define MyAppVersion "(.+)"').Matches[0].Groups[1].Value
+          if ($tagVersion -ne $csprojVersion) { throw "Tag v$tagVersion does not match <Version>$csprojVersion</Version> in PcMqttMonitor.csproj" }
+          if ($tagVersion -ne $issVersion)    { throw "Tag v$tagVersion does not match MyAppVersion `"$issVersion`" in installer.iss" }
+
+      - name: Publish self-contained exe
+        run: dotnet publish PcMqttMonitor.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
+
+      - name: Compile installer
+        run: '& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer.iss'
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $installer = (Get-Item installer-output/*.exe).FullName
+          gh release create $env:GITHUB_REF_NAME $installer --title "PC MQTT Monitor $env:GITHUB_REF_NAME" --generate-notes

@@ -26,6 +26,16 @@ dotnet publish PcMqttMonitor.csproj -c Release -r win-x64 --self-contained true 
 
 Do not publish directly into the install directory — writing to Program Files needs an elevated shell; the installer handles that.
 
+## Releasing on GitHub
+
+Repo: `mvoss96/PcMqttMonitor`. CI (`.github/workflows/build.yml`) builds exe + installer on every push/PR. To release: bump the version in both files (see above), commit, then
+
+```powershell
+git tag v1.x.y && git push origin main --tags
+```
+
+`release.yml` verifies the tag matches both version fields, builds the installer, and creates a GitHub Release with the setup exe attached. The in-app update checker (`UpdateChecker.cs`) compares the latest release tag against the assembly version — tags must always be `v` + the csproj `<Version>`.
+
 ## Project Structure
 
 - `Program.cs` — entry point, MQTT loop, crash handling
@@ -34,6 +44,7 @@ Do not publish directly into the install directory — writing to Program Files 
 - `Sensor.cs` — LibreHardwareMonitor wrapper, metrics model, MQTT payload types
 - `Config.cs` — JSON config model (`config.json` lives next to the exe)
 - `MqttPublisher.cs` — MQTT publish logic
+- `UpdateChecker.cs` — daily GitHub-releases check, notify-only (tray balloon + menu item)
 - `app.ico` — application icon (16/32/48/256px signal bars design)
 - `app.manifest` — requires `requireAdministrator` (needed for LHM hardware access)
 - `installer.iss` — Inno Setup installer script

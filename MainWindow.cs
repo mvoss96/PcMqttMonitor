@@ -34,6 +34,7 @@ sealed class MainWindow : Form
     readonly CheckBox _debugEnabled;
     readonly CheckBox _autoStart;
     readonly CheckBox _haDiscovery;
+    readonly CheckBox _updateCheck;
     readonly List<(CheckBox Box, Action<SensorConfig, bool> Setter)> _sensorBoxes = new();
 
     // Settings-tab layout freeze (see constructor) — avoids a ~3 s relayout on every show.
@@ -133,6 +134,7 @@ sealed class MainWindow : Form
         _debugEnabled = new CheckBox { Text = "Enable debug logging", Checked = config.DebugEnabled, AutoSize = true };
         _autoStart    = new CheckBox { Text = "Start with Windows",   Checked = false,                 AutoSize = true };
         _haDiscovery  = new CheckBox { Text = "Home Assistant MQTT Discovery", Checked = config.HaDiscoveryEnabled, AutoSize = true };
+        _updateCheck  = new CheckBox { Text = "Notify about new versions (checks GitHub daily)", Checked = config.UpdateCheckEnabled, AutoSize = true };
 
         // ── MQTT Broker section ──────────────────────────────────────────────────
         _connStatus = new Label
@@ -189,6 +191,8 @@ sealed class MainWindow : Form
         };
         generalTable.Controls.Add(discoveryHint);
         generalTable.SetColumnSpan(discoveryHint, 2);
+        generalTable.Controls.Add(_updateCheck);
+        generalTable.SetColumnSpan(_updateCheck, 2);
 
         // ── Sensors section ──────────────────────────────────────────────────────
         // Each group: bold title with a horizontal rule extending to the right,
@@ -847,6 +851,7 @@ sealed class MainWindow : Form
         _config.PublishIntervalSeconds = (double)_interval.Value;
         _config.DebugEnabled           = _debugEnabled.Checked;
         _config.HaDiscoveryEnabled     = _haDiscovery.Checked;
+        _config.UpdateCheckEnabled     = _updateCheck.Checked;
         _config.Sensors ??= new SensorConfig();
         foreach (var (box, setter) in _sensorBoxes)
             setter(_config.Sensors, box.Checked);

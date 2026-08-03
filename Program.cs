@@ -79,6 +79,9 @@ class Program
             catch (Exception ex) { Log($"[fatal] Background task crashed: {ex}"); }
         });
 
+        // Daily update check against GitHub releases (fire-and-forget; notify-only).
+        _ = Task.Run(() => RunUpdateCheckLoopAsync(config, tray, shutdown.Token));
+
         // Blocks here until the user clicks Exit in the tray (or Ctrl+C).
         Application.Run(tray);
 
@@ -311,6 +314,41 @@ class Program
                 Log("MQTT disconnected.");
             }
         }
+    }
+
+    // Checks GitHub for a newer release: once shortly after startup, then daily.
+    // The config flag is re-read every cycle so the Settings checkbox applies
+    // without a restart. Failures (offline, rate limit) are logged and retried
+    // the next day.
+    static async Task RunUpdateCheckLoopAsync(AppConfig config, TrayApp tray, CancellationToken cancellationToken)
+    {
+        var delay = TimeSpan.FromMinutes(1);
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(delay, cancellationToken);
+                delay = TimeSpan.FromHours(24);
+                if (!config.UpdateCheckEnabled) continue;
+
+                try
+                {
+                    var newer = await UpdateChecker.CheckAsync(cancellationToken);
+                    if (newer != null)
+                    {
+                        Log($"Update available: v{newer} (running v{UpdateChecker.CurrentVersion})");
+                        tray.NotifyUpdateAvailable(newer);
+                    }
+                    else
+                    {
+                        LogDebug($"Update check: v{UpdateChecker.CurrentVersion} is up to date.");
+                    }
+                }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex) { Log($"[update] check failed: {ex.Message}"); }
+            }
+        }
+        catch (OperationCanceledException) { }
     }
 
     static void Log(string message)

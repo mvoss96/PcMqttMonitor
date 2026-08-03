@@ -38,6 +38,9 @@ sealed class AppConfig
     // Opt-in: publish a Home Assistant device-discovery config so all sensors
     // appear in HA automatically. Off by default — enabled via the Settings tab.
     public bool HaDiscoveryEnabled { get; set; } = false;
+    // Daily check against GitHub releases; shows a tray notification when a
+    // newer version exists. Notify-only — never downloads or installs anything.
+    public bool UpdateCheckEnabled { get; set; } = true;
     public SensorConfig? Sensors { get; set; }
 }
 

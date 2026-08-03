@@ -10,6 +10,9 @@ sealed class TrayApp : ApplicationContext
     readonly Icon _normalIcon;
     readonly Icon _pausedIcon;
     readonly ToolStripMenuItem _pauseItem;
+    readonly ContextMenuStrip _menu;
+    ToolStripMenuItem? _updateItem;
+    Version? _notifiedUpdate;
     volatile string _statusText = "Starting...";
     volatile bool _paused;
 
@@ -60,6 +63,54 @@ sealed class TrayApp : ApplicationContext
             Application.Exit();
         });
         _tray.ContextMenuStrip = menu;
+        _menu = menu;
+
+        // The only balloon this app shows is the update notification.
+        _tray.BalloonTipClicked += (_, _) =>
+        {
+            if (_notifiedUpdate != null) OpenReleasesPage();
+        };
+    }
+
+    // Called from the update-check thread when a newer GitHub release exists.
+    // Adds a menu entry and shows a balloon once per discovered version.
+    public void NotifyUpdateAvailable(Version version)
+    {
+        _window.BeginInvoke(() =>
+        {
+            if (_notifiedUpdate != null && version <= _notifiedUpdate) return;
+            _notifiedUpdate = version;
+
+            if (_updateItem == null)
+            {
+                _updateItem = new ToolStripMenuItem
+                {
+                    Font = new Font(_menu.Font, FontStyle.Bold)
+                };
+                _updateItem.Click += (_, _) => OpenReleasesPage();
+                // Directly under the status line, above Show Sensors.
+                _menu.Items.Insert(2, _updateItem);
+            }
+            _updateItem.Text = $"Update available: v{version.ToString(3)}";
+
+            _tray.BalloonTipTitle = "PC MQTT Monitor";
+            _tray.BalloonTipText  = $"Version {version.ToString(3)} is available — click to open the download page.";
+            _tray.BalloonTipIcon  = ToolTipIcon.Info;
+            _tray.ShowBalloonTip(10_000);
+        });
+    }
+
+    static void OpenReleasesPage()
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName        = UpdateChecker.ReleasesPageUrl,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex) { AppLog.Write($"[update] open releases page failed: {ex.Message}"); }
     }
 
     // Central pause switch — keeps tray menu, tray icon and the main window's
