@@ -101,9 +101,9 @@ sealed class Lang
     public string SensorCoreVolt   { get; init; } = "Core Voltage";
     public string SensorBoardPower { get; init; } = "Board Power";
     public string SensorFanSpeed   { get; init; } = "Fan Speed";
-    public string SensorMemLoad    { get; init; } = "Memory Load";
-    public string SensorMemUsed    { get; init; } = "Memory Used";
-    public string SensorMemTotal   { get; init; } = "Memory Total";
+    public string SensorMemLoad    { get; init; } = "VRAM Load";
+    public string SensorMemUsed    { get; init; } = "VRAM Used";
+    public string SensorMemTotal   { get; init; } = "VRAM Total";
     public string SensorUsed       { get; init; } = "Used";
     public string SensorTotal      { get; init; } = "Total";
     public string SensorUpload     { get; init; } = "Upload";
@@ -148,7 +148,8 @@ sealed class Lang
 
     public static readonly Lang De = new()
     {
-        NavOutputs   = "Ausgänge",
+        // "Outputs" stays as the (common) loanword — every German attempt
+        // ("Ausgänge", "Ausgaben") reads odd for data sinks.
         NavSensors   = "Sensoren",
         NavSettings  = "Einstellungen",
         NavAbout     = "Über",
@@ -158,11 +159,11 @@ sealed class Lang
         Save           = "Speichern",
         TitleUpdate    = "v{0} verfügbar",
 
-        PausedBanner = "Veröffentlichung ist pausiert",
+        PausedBanner = "Übertragung pausiert",
         Resume       = "Fortsetzen",
 
-        TrayPause        = "Veröffentlichung pausieren",
-        TrayResume       = "Veröffentlichung fortsetzen",
+        TrayPause        = "Pausieren",
+        TrayResume       = "Fortsetzen",
         TrayExit         = "Beenden",
         TrayPausedSuffix = "(Pausiert)",
         TrayUpdateItem   = "Update verfügbar: v{0}",
@@ -184,12 +185,11 @@ sealed class Lang
         RowUptime   = "Laufzeit",
         RowBoard    = "Board",
 
-        OutputsTitle    = "Ausgänge",
         FieldUsername   = "Benutzername",
         FieldPassword   = "Passwort",
-        FieldTopicRoot  = "Topic-Root",
+        FieldTopicRoot  = "Root-Topic",
         FieldUseTls     = "TLS verwenden (üblich: Port 8883)",
-        FieldListenPort = "Listen-Port",
+        FieldListenPort = "Port",
         FieldBaudRate   = "Baudrate",
         OutDisabled     = "Deaktiviert",
         OutNoHost       = "Nicht konfiguriert — Host angeben",
@@ -199,7 +199,7 @@ sealed class Lang
         OutListeningOn  = "Lauscht auf Port {0}",
         OutSendingCom   = "Sendet auf {0} @ {1} Baud",
 
-        SensorsTitle     = "Zu veröffentlichende Sensoren",
+        SensorsTitle     = "Sensoren",
         GroupOther       = "Sonstiges",
         SensorLoad       = "Auslastung",
         SensorTemp       = "Temperatur",
@@ -207,9 +207,9 @@ sealed class Lang
         SensorCoreVolt   = "Kernspannung",
         SensorBoardPower = "Board-Leistung",
         SensorFanSpeed   = "Lüfterdrehzahl",
-        SensorMemLoad    = "Speicher-Auslastung",
-        SensorMemUsed    = "Speicher belegt",
-        SensorMemTotal   = "Speicher gesamt",
+        SensorMemLoad    = "VRAM-Auslastung",
+        SensorMemUsed    = "VRAM belegt",
+        SensorMemTotal   = "VRAM gesamt",
         SensorUsed       = "Belegt",
         SensorTotal      = "Gesamt",
         SensorBoard      = "Mainboard",
