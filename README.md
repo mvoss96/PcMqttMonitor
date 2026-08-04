@@ -14,6 +14,7 @@ A lightweight Windows system-tray app that reads hardware sensors (CPU, GPU, RAM
   - **TCP**: the app listens on a port and streams line-delimited JSON to every connected client
   - **Serial**: line-delimited JSON to a COM port (e.g. an ESP32 status display)
 - **Modern tray UI**: icon sidebar with dashboard (cards, live bars, 60-second sparklines), outputs, sensor toggles, settings and about pages; light/dark/system theme
+- **Two languages**: English and German — follows Windows by default, switchable in Settings (MQTT topics, payloads and HA entity names always stay English)
 - **Live apply**: changed settings take effect immediately — outputs are rebuilt on the fly, no app restart
 - **Update notification**: checks GitHub releases daily (opt-out) and notifies via tray balloon and an in-app pill — never downloads or installs anything by itself
 - **Robust**: auto-reconnect, crash logging, automatic restart on hardware-driver crashes, autostart via Task Scheduler
@@ -38,7 +39,7 @@ Everything is configured in the app (tray icon → window):
 
 - **Outputs**: MQTT (host, port, TLS, credentials, topic root, HA discovery), UDP target, TCP listen port — each with its own enable toggle and live status
 - **Sensors**: per-metric checkboxes
-- **Settings**: publish interval, autostart, theme (system/light/dark), debug logging, update notifications
+- **Settings**: publish interval, autostart, theme (system/light/dark), language (system/en/de), debug logging, update notifications
 
 Changes are saved via the floating save panel and apply immediately. Settings are stored in `config.json` next to the exe:
 
