@@ -21,7 +21,8 @@ static class HaDiscovery
     // (index-based) but changes the entity names.
     public static string Fingerprint(MetricsSnapshot m) =>
         string.Join(",", MetricTable.All.Where(d => d.Get(m) != null).Select(d => d.Id))
-        + "|" + string.Join(",", m.Drives?.Select(d => d.Name) ?? []);
+        + "|" + string.Join(",", m.Drives?.Select(d => d.Name) ?? [])
+        + "|" + string.Join(",", m.Network?.Select(a => a.Name) ?? []);
 
     public static Task PublishConfigAsync(
         IMqttClient client, string topicRoot, string host, MetricsSnapshot metrics,
@@ -143,6 +144,20 @@ static class HaDiscovery
                 if (d.FreeGb      != null) Sensor($"drive_{i}_free",    $"{d.Name} Free",    $"{p}/free",    "GB", "data_size");
                 if (d.TotalGb     != null) Sensor($"drive_{i}_total",   $"{d.Name} Total",   $"{p}/total",   "GB", "data_size");
                 if (d.UsedPercent != null) Sensor($"drive_{i}_percent", $"{d.Name} Used %",  $"{p}/percent", "%",  null);
+            }
+        }
+
+        // Network: rate entities per adapter. IP/MAC are published as topics but
+        // not advertised — string values don't fit the measurement state_class.
+        if (m.Network != null)
+        {
+            for (int i = 0; i < m.Network.Count; i++)
+            {
+                var a = m.Network[i];
+                var p = $"net/{i}";
+                // Values are bytes/1024 per second — that is KiB/s in HA's data_rate units.
+                if (a.UploadKbps   != null) Sensor($"net_{i}_up",   $"{a.Name} Upload",   $"{p}/up",   "KiB/s", "data_rate");
+                if (a.DownloadKbps != null) Sensor($"net_{i}_down", $"{a.Name} Download", $"{p}/down", "KiB/s", "data_rate");
             }
         }
 

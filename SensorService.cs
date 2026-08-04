@@ -17,9 +17,8 @@ sealed class SensorService : IDisposable
     IHardware? _memory;
     IHardware? _motherboard;
 
-    long _netLastBytesSent = -1;
-    long _netLastBytesReceived = -1;
-    DateTime _netLastTime;
+    // Per-adapter byte counters from the previous cycle, keyed by adapter id.
+    readonly Dictionary<string, (long Sent, long Received, DateTime Time)> _nicLast = new();
 
     public SensorService(SensorConfig? config, Action<string>? log = null, bool buildSummary = true)
     {
@@ -109,9 +108,15 @@ sealed class SensorService : IDisposable
         var motherboardName = _config.MotherboardName ? _motherboard?.Name : null;
         var driveMetrics = _config.Drives ? CollectDriveMetrics() : new List<StorageMetrics>();
 
-        var (rawNetUp, rawNetDown) = GetNetworkSpeed();
-        var netUp   = _config.NetworkUpload   ? rawNetUp   : null;
-        var netDown = _config.NetworkDownload ? rawNetDown : null;
+        var adapters = (_config.NetworkUpload || _config.NetworkDownload)
+            ? CollectNetworkAdapters()
+            : null;
+        if (adapters != null)
+            foreach (var a in adapters)
+            {
+                if (!_config.NetworkUpload)   a.UploadKbps = null;
+                if (!_config.NetworkDownload) a.DownloadKbps = null;
+            }
 
         var uptimeSec = _config.Uptime ? (int?)(Environment.TickCount64 / 1000) : null;
 
@@ -138,7 +143,7 @@ sealed class SensorService : IDisposable
             if (driveMetrics.Count > 0)
                 summaryParts.Add(BuildDrivesSummary(driveMetrics));
 
-            var netSummary = BuildNetworkSummary(netUp, netDown);
+            var netSummary = BuildNetworkSummary(adapters);
             if (netSummary != null)
                 summaryParts.Add(netSummary);
         }
@@ -152,53 +157,82 @@ sealed class SensorService : IDisposable
             Ram = BuildRamMetrics(ramLoad, ramUsed, ramTotal),
             Motherboard = BuildMotherboardMetrics(motherboardName),
             Drives = driveMetrics.Count > 0 ? driveMetrics : null,
-            Network = BuildNetworkMetrics(netUp, netDown),
-            System = uptimeSec != null ? new SystemMetrics { UptimeSec = uptimeSec } : null
+            Network = adapters is { Count: > 0 } ? adapters : null,
+            // Always present: OS version is static and uptime merely optional.
+            System = new SystemMetrics { UptimeSec = uptimeSec, OsVersion = OsVersionString }
         };
 
         var summary = summaryParts.Count > 0 ? string.Join(" || ", summaryParts) : string.Empty;
         return new SensorSnapshot(summary, metrics);
     }
 
-    (float? uploadKbps, float? downloadKbps) GetNetworkSpeed()
+    // One entry per active physical adapter. "Physical" heuristic: type is
+    // Ethernet/WiFi AND a default gateway is set — virtual host adapters
+    // (VMware, WSL, Hyper-V) report Ethernet but route nowhere.
+    List<NetworkAdapterMetrics> CollectNetworkAdapters()
     {
-        long sent = 0, received = 0;
+        var result = new List<NetworkAdapterMetrics>();
+        var now = DateTime.UtcNow;
         foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
         {
             if (ni.OperationalStatus != OperationalStatus.Up) continue;
-            if (ni.NetworkInterfaceType == NetworkInterfaceType.Loopback) continue;
-            if (ni.NetworkInterfaceType == NetworkInterfaceType.Tunnel) continue;
+            if (ni.NetworkInterfaceType is not (NetworkInterfaceType.Ethernet or NetworkInterfaceType.Wireless80211)) continue;
+
+            IPInterfaceProperties props;
+            try { props = ni.GetIPProperties(); } catch { continue; }
+            if (!props.GatewayAddresses.Any(gw => gw.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork))
+                continue;
+
+            var adapter = new NetworkAdapterMetrics
+            {
+                Name = ni.Name,
+                IpAddress = props.UnicastAddresses
+                    .FirstOrDefault(u => u.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                    ?.Address.ToString(),
+            };
+            var mac = ni.GetPhysicalAddress().GetAddressBytes();
+            if (mac.Length == 6)
+                adapter.Mac = string.Join(":", mac.Select(b => b.ToString("x2")));
+
             try
             {
                 var stats = ni.GetIPv4Statistics();
-                sent     += stats.BytesSent;
-                received += stats.BytesReceived;
+                if (_nicLast.TryGetValue(ni.Id, out var last))
+                {
+                    var elapsed = (now - last.Time).TotalSeconds;
+                    if (elapsed > 0)
+                    {
+                        adapter.UploadKbps   = (float)Math.Max(0, (stats.BytesSent     - last.Sent)     / elapsed / 1024.0);
+                        adapter.DownloadKbps = (float)Math.Max(0, (stats.BytesReceived - last.Received) / elapsed / 1024.0);
+                    }
+                }
+                _nicLast[ni.Id] = (stats.BytesSent, stats.BytesReceived, now);
             }
-            catch { /* some virtual adapters throw */ }
+            catch { /* some adapters throw on statistics */ }
+
+            result.Add(adapter);
         }
+        return result;
+    }
 
-        var now = DateTime.UtcNow;
+    // "Windows 11 Pro 24H2" — ProductName still reports "Windows 10" on
+    // Windows 11, fixed up via the build number (>= 22000 means 11).
+    static readonly string? OsVersionString = GetOsVersion();
 
-        if (_netLastBytesSent < 0)
+    static string? GetOsVersion()
+    {
+        try
         {
-            // First call — store baseline, return null (no delta yet).
-            _netLastBytesSent     = sent;
-            _netLastBytesReceived = received;
-            _netLastTime          = now;
-            return (null, null);
+            using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
+                @"SOFTWARE\Microsoft\Windows NT\CurrentVersion");
+            if (key == null) return null;
+            var product = key.GetValue("ProductName") as string ?? "Windows";
+            var display = key.GetValue("DisplayVersion") as string;
+            if (int.TryParse(key.GetValue("CurrentBuildNumber") as string, out var build) && build >= 22000)
+                product = product.Replace("Windows 10", "Windows 11");
+            return display != null ? $"{product} {display}" : product;
         }
-
-        var elapsed = (now - _netLastTime).TotalSeconds;
-        if (elapsed <= 0) return (null, null);
-
-        var uploadKbps   = (float)Math.Max(0, (sent     - _netLastBytesSent)     / elapsed / 1024.0);
-        var downloadKbps = (float)Math.Max(0, (received - _netLastBytesReceived) / elapsed / 1024.0);
-
-        _netLastBytesSent     = sent;
-        _netLastBytesReceived = received;
-        _netLastTime          = now;
-
-        return (uploadKbps, downloadKbps);
+        catch { return null; }
     }
 
     public void Dispose()
@@ -471,18 +505,12 @@ sealed class SensorService : IDisposable
         };
     }
 
-    static NetworkMetrics? BuildNetworkMetrics(float? uploadKbps, float? downloadKbps)
+    static string? BuildNetworkSummary(List<NetworkAdapterMetrics>? adapters)
     {
-        if (!uploadKbps.HasValue && !downloadKbps.HasValue) return null;
-        return new NetworkMetrics { UploadKbps = uploadKbps, DownloadKbps = downloadKbps };
-    }
-
-    static string? BuildNetworkSummary(float? uploadKbps, float? downloadKbps)
-    {
-        if (!uploadKbps.HasValue && !downloadKbps.HasValue) return null;
-        var up   = uploadKbps.HasValue   ? FormatNetworkSpeed(uploadKbps.Value)   : "n/a";
-        var down = downloadKbps.HasValue ? FormatNetworkSpeed(downloadKbps.Value) : "n/a";
-        return $"Net Up {up} Down {down}";
+        if (adapters == null || adapters.Count == 0) return null;
+        return "Net " + string.Join(", ", adapters.Select(a =>
+            $"{a.Name} Up {(a.UploadKbps.HasValue ? FormatNetworkSpeed(a.UploadKbps.Value) : "n/a")}" +
+            $" Down {(a.DownloadKbps.HasValue ? FormatNetworkSpeed(a.DownloadKbps.Value) : "n/a")}"));
     }
 
     static string FormatNetworkSpeed(float kbps)

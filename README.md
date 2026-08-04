@@ -73,8 +73,11 @@ pc/myhost/gpu/vram_used       1234
 pc/myhost/ram/load            42.1
 pc/myhost/drives/0/name       C:
 pc/myhost/drives/0/percent    61.2
-pc/myhost/net/up              12.3               (kbit/s)
-pc/myhost/net/down            345.6
+pc/myhost/net/0/name          Ethernet           (one subtree per active physical adapter)
+pc/myhost/net/0/up            12.3               (KiB/s)
+pc/myhost/net/0/down          345.6
+pc/myhost/net/0/ip            192.168.1.23
+pc/myhost/net/0/mac           a4:bb:6d:3f:12:9c
 pc/myhost/system/uptime       86400              (seconds)
 ...
 ```

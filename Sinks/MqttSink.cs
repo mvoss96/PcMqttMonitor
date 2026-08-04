@@ -189,6 +189,22 @@ sealed class MqttSink : IMetricsSink
             }
         }
 
+        // Network: one subtree per active physical adapter — same dynamic-count
+        // reasoning as drives. IP/MAC go out retained on purpose (Marcus' call).
+        if (m.Network != null)
+        {
+            for (int i = 0; i < m.Network.Count; i++)
+            {
+                var a = m.Network[i];
+                var prefix = $"{baseTopic}/net/{i}";
+                if (!string.IsNullOrEmpty(a.Name)) messages.Add(($"{prefix}/name", a.Name));
+                AddFloat(messages, $"{prefix}/up",   a.UploadKbps);
+                AddFloat(messages, $"{prefix}/down", a.DownloadKbps);
+                if (!string.IsNullOrEmpty(a.IpAddress)) messages.Add(($"{prefix}/ip",  a.IpAddress));
+                if (!string.IsNullOrEmpty(a.Mac))       messages.Add(($"{prefix}/mac", a.Mac));
+            }
+        }
+
         foreach (var (topic, payload) in messages)
         {
             var message = new MqttApplicationMessageBuilder()

@@ -53,9 +53,7 @@ static class MetricTable
         new("ram_load",       "RAM Load",          "ram/load",       "%",     null,          "0",     m => m.Ram?.Load),
         new("ram_used",       "RAM Used",          "ram/used",       "GB",    "data_size",   "0.#",   m => m.Ram?.UsedGb),
         new("ram_total",      "RAM Total",         "ram/total",      "GB",    "data_size",   "0.#",   m => m.Ram?.TotalGb),
-        // Values are bytes/1024 per second — that is KiB/s in HA's data_rate units.
-        new("net_up",         "Network Upload",    "net/up",         "KiB/s", "data_rate",   "0.#",   m => m.Network?.UploadKbps),
-        new("net_down",       "Network Download",  "net/down",       "KiB/s", "data_rate",   "0.#",   m => m.Network?.DownloadKbps),
+        // Network is per-adapter (dynamic count) and special-cased like drives.
         new("uptime",         "Uptime",            "system/uptime",  "s",     "duration",    "0",     m => m.System?.UptimeSec),
     ];
 }
@@ -73,13 +71,15 @@ sealed class MetricsSnapshot
     public RamMetrics? Ram { get; set; }
     public MotherboardMetrics? Motherboard { get; set; }
     public List<StorageMetrics>? Drives { get; set; }
-    public NetworkMetrics? Network { get; set; }
+    public List<NetworkAdapterMetrics>? Network { get; set; }
     public SystemMetrics? System { get; set; }
 }
 
 sealed class SystemMetrics
 {
     public int? UptimeSec { get; set; }
+    // e.g. "Windows 11 Pro 24H2" — static, read once at startup.
+    public string? OsVersion { get; set; }
 }
 
 sealed class CpuMetrics
@@ -124,8 +124,13 @@ sealed class StorageMetrics
     public int? UsedPercent { get; set; }
 }
 
-sealed class NetworkMetrics
+// One entry per active physical adapter (Ethernet/WiFi with a default
+// gateway — virtual adapters like VMware/WSL/Bluetooth are filtered out).
+sealed class NetworkAdapterMetrics
 {
+    public string Name { get; set; } = string.Empty;   // e.g. "Ethernet", "WLAN"
     public float? UploadKbps { get; set; }
     public float? DownloadKbps { get; set; }
+    public string? IpAddress { get; set; }
+    public string? Mac { get; set; }
 }

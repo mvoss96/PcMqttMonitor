@@ -21,7 +21,7 @@ sealed class DashboardView : Control
     const int HistoryLen = 60;   // one sample per publish cycle ≈ last 60 s
 
     MetricsSnapshot? _m;
-    readonly Queue<float> _cpuHist = new(), _gpuHist = new(), _ramHist = new(), _netHist = new();
+    readonly Queue<float> _cpuHist = new(), _gpuHist = new(), _ramHist = new();
 
     // scrolling state
     int _offset;
@@ -43,7 +43,6 @@ sealed class DashboardView : Control
         Push(_cpuHist, m.Cpu?.Load);
         Push(_gpuHist, m.Gpu?.Load);
         Push(_ramHist, m.Ram?.Load);
-        Push(_netHist, m.Network?.DownloadKbps);
         Invalidate();
     }
 
@@ -152,7 +151,7 @@ sealed class DashboardView : Control
         if (_m.Gpu != null)            cards.Add((LoadCardHeight, DrawGpuCard));
         if (_m.Ram != null)            cards.Add((LoadCardHeight, DrawRamCard));
         if (_m.Drives is { Count: > 0 }) cards.Add((DrivesHeight(_m.Drives.Count), DrawDrivesCard));
-        if (_m.Network != null)        cards.Add((NetworkHeight, DrawNetworkCard));
+        if (_m.Network is { Count: > 0 }) cards.Add((NetworkHeight(_m.Network.Count), DrawNetworkCard));
         if (_m.System != null)         cards.Add((SystemHeight, DrawSystemCard));
 
         int x = PadX, y = PadY - _offset;
@@ -187,11 +186,12 @@ sealed class DashboardView : Control
     static int DrivesHeight(int drives) =>
         CardPadY * 2 + HeadH + drives * 27 - 6;
 
-    static int NetworkHeight =>
-        CardPadY * 2 + HeadH + 2 * RowH + SparkGap + SparkH;
+    // Per adapter: header (name + rates) 17, IP 16, MAC 14; 9px between blocks.
+    static int NetworkHeight(int adapters) =>
+        CardPadY * 2 + HeadH + adapters * 47 + (adapters - 1) * 9;
 
     static int SystemHeight =>
-        CardPadY * 2 + HeadH + 2 * RowH;
+        CardPadY * 2 + HeadH + 4 * RowH;
 
     void DrawCardBg(Graphics g, Rectangle r)
     {
@@ -247,12 +247,12 @@ sealed class DashboardView : Control
             g.FillEllipse(dot, pts[^1].X - 2.4f, pts[^1].Y - 2.4f, 4.8f, 4.8f);
     }
 
-    static void DrawRow(Graphics g, int x, int y, int labelW, string label, string value)
+    static void DrawRow(Graphics g, int x, int y, int labelW, string label, string value, int valueW = 220)
     {
         TextRenderer.DrawText(g, label, Theme.Base, new Rectangle(x, y, labelW, RowH), Theme.Fg2,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
-        TextRenderer.DrawText(g, value, Theme.Base, new Rectangle(x + labelW, y, 220, RowH), Theme.Fg,
-            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+        TextRenderer.DrawText(g, value, Theme.Base, new Rectangle(x + labelW, y, valueW, RowH), Theme.Fg,
+            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
     }
 
     // The ONE detail line per card: colored segments drawn back to back
@@ -372,17 +372,38 @@ sealed class DashboardView : Control
         }
     }
 
+    // Per adapter (approved mockup): header line with the adapter name bold
+    // and the ↑/↓ rates right-aligned, the IP prominent below, the MAC as a
+    // muted third line. No sparkline — an aggregate over several adapters
+    // would be ambiguous, and the rates already carry the activity.
     void DrawNetworkCard(Graphics g, Rectangle card)
     {
         var net = _m!.Network!;
         DrawCardBg(g, card);
         DrawHead(g, card, "Network");
-        int x = card.X + CardPadX, y = card.Y + CardPadY + HeadH;
-        DrawRow(g, x, y, 22, "↑", FmtSpeed(net.UploadKbps));   y += RowH;
-        DrawRow(g, x, y, 22, "↓", FmtSpeed(net.DownloadKbps)); y += RowH;
-        y += SparkGap;
-        float max = Math.Max(100, _netHist.Count > 0 ? _netHist.Max() : 0);
-        DrawMiniSpark(g, card, y, _netHist, max);
+        int x = card.X + CardPadX, w = card.Width - CardPadX * 2;
+        int y = card.Y + CardPadY + HeadH;
+        for (int i = 0; i < net.Count; i++)
+        {
+            var a = net[i];
+            if (i > 0)
+            {
+                using var pen = new Pen(Theme.CardBorder);
+                g.DrawLine(pen, x, y - 5, x + w, y - 5);
+            }
+            TextRenderer.DrawText(g, a.Name, Theme.SemiBold, new Rectangle(x, y, w / 2, 17), Theme.Fg,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+            string rates = $"↑ {FmtSpeed(a.UploadKbps)}  ↓ {FmtSpeed(a.DownloadKbps)}";
+            TextRenderer.DrawText(g, rates, Theme.Tiny, new Rectangle(x + w / 2, y, w - w / 2, 17), Theme.Fg2,
+                TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+            y += 17;
+            TextRenderer.DrawText(g, a.IpAddress ?? "—", Theme.Small, new Rectangle(x, y, w, 16), Theme.Fg,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+            y += 16;
+            TextRenderer.DrawText(g, a.Mac ?? "", Theme.Tiny, new Rectangle(x, y, w, 14), Theme.Fg3,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+            y += 14 + 9;
+        }
     }
 
     void DrawSystemCard(Graphics g, Rectangle card)
@@ -390,9 +411,11 @@ sealed class DashboardView : Control
         DrawCardBg(g, card);
         DrawHead(g, card, "System");
         int x = card.X + CardPadX, y = card.Y + CardPadY + HeadH;
-        // Motherboard name intentionally absent — static info, lives on About.
-        DrawRow(g, x, y, 52, "Uptime", FmtUptime(_m!.System?.UptimeSec)); y += RowH;
-        DrawRow(g, x, y, 52, "Host", _m.Host);
+        int valueW = card.Width - CardPadX * 2 - 52;
+        DrawRow(g, x, y, 52, "Uptime", FmtUptime(_m!.System?.UptimeSec), valueW); y += RowH;
+        DrawRow(g, x, y, 52, "Host", _m.Host, valueW); y += RowH;
+        DrawRow(g, x, y, 52, "OS", _m.System?.OsVersion ?? "—", valueW); y += RowH;
+        DrawRow(g, x, y, 52, "Board", _m.Motherboard?.Name ?? "—", valueW);
     }
 
     // ── formatting ────────────────────────────────────────────────────────────
