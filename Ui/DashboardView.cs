@@ -434,11 +434,15 @@ sealed class DashboardView : Control
                 using var pen = new Pen(Theme.CardBorder);
                 g.DrawLine(pen, x, y - 5, x + w, y - 5);
             }
-            TextRenderer.DrawText(g, a.Name, Theme.SemiBold, new Rectangle(x, y, w / 2, 17), Theme.Fg,
+            // The name only claims its measured width (capped at half) — the
+            // rates get all the rest, otherwise a right-aligned string wider
+            // than its rect is clipped on the LEFT and eats the ↑ part.
+            int nameW = Math.Min(TextRenderer.MeasureText(a.Name, Theme.SemiBold).Width + 4, w / 2);
+            TextRenderer.DrawText(g, a.Name, Theme.SemiBold, new Rectangle(x, y, nameW, 17), Theme.Fg,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
-            AddTipIfTruncated(x, y, w / 2, a.Name, Theme.SemiBold);
+            AddTipIfTruncated(x, y, nameW, a.Name, Theme.SemiBold);
             string rates = $"↑ {FmtSpeed(a.UploadKbps)}  ↓ {FmtSpeed(a.DownloadKbps)}";
-            TextRenderer.DrawText(g, rates, Theme.Tiny, new Rectangle(x + w / 2, y, w - w / 2, 17), Theme.Fg2,
+            TextRenderer.DrawText(g, rates, Theme.Tiny, new Rectangle(x + nameW, y, w - nameW, 17), Theme.Fg2,
                 TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
             y += 17;
             TextRenderer.DrawText(g, a.IpAddress ?? "—", Theme.Small, new Rectangle(x, y, w, 16), Theme.Fg,
