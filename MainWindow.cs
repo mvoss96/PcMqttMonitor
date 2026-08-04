@@ -138,6 +138,16 @@ sealed class MainWindow : Form
     // One-shot marker surviving the Application.Restart round trip.
     static string RestartMarker => Path.Combine(Path.GetTempPath(), "PcMqttMonitor.reopen");
 
+    // ── hooks for DemoMode (CI screenshots) ───────────────────────────────────
+
+    internal void DemoSelectPage(int index) => SelectPage(index);
+
+    internal void DemoFeed(MetricsSnapshot m)
+    {
+        _lastMetrics = m;
+        _dashboard.SetMetrics(m);
+    }
+
     // ── page switching ────────────────────────────────────────────────────────
 
     void SelectPage(int index)

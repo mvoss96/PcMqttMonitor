@@ -1,0 +1,83 @@
+name: Screenshots
+
+# Renders all app pages with deterministic demo data (--screenshots dev mode)
+# so the README images never go stale. Manually triggered; optionally commits
+# the English/dark set straight to docs/.
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: "Commit the en/dark set to docs/ (updates the README images)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  screenshots:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build
+        run: dotnet publish PcMqttMonitor.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
+
+      - name: Render pages (en/de x dark/light)
+        run: |
+          foreach ($combo in @(("en","dark"), ("de","dark"), ("en","light"), ("de","light"))) {
+            $dir = "shots/$($combo[0])-$($combo[1])"
+            Start-Process publish/PcMqttMonitor.exe -ArgumentList '--screenshots',$dir,'--lang',$combo[0],'--theme',$combo[1] -Wait
+          }
+
+      - name: Apply rounded-corner mask
+        run: |
+          Add-Type -AssemblyName System.Drawing
+          foreach ($file in Get-ChildItem shots -Recurse -Filter *.png) {
+            $src = [System.Drawing.Image]::FromFile($file.FullName)
+            $crop = 1; $radius = 8
+            $w = $src.Width - 2*$crop; $h = $src.Height - 2*$crop
+            $out = New-Object System.Drawing.Bitmap($w, $h, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+            $g = [System.Drawing.Graphics]::FromImage($out)
+            $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+            $path = New-Object System.Drawing.Drawing2D.GraphicsPath
+            $d = $radius * 2
+            $path.AddArc(0, 0, $d, $d, 180, 90); $path.AddArc($w - $d, 0, $d, $d, 270, 90)
+            $path.AddArc($w - $d, $h - $d, $d, $d, 0, 90); $path.AddArc(0, $h - $d, $d, $d, 90, 90)
+            $path.CloseFigure()
+            $g.SetClip($path)
+            $g.DrawImage($src, -$crop, -$crop, $src.Width, $src.Height)
+            $g.Dispose(); $src.Dispose()
+            $tmp = "$($file.FullName).tmp.png"
+            $out.Save($tmp, [System.Drawing.Imaging.ImageFormat]::Png)
+            $out.Dispose()
+            Move-Item $tmp $file.FullName -Force
+          }
+
+      - name: Upload all sets as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: shots/
+
+      - name: Commit en/dark set to docs
+        if: inputs.commit
+        run: |
+          Copy-Item shots/en-dark/dashboard.png docs/dashboard.png -Force
+          Copy-Item shots/en-dark/outputs.png   docs/outputs.png -Force
+          Copy-Item shots/en-dark/sensors.png   docs/sensors.png -Force
+          Copy-Item shots/en-dark/settings.png  docs/settings.png -Force
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/*.png
+          git diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) {
+            git commit -m "docs: regenerate screenshots (demo mode)"
+            git push
+          } else {
+            "No changes."
+          }

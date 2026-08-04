@@ -64,6 +64,10 @@ class Program
         var configPath = Path.Combine(AppContext.BaseDirectory, "config.json");
         var config = ConfigLoader.Load(configPath);
 
+        // Hidden dev mode: render demo screenshots and exit (CI workflow).
+        if (DemoMode.TryRun(args, configPath))
+            return;
+
         // Language before any UI is built; changing it restarts the app.
         L.Init(config.General.Language);
 
