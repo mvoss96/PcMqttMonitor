@@ -27,23 +27,29 @@ sealed class OutputsPage : Panel
     bool _mqttConnected;
     string _mqttBroker = "";
 
+    // manual scrolling (slim overlay rail, no native scrollbar)
+    readonly Label _title;
+    ScrollRail? _rail;
+    int _scroll, _contentH;
+
     public OutputsPage(AppConfig config, Action markDirty)
     {
         _config = config;
         _markDirty = markDirty;
         BackColor = Theme.WinBg;
-        // With every card expanded the content exceeds the window — scroll.
-        // Selectable so the panel can take focus and receive the mouse wheel.
-        AutoScroll = true;
+        // With every card expanded the content exceeds the window. Scrolling is
+        // manual with a slim overlay rail in the right margin (matching the
+        // dashboard) — the native scrollbar would shrink the client area and
+        // shift every card to the left.
         SetStyle(ControlStyles.Selectable, true);
         MouseEnter += (_, _) => Select();
 
-        var title = new Label
+        _title = new Label
         {
             Text = L.T.OutputsTitle, Font = Theme.Title, ForeColor = Theme.Fg,
             AutoSize = true, Location = new Point(16, 12)
         };
-        Controls.Add(title);
+        Controls.Add(_title);
 
         // ── MQTT ────────────────────────────────────────────────────────────
         _mqttCard = new OutputCard("MQTT", markDirty) { Open = true };
@@ -88,22 +94,117 @@ sealed class OutputsPage : Panel
             Controls.Add(card);
         }
 
+        _rail = new ScrollRail(this);
+        Controls.Add(_rail);
+        _rail.BringToFront();
+
         RefreshStatus();
+    }
+
+    protected override void OnMouseWheel(MouseEventArgs e)
+    {
+        SetScroll(_scroll - e.Delta / 120 * 48);
+        base.OnMouseWheel(e);
+    }
+
+    void SetScroll(int value)
+    {
+        int clamped = Math.Clamp(value, 0, Math.Max(0, _contentH - Height));
+        if (clamped == _scroll) return;
+        _scroll = clamped;
+        Relayout();
     }
 
     protected override void OnResize(EventArgs eventargs) { Relayout(); base.OnResize(eventargs); }
 
     void Relayout()
     {
-        // AutoScrollPosition.Y is negative while scrolled — cards are laid out
-        // in scrolled coordinates so a relayout never snaps back to the top.
-        int x = 16, w = ClientSize.Width - 32, y = 42 + AutoScrollPosition.Y;
+        int x = 16, w = Width - 32, y = 42 - _scroll;
+        _title.Top = 12 - _scroll;
         foreach (var card in new[] { _mqttCard, _udpCard, _tcpCard, _serialCard })
         {
             card.SetBounds(x, y, w, card.WantedHeight);
             y += card.WantedHeight + 10;
         }
-        AutoScrollMinSize = new Size(0, y - AutoScrollPosition.Y + 6);
+        _contentH = y + _scroll + 6;
+        // a collapse may have shrunk the content below the current offset
+        if (_scroll > Math.Max(0, _contentH - Height))
+            _scroll = Math.Max(0, _contentH - Height);
+        _rail?.Invalidate();
+    }
+
+    // Slim overlay scrollbar living in the page's 16px right margin — draws
+    // over empty space only, so its appearance never shifts the cards.
+    sealed class ScrollRail : Control
+    {
+        readonly OutputsPage _page;
+        bool _drag, _hover;
+        int _dragY, _dragStart;
+
+        public ScrollRail(OutputsPage page)
+        {
+            _page = page;
+            SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint
+                   | ControlStyles.UserPaint, true);
+            BackColor = Theme.WinBg;
+            Width = 10;
+            Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
+            page.Resize += (_, _) => Bounds = new Rectangle(page.Width - 10, 0, 10, page.Height);
+        }
+
+        int Max => Math.Max(0, _page._contentH - _page.Height);
+
+        Rectangle Thumb()
+        {
+            if (Max == 0 || _page._contentH <= 0) return Rectangle.Empty;
+            int trackH = Height - 4;
+            int thumbH = Math.Max(30, trackH * _page.Height / _page._contentH);
+            int thumbY = 2 + (trackH - thumbH) * _page._scroll / Max;
+            return new Rectangle(2, thumbY, Width - 5, thumbH);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            e.Graphics.Clear(Theme.WinBg);
+            var thumb = Thumb();
+            if (thumb.IsEmpty) return;
+            e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            using var brush = new SolidBrush(_drag || _hover ? Theme.ScrollHover : Theme.Scroll);
+            using var path = Theme.RoundedRect(thumb, thumb.Width / 2f);
+            e.Graphics.FillPath(brush, path);
+        }
+
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            var thumb = Thumb();
+            if (thumb.IsEmpty) return;
+            if (!thumb.Contains(e.Location))
+            {
+                int trackH = Height - 4 - thumb.Height;
+                if (trackH > 0)
+                    _page.SetScroll((e.Y - 2 - thumb.Height / 2) * Max / trackH);
+            }
+            _drag = true;
+            _dragY = e.Y;
+            _dragStart = _page._scroll;
+            base.OnMouseDown(e);
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            if (_drag)
+            {
+                var thumb = Thumb();
+                int trackH = Height - 4 - thumb.Height;
+                if (trackH > 0)
+                    _page.SetScroll(_dragStart + (e.Y - _dragY) * Max / trackH);
+            }
+            else if (!_hover) { _hover = true; Invalidate(); }
+            base.OnMouseMove(e);
+        }
+
+        protected override void OnMouseUp(MouseEventArgs e) { _drag = false; Invalidate(); base.OnMouseUp(e); }
+        protected override void OnMouseLeave(EventArgs e) { _hover = false; Invalidate(); base.OnMouseLeave(e); }
     }
 
     // Called by MainWindow when the MQTT sink reports a connection change,
