@@ -224,6 +224,11 @@ class Program
                         catch (Exception ex) { Log($"[error] {sink.Name} availability: {ex.Message}"); }
                     }
                     wasPaused = paused;
+                    // Resuming: re-announce the sink status — while paused the
+                    // status line says "Paused", and without an MQTT sink (which
+                    // rewrites it on every publish) nothing else would clear it.
+                    if (!paused)
+                        AnnounceSinks(sinks);
                 }
 
                 if (!paused)
