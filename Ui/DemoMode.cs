@@ -52,7 +52,16 @@ static class DemoMode
         window.Controls.Add(new CaptionBar { Text = window.Text });
         // Removing the border shrank the window to the former client area —
         // restore the design size so the pages keep their proportions.
-        window.Size = new Size(Theme.S(500), Theme.S(700));
+        // A --scale window can be larger than the screen (CI runs on a small
+        // display), which silently produced cut-off captures: WinForms clamps
+        // Form.Size to the screen's MaxWindowTrackSize, and Windows enforces
+        // the same limit from WM_GETMINMAXINFO. It takes BOTH to get past
+        // that: MaximumSize makes the form report the large size as its max
+        // track size, and raw SetWindowPos (in Shown, below) bypasses the
+        // managed clamp.
+        var size = new Size(Theme.S(500), Theme.S(700));
+        window.MinimumSize = size;
+        window.MaximumSize = size;
 
         window.StartPosition = FormStartPosition.CenterScreen;
         window.TopMost = true;   // nothing may cover the window during capture
@@ -60,6 +69,8 @@ static class DemoMode
         Directory.CreateDirectory(dir);
         window.Shown += async (_, _) =>
         {
+            SetWindowPos(window.Handle, IntPtr.Zero, 0, 0, size.Width, size.Height,
+                0x0002 | 0x0004 | 0x0010 /* NOMOVE | NOZORDER | NOACTIVATE */);
             var pages = new[] { "dashboard", "outputs", "sensors", "settings", "about" };
             for (int p = 0; p < pages.Length; p++)
             {
@@ -74,6 +85,10 @@ static class DemoMode
     }
 
     // ── capture ───────────────────────────────────────────────────────────────
+
+    // Raw SetWindowPos: not subject to the WinForms MaxWindowTrackSize clamp.
+    [DllImport("user32.dll")]
+    static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int w, int h, uint flags);
 
     [DllImport("user32.dll")]
     static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
