@@ -29,8 +29,10 @@ sealed class MainWindow : Form
     readonly System.Windows.Forms.Timer _savedFlash = new() { Interval = 1200 };
     bool _dirty, _outputsDirty;
 
-    // "update available" pill, top-right over the content
+    // "update available" pill in its own slim strip above the content — the
+    // strip only exists while an update is pending, so it never covers cards.
     readonly PillButton _updatePill;
+    readonly Panel _updateStrip;
 
     // True while the window is shown AND the dashboard page is active. Read from
     // the publish thread, so it must be a plain volatile flag, not control state.
@@ -119,14 +121,22 @@ sealed class MainWindow : Form
         _savedFlash.Tick += (_, _) => { _savedFlash.Stop(); if (!_dirty) _saveBar.Visible = false; };
 
         // ── update pill ─────────────────────────────────────────────────────
+        // Docked Top INSIDE the content area, added after the pages: WinForms
+        // processes docking from the last-added control backwards, so the strip
+        // claims its row first and the Fill pages flow in below it.
         _updatePill = new PillButton
         {
-            Soft = true, Visible = false, Height = 22, Font = Theme.Tiny,
+            Soft = true, Height = 22, Font = Theme.Tiny,
             Anchor = AnchorStyles.Top | AnchorStyles.Right,
         };
         _updatePill.Click += (_, _) => ShowAbout();
-        Controls.Add(_updatePill);
-        _updatePill.BringToFront();
+        _updateStrip = new Panel
+        {
+            Dock = DockStyle.Top, Height = 32, Visible = false,
+            BackColor = Theme.WinBg,
+        };
+        _updateStrip.Controls.Add(_updatePill);
+        _content.Controls.Add(_updateStrip);
 
         Resize += (_, _) => PositionSaveBar();
 
@@ -231,8 +241,8 @@ sealed class MainWindow : Form
     {
         _updatePill.Text = $"v{version.ToString(3)} available";
         int w = TextRenderer.MeasureText(_updatePill.Text, _updatePill.Font).Width + 20;
-        _updatePill.SetBounds(ClientSize.Width - w - 12, 8, w, 22);
-        _updatePill.Visible = true;
+        _updatePill.SetBounds(_updateStrip.Width - w - 16, (_updateStrip.Height - 22) / 2, w, 22);
+        _updateStrip.Visible = true;   // pages reflow below the strip
     }
 
     // ── data from the publish loop / tray ─────────────────────────────────────
