@@ -39,7 +39,15 @@ sealed class SensorService : IDisposable
     {
         _computer.Open();
         _cpu = _computer.Hardware.FirstOrDefault(h => h.HardwareType == HardwareType.Cpu);
-        _gpu = _computer.Hardware.FirstOrDefault(IsGpuHardware);
+        // Prefer a discrete GPU: on hybrid systems (Intel iGPU + NVIDIA/AMD dGPU)
+        // plain FirstOrDefault picks whichever LHM enumerates first — which can be
+        // the iGPU, hiding the card users actually care about. Intel is ranked
+        // last as a heuristic (mostly iGPUs; a discrete Arc still works, it just
+        // loses the tie against another vendor's card).
+        _gpu = _computer.Hardware
+            .Where(IsGpuHardware)
+            .OrderBy(h => h.HardwareType == HardwareType.GpuIntel ? 1 : 0)
+            .FirstOrDefault();
         _memory = _computer.Hardware.FirstOrDefault(h => h.HardwareType == HardwareType.Memory);
         _motherboard = _computer.Hardware.FirstOrDefault(h => h.HardwareType == HardwareType.Motherboard);
     }
