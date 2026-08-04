@@ -45,6 +45,15 @@ static class DemoMode
         for (int t = 0; t < 60; t++)
             window.DemoFeed(Snapshot(t));
 
+        // Borderless with an own caption bar: the OS would draw the real title
+        // bar for the monitor's DPI, not for --scale — at scale 2 it stays half
+        // height with tiny text. The drawn caption scales with everything else.
+        window.FormBorderStyle = FormBorderStyle.None;
+        window.Controls.Add(new CaptionBar { Text = window.Text });
+        // Removing the border shrank the window to the former client area —
+        // restore the design size so the pages keep their proportions.
+        window.Size = new Size(Theme.S(500), Theme.S(700));
+
         window.StartPosition = FormStartPosition.CenterScreen;
         window.TopMost = true;   // nothing may cover the window during capture
 
@@ -77,28 +86,57 @@ static class DemoMode
     [DllImport("user32.dll")]
     static extern bool PrintWindow(IntPtr hwnd, IntPtr hdc, uint flags);
 
-    [DllImport("user32.dll")]
-    static extern uint GetDpiForWindow(IntPtr hwnd);
-
+    // Borderless window — GetWindowRect is exactly the visible area, no
+    // invisible Win11 frame insets to compensate.
     static void Capture(IntPtr hwnd, string path)
     {
         GetWindowRect(hwnd, out var r);
-        int fw = r.Right - r.Left, fh = r.Bottom - r.Top;
-        using var full = new Bitmap(fw, fh, PixelFormat.Format32bppArgb);
-        using (var g = Graphics.FromImage(full))
+        using var bmp = new Bitmap(r.Right - r.Left, r.Bottom - r.Top, PixelFormat.Format32bppArgb);
+        using (var g = Graphics.FromImage(bmp))
         {
             var hdc = g.GetHdc();
             PrintWindow(hwnd, hdc, 2 /* PW_RENDERFULLCONTENT */);
             g.ReleaseHdc(hdc);
         }
-        // Win11 windows carry invisible borders on the left/right/bottom (none
-        // on top) — 7px at 96 DPI, scaling with the WINDOW's DPI (not with
-        // --scale, which is pure in-window rendering). Without the insets the
-        // capture has transparent slivers around the edges.
-        int inset = (int)MathF.Round(7f * GetDpiForWindow(hwnd) / 96f);
-        using var crop = full.Clone(
-            new Rectangle(inset, 0, fw - 2 * inset, fh - inset), PixelFormat.Format32bppArgb);
-        crop.Save(path, ImageFormat.Png);
+        bmp.Save(path, ImageFormat.Png);
+    }
+
+    // Win11-style caption strip: app icon, title, close glyph — drawn at
+    // Theme.Scale like the rest of the UI. Purely decorative (screenshots).
+    sealed class CaptionBar : Control
+    {
+        public CaptionBar()
+        {
+            SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint
+                   | ControlStyles.UserPaint, true);
+            Dock = DockStyle.Top;
+            Height = Theme.S(32);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            g.Clear(Theme.WinBg);
+
+            int size = Theme.S(16);
+            using (var sized = new Icon(TrayApp.CreateIcon(), 32, 32))
+            using (var bmp = sized.ToBitmap())
+            {
+                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                g.DrawImage(bmp, new Rectangle(Theme.S(10), (Height - size) / 2, size, size));
+            }
+
+            TextRenderer.DrawText(g, Text, Theme.Small,
+                new Rectangle(Theme.S(34), 0, Width - Theme.S(80), Height), Theme.Fg,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+
+            // close glyph, centered in the standard ~46px-wide hit zone
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            using var pen = new Pen(Theme.Fg, Theme.SF(1f));
+            float cx = Width - Theme.SF(23), cy = Height / 2f, r = Theme.SF(5);
+            g.DrawLine(pen, cx - r, cy - r, cx + r, cy + r);
+            g.DrawLine(pen, cx - r, cy + r, cx + r, cy - r);
+        }
     }
 
     // ── demo data ─────────────────────────────────────────────────────────────
