@@ -25,6 +25,7 @@ static class Theme
     public static readonly Font SemiBold = new("Segoe UI Semibold", 9.75f);  // 13px
     public static readonly Font Title    = new("Segoe UI Semibold", 12f);    // 16px
     public static readonly Font BigValue = new("Segoe UI Semibold", 19.5f);  // 26px
+    public static readonly Font BigCompact = new("Segoe UI Semibold", 15.75f); // 21px — dashboard half-width cards
 
     public static void Init()
     {

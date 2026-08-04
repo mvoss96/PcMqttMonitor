@@ -3,17 +3,19 @@ using System.Drawing.Drawing2D;
 using System.Globalization;
 using System.Windows.Forms;
 
-// The dashboard: owner-drawn cards per hardware group (big value, accent bar,
-// detail rows, 60s sparkline), matching the approved mockup. One control, one
-// paint — a refresh is "copy values, Invalidate()". Scrolling is handled
-// in-control with a slim custom scrollbar instead of the chunky native one.
+// The dashboard, compact layout (approved mockup, 2026-08-04): all groups as
+// half-width cards in a two-column grid — CPU+GPU, RAM+Drives, Network+System —
+// so the whole dashboard fits without scrolling. Each card: title, big value,
+// slim bar, ONE compact detail line, 20px mini sparkline. Owner-drawn: a
+// refresh is "copy values, Invalidate()". Scrolling (only needed with many
+// drives) uses the slim custom scrollbar.
 sealed class DashboardView : Control
 {
     // ── layout constants ──────────────────────────────────────────────────────
     const int PadX = 14, PadY = 14, CardGap = 10;
-    const int CardPadX = 14, CardPadY = 12;
-    const int HeadH = 22, BigH = 34, BarBlockH = 13, RowH = 19;
-    const int SparkH = 34, SparkCapH = 16, SparkGap = 8;
+    const int CardPadX = 12, CardPadY = 10;
+    const int HeadH = 20, BigH = 28, BarBlockH = 12, RowH = 19, DetailH = 18;
+    const int SparkH = 20, SparkGap = 6;
     const int ScrollW = 10;
 
     const int HistoryLen = 60;   // one sample per publish cycle ≈ last 60 s
@@ -141,47 +143,30 @@ sealed class DashboardView : Control
         // Scrolling is plain coordinate arithmetic — TextRenderer (GDI) ignores
         // GDI+ transforms, so a TranslateTransform would scroll shapes but not text.
         int w = Width - PadX * 2 - (MaxOffset > 0 ? ScrollW - 2 : 0);
+        int half = (w - CardGap) / 2;
+
+        // Present cards in fixed order, paired two per grid row. A missing
+        // section (no GPU, no drives) just shifts the following cards up.
+        var cards = new List<(int H, Action<Graphics, Rectangle> Draw)>();
+        if (_m.Cpu != null)            cards.Add((LoadCardHeight, DrawCpuCard));
+        if (_m.Gpu != null)            cards.Add((LoadCardHeight, DrawGpuCard));
+        if (_m.Ram != null)            cards.Add((LoadCardHeight, DrawRamCard));
+        if (_m.Drives is { Count: > 0 }) cards.Add((DrivesHeight(_m.Drives.Count), DrawDrivesCard));
+        if (_m.Network != null)        cards.Add((NetworkHeight, DrawNetworkCard));
+        if (_m.System != null)         cards.Add((SystemHeight, DrawSystemCard));
+
         int x = PadX, y = PadY - _offset;
-
-        if (_m.Cpu != null)
+        for (int i = 0; i < cards.Count; i += 2)
         {
-            int h = CardHeight(rows: 3, big: true, spark: true, head: true);
-            DrawLoadCard(g, new Rectangle(x, y, w, h), "CPU", _m.Cpu.Name, _m.Cpu.Load, _cpuHist, CpuRows());
-            y += h + CardGap;
-        }
-        if (_m.Gpu != null)
-        {
-            int h = CardHeight(rows: 4, big: true, spark: true, head: true);
-            DrawLoadCard(g, new Rectangle(x, y, w, h), "GPU", _m.Gpu.Name, _m.Gpu.Load, _gpuHist, GpuRows());
-            y += h + CardGap;
-        }
-        if (_m.Ram != null)
-        {
-            int h = CardHeight(rows: 0, big: true, spark: true, head: true);
-            DrawRamCard(g, new Rectangle(x, y, w, h));
-            y += h + CardGap;
-        }
-        if (_m.Drives is { Count: > 0 })
-        {
-            int h = CardPadY * 2 + HeadH + _m.Drives.Count * (18 + BarBlockH) + (_m.Drives.Count - 1) * 6;
-            DrawDrivesCard(g, new Rectangle(x, y, w, h));
-            y += h + CardGap;
-        }
-        if (_m.Network != null || _m.System != null)
-        {
-            int netH = CardPadY * 2 + HeadH + 2 * RowH + SparkGap + SparkH + SparkCapH;
-            int sysH = CardPadY * 2 + HeadH + 3 * RowH;
-            int h = Math.Max(netH, sysH);
-            int half = (w - CardGap) / 2;
-            if (_m.Network != null)
-                DrawNetworkCard(g, new Rectangle(x, y, _m.System != null ? half : w, h));
-            if (_m.System != null)
-                DrawSystemCard(g, new Rectangle(_m.Network != null ? x + half + CardGap : x, y,
-                    _m.Network != null ? w - half - CardGap : w, h));
-            y += h;
+            bool pair = i + 1 < cards.Count;
+            int rowH = pair ? Math.Max(cards[i].H, cards[i + 1].H) : cards[i].H;
+            cards[i].Draw(g, new Rectangle(x, y, pair ? half : w, rowH));
+            if (pair)
+                cards[i + 1].Draw(g, new Rectangle(x + half + CardGap, y, w - half - CardGap, rowH));
+            y += rowH + CardGap;
         }
 
-        _contentH = y + _offset + PadY;
+        _contentH = y - CardGap + _offset + PadY;
 
         // slim scrollbar, drawn last so it overlays the card edge
         var thumb = ThumbRect();
@@ -196,15 +181,17 @@ sealed class DashboardView : Control
         if (_offset > MaxOffset) _offset = MaxOffset;
     }
 
-    static int CardHeight(int rows, bool big, bool spark, bool head)
-    {
-        int h = CardPadY * 2;
-        if (head)  h += HeadH;
-        if (big)   h += BigH + BarBlockH;
-        if (rows > 0) h += rows * RowH + 4;
-        if (spark) h += SparkGap + SparkH + SparkCapH;
-        return h;
-    }
+    static int LoadCardHeight =>
+        CardPadY * 2 + HeadH + BigH + BarBlockH + DetailH + SparkGap + SparkH;
+
+    static int DrivesHeight(int drives) =>
+        CardPadY * 2 + HeadH + drives * 27 - 6;
+
+    static int NetworkHeight =>
+        CardPadY * 2 + HeadH + 2 * RowH + SparkGap + SparkH;
+
+    static int SystemHeight =>
+        CardPadY * 2 + HeadH + 2 * RowH;
 
     void DrawCardBg(Graphics g, Rectangle r)
     {
@@ -215,18 +202,9 @@ sealed class DashboardView : Control
         g.DrawPath(border, path);
     }
 
-    static void DrawHead(Graphics g, Rectangle card, string name, string? sub)
-    {
-        int x = card.X + CardPadX, y = card.Y + CardPadY;
-        TextRenderer.DrawText(g, name, Theme.SemiBold, new Point(x, y), Theme.Fg);
-        if (!string.IsNullOrEmpty(sub))
-        {
-            int nameW = TextRenderer.MeasureText(name, Theme.SemiBold).Width;
-            var rect = new Rectangle(x + nameW + 4, y + 1, card.Width - CardPadX * 2 - nameW - 4, 16);
-            TextRenderer.DrawText(g, sub, Theme.Small, rect, Theme.Fg3,
-                TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
-        }
-    }
+    static void DrawHead(Graphics g, Rectangle card, string name)
+        => TextRenderer.DrawText(g, name, Theme.SemiBold,
+            new Point(card.X + CardPadX, card.Y + CardPadY), Theme.Fg);
 
     void DrawBar(Graphics g, int x, int y, int w, int pct)
     {
@@ -269,108 +247,128 @@ sealed class DashboardView : Control
             g.FillEllipse(dot, pts[^1].X - 2.4f, pts[^1].Y - 2.4f, 4.8f, 4.8f);
     }
 
-    static void DrawRow(Graphics g, int x, int y, int labelW, string label, string value, Color valueColor)
+    static void DrawRow(Graphics g, int x, int y, int labelW, string label, string value)
     {
         TextRenderer.DrawText(g, label, Theme.Base, new Rectangle(x, y, labelW, RowH), Theme.Fg2,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
-        TextRenderer.DrawText(g, value, Theme.Base, new Rectangle(x + labelW, y, 220, RowH), valueColor,
+        TextRenderer.DrawText(g, value, Theme.Base, new Rectangle(x + labelW, y, 220, RowH), Theme.Fg,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
     }
 
-    void DrawBigPercent(Graphics g, Rectangle card, ref int y, int? pct, string? extra = null)
+    // The ONE detail line per card: colored segments drawn back to back
+    // (NoPadding on both draw and measure so the pieces join seamlessly).
+    static void DrawDetail(Graphics g, int x, int y, List<(string Text, Color Color)> parts)
+    {
+        const TextFormatFlags flags = TextFormatFlags.Left | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding;
+        foreach (var (text, color) in parts)
+        {
+            TextRenderer.DrawText(g, text, Theme.Small, new Point(x, y), color, flags);
+            x += TextRenderer.MeasureText(g, text, Theme.Small, Size.Empty, flags).Width;
+        }
+    }
+
+    // Builds "a · b · c" segments, skipping missing values.
+    static List<(string, Color)> Segments(params (string? Text, Color Color)[] parts)
+    {
+        var result = new List<(string, Color)>();
+        foreach (var (text, color) in parts)
+        {
+            if (text == null) continue;
+            if (result.Count > 0) result.Add((" · ", Theme.Fg3));
+            result.Add((text, color));
+        }
+        if (result.Count == 0) result.Add(("—", Theme.Fg3));
+        return result;
+    }
+
+    void DrawBigPercent(Graphics g, Rectangle card, ref int y, int? pct)
     {
         int x = card.X + CardPadX;
         string big = pct?.ToString() ?? "—";
-        TextRenderer.DrawText(g, big, Theme.BigValue, new Point(x, y), Theme.Fg);
-        int bigW = TextRenderer.MeasureText(big, Theme.BigValue).Width;
-        string tail = extra != null ? $" %   ·   {extra}" : " %";
-        TextRenderer.DrawText(g, tail, Theme.Base, new Point(x + bigW - 2, y + 14), Theme.Fg2);
+        TextRenderer.DrawText(g, big, Theme.BigCompact, new Point(x, y), Theme.Fg);
+        int bigW = TextRenderer.MeasureText(big, Theme.BigCompact).Width;
+        TextRenderer.DrawText(g, "%", Theme.Small, new Point(x + bigW - 3, y + 10), Theme.Fg2);
         y += BigH;
         DrawBar(g, x, y, card.Width - CardPadX * 2, pct ?? 0);
         y += BarBlockH;
     }
 
+    void DrawMiniSpark(Graphics g, Rectangle card, int y, Queue<float> hist, float max)
+        => DrawSpark(g, new Rectangle(card.X + CardPadX, y, card.Width - CardPadX * 2, SparkH), hist, max);
+
     // ── cards ─────────────────────────────────────────────────────────────────
 
-    void DrawLoadCard(Graphics g, Rectangle card, string name, string? sub,
-        int? load, Queue<float> hist, (string Label, string Value, Color Color)[] rows)
-    {
-        DrawCardBg(g, card);
-        DrawHead(g, card, name, sub);
-        int y = card.Y + CardPadY + HeadH;
-        DrawBigPercent(g, card, ref y, load);
-        foreach (var (label, value, color) in rows)
-        {
-            DrawRow(g, card.X + CardPadX, y, 110, label, value, color);
-            y += RowH;
-        }
-        y += 4 + SparkGap;
-        DrawSpark(g, new Rectangle(card.X + CardPadX, y, card.Width - CardPadX * 2, SparkH), hist, 100);
-        y += SparkH;
-        TextRenderer.DrawText(g, "Load, last 60 s", Theme.Tiny, new Point(card.X + CardPadX, y + 2), Theme.Fg3);
-    }
-
-    (string, string, Color)[] CpuRows()
+    void DrawCpuCard(Graphics g, Rectangle card)
     {
         var c = _m!.Cpu!;
-        return
-        [
-            ("Temperature",   Fmt(c.TempC, "°C"),           Theme.TempColor(c.TempC)),
-            ("Package Power", Fmt(c.PackagePowerW, "W"),    Theme.Fg),
-            ("Core Voltage",  Fmt(c.CoreVoltageV, "V", "0.###"), Theme.Fg),
-        ];
+        DrawCardBg(g, card);
+        DrawHead(g, card, "CPU");
+        int y = card.Y + CardPadY + HeadH;
+        DrawBigPercent(g, card, ref y, c.Load);
+        DrawDetail(g, card.X + CardPadX, y, Segments(
+            (Fmt(c.TempC, "°C"), Theme.TempColor(c.TempC)),
+            (Fmt(c.PackagePowerW, "W"), Theme.Fg2),
+            (Fmt(c.CoreVoltageV, "V", "0.###"), Theme.Fg2)));
+        y += DetailH + SparkGap;
+        DrawMiniSpark(g, card, y, _cpuHist, 100);
     }
 
-    (string, string, Color)[] GpuRows()
+    void DrawGpuCard(Graphics g, Rectangle card)
     {
         var gpu = _m!.Gpu!;
-        string vram = gpu.MemoryUsedMb != null || gpu.MemoryTotalMb != null
-            ? $"{FmtGb(gpu.MemoryUsedMb)} / {FmtGb(gpu.MemoryTotalMb)} GB"
-            : "—";
-        return
-        [
-            ("Temperature", Fmt(gpu.TempC, "°C"),        Theme.TempColor(gpu.TempC)),
-            ("Board Power", Fmt(gpu.BoardPowerW, "W"),   Theme.Fg),
-            ("Fan",         Fmt(gpu.FanRpm, "RPM", "0"), Theme.Fg),
-            ("VRAM",        vram,                        Theme.Fg),
-        ];
+        DrawCardBg(g, card);
+        DrawHead(g, card, "GPU");
+        int y = card.Y + CardPadY + HeadH;
+        DrawBigPercent(g, card, ref y, gpu.Load);
+        // Per the approved compact design the fan speed is dropped here —
+        // idle GPUs report 0 RPM, lowest information value of all details.
+        string? vram = gpu.MemoryUsedMb != null || gpu.MemoryTotalMb != null
+            ? $"VRAM {FmtGb(gpu.MemoryUsedMb)}/{FmtGb(gpu.MemoryTotalMb)} GB"
+            : null;
+        DrawDetail(g, card.X + CardPadX, y, Segments(
+            (Fmt(gpu.TempC, "°C"), Theme.TempColor(gpu.TempC)),
+            (Fmt(gpu.BoardPowerW, "W"), Theme.Fg2),
+            (vram, Theme.Fg2)));
+        y += DetailH + SparkGap;
+        DrawMiniSpark(g, card, y, _gpuHist, 100);
     }
 
     void DrawRamCard(Graphics g, Rectangle card)
     {
         var ram = _m!.Ram!;
         DrawCardBg(g, card);
-        DrawHead(g, card, "RAM", null);
+        DrawHead(g, card, "RAM");
         int y = card.Y + CardPadY + HeadH;
-        string? extra = ram.UsedGb != null || ram.TotalGb != null
+        DrawBigPercent(g, card, ref y, ram.Load);
+        string? usage = ram.UsedGb != null || ram.TotalGb != null
             ? $"{FmtNum(ram.UsedGb)} / {FmtNum(ram.TotalGb)} GB"
             : null;
-        DrawBigPercent(g, card, ref y, ram.Load, extra);
-        y += SparkGap;
-        DrawSpark(g, new Rectangle(card.X + CardPadX, y, card.Width - CardPadX * 2, SparkH), _ramHist, 100);
-        y += SparkH;
-        TextRenderer.DrawText(g, "Load, last 60 s", Theme.Tiny, new Point(card.X + CardPadX, y + 2), Theme.Fg3);
+        DrawDetail(g, card.X + CardPadX, y, Segments((usage, Theme.Fg2)));
+        y += DetailH + SparkGap;
+        DrawMiniSpark(g, card, y, _ramHist, 100);
     }
 
     void DrawDrivesCard(Graphics g, Rectangle card)
     {
         DrawCardBg(g, card);
-        DrawHead(g, card, "Drives", null);
+        DrawHead(g, card, "Drives");
         int x = card.X + CardPadX, w = card.Width - CardPadX * 2;
         int y = card.Y + CardPadY + HeadH;
         foreach (var d in _m!.Drives!)
         {
-            TextRenderer.DrawText(g, d.Name.TrimEnd('\\'), Theme.SemiBold,
-                new Rectangle(x, y, w / 2, 18), Theme.Fg,
+            // Compact: drive letter + percent only; names and GB live in the tooltip-free
+            // MQTT payload and were dropped from the card per the approved design.
+            var letter = d.Name.TrimEnd('\\');
+            int paren = letter.LastIndexOf('(');
+            if (paren >= 0) letter = letter[paren..].Trim('(', ')');
+            TextRenderer.DrawText(g, letter, Theme.SemiBold, new Rectangle(x, y, w / 2, 16), Theme.Fg,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
-            string right = d.UsedPercent != null && d.UsedGb != null && d.TotalGb != null
-                ? $"{d.UsedPercent} % · {FmtNum(d.UsedGb)} / {FmtNum(d.TotalGb)} GB"
-                : d.TotalGb != null ? $"{FmtNum(d.TotalGb)} GB" : "";
-            TextRenderer.DrawText(g, right, Theme.Base, new Rectangle(x + w / 2, y, w - w / 2, 18), Theme.Fg2,
+            TextRenderer.DrawText(g, d.UsedPercent != null ? $"{d.UsedPercent} %" : "—", Theme.Small,
+                new Rectangle(x + w / 2, y, w - w / 2, 16), Theme.Fg2,
                 TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
-            y += 18;
-            DrawBar(g, x, y + 3, w, d.UsedPercent ?? 0);
-            y += BarBlockH + 6;
+            y += 16;
+            DrawBar(g, x, y + 2, w, d.UsedPercent ?? 0);
+            y += 11;
         }
     }
 
@@ -378,32 +376,23 @@ sealed class DashboardView : Control
     {
         var net = _m!.Network!;
         DrawCardBg(g, card);
-        DrawHead(g, card, "Network", null);
+        DrawHead(g, card, "Network");
         int x = card.X + CardPadX, y = card.Y + CardPadY + HeadH;
-        DrawRow(g, x, y, 26, "↑", FmtSpeed(net.UploadKbps), Theme.Fg);   y += RowH;
-        DrawRow(g, x, y, 26, "↓", FmtSpeed(net.DownloadKbps), Theme.Fg); y += RowH;
+        DrawRow(g, x, y, 22, "↑", FmtSpeed(net.UploadKbps));   y += RowH;
+        DrawRow(g, x, y, 22, "↓", FmtSpeed(net.DownloadKbps)); y += RowH;
         y += SparkGap;
         float max = Math.Max(100, _netHist.Count > 0 ? _netHist.Max() : 0);
-        DrawSpark(g, new Rectangle(x, y, card.Width - CardPadX * 2, SparkH), _netHist, max);
-        y += SparkH;
-        TextRenderer.DrawText(g, "Download, last 60 s", Theme.Tiny, new Point(x, y + 2), Theme.Fg3);
+        DrawMiniSpark(g, card, y, _netHist, max);
     }
 
     void DrawSystemCard(Graphics g, Rectangle card)
     {
         DrawCardBg(g, card);
-        DrawHead(g, card, "System", null);
+        DrawHead(g, card, "System");
         int x = card.X + CardPadX, y = card.Y + CardPadY + HeadH;
-        DrawRow(g, x, y, 52, "Uptime", FmtUptime(_m!.System?.UptimeSec), Theme.Fg); y += RowH;
-        DrawRow(g, x, y, 52, "Host", _m.Host, Theme.Fg); y += RowH;
-        if (!string.IsNullOrEmpty(_m.Motherboard?.Name))
-        {
-            TextRenderer.DrawText(g, "Board", Theme.Base, new Rectangle(x, y, 52, RowH), Theme.Fg2,
-                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
-            TextRenderer.DrawText(g, _m.Motherboard.Name, Theme.Small,
-                new Rectangle(x + 52, y, card.Width - CardPadX * 2 - 52, RowH), Theme.Fg,
-                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
-        }
+        // Motherboard name intentionally absent — static info, lives on About.
+        DrawRow(g, x, y, 52, "Uptime", FmtUptime(_m!.System?.UptimeSec)); y += RowH;
+        DrawRow(g, x, y, 52, "Host", _m.Host);
     }
 
     // ── formatting ────────────────────────────────────────────────────────────
@@ -411,8 +400,8 @@ sealed class DashboardView : Control
     static string FmtNum(float? v, string fmt = "0.#") =>
         v?.ToString(fmt, CultureInfo.InvariantCulture) ?? "?";
 
-    static string Fmt(float? v, string unit, string fmt = "0.#") =>
-        v == null ? "—" : $"{v.Value.ToString(fmt, CultureInfo.InvariantCulture)} {unit}";
+    static string? Fmt(float? v, string unit, string fmt = "0.#") =>
+        v == null ? null : $"{v.Value.ToString(fmt, CultureInfo.InvariantCulture)} {unit}";
 
     static string FmtGb(float? mb) =>
         mb == null ? "?" : (mb.Value / 1024f).ToString("0.#", CultureInfo.InvariantCulture);
