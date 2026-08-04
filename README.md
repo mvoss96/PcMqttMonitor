@@ -1,6 +1,10 @@
 # PC MQTT Monitor
 
-A lightweight Windows system-tray app that reads hardware sensors (CPU, GPU, RAM, drives, network) via [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) and publishes them to **MQTT** — with native **Home Assistant MQTT Discovery** — and optionally as **UDP datagrams** or a **TCP JSON stream**.
+A lightweight Windows system-tray app that reads hardware sensors (CPU, GPU, RAM, drives, network) via [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) and streams them to wherever you need them:
+
+> **MQTT** (with native **Home Assistant discovery**)  ·  **UDP** datagrams  ·  **TCP** JSON stream  ·  **Serial port** (e.g. ESP32 displays)
+
+All four outputs can run at the same time and are toggled independently in the app.
 
 <p>
   <img src="docs/dashboard.png" width="484" alt="Dashboard">
