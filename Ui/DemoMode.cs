@@ -72,10 +72,13 @@ static class DemoMode
     static void Capture(IntPtr hwnd, string path)
     {
         GetWindowRect(hwnd, out var r);
-        int w = r.Right - r.Left, h = r.Bottom - r.Top;
+        // Win11 windows carry 7px invisible borders on the left/right/bottom
+        // (none on top) — without the insets the capture shows desktop slivers.
+        const int inset = 7;
+        int w = r.Right - r.Left - 2 * inset, h = r.Bottom - r.Top - inset;
         using var bmp = new Bitmap(w, h, PixelFormat.Format32bppArgb);
         using var g = Graphics.FromImage(bmp);
-        g.CopyFromScreen(r.Left, r.Top, 0, 0, bmp.Size);
+        g.CopyFromScreen(r.Left + inset, r.Top, 0, 0, bmp.Size);
         bmp.Save(path, ImageFormat.Png);
     }
 
