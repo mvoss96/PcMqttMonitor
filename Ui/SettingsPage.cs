@@ -1,4 +1,5 @@
 using System.Drawing;
+using System.Globalization;
 using System.Windows.Forms;
 
 // The Settings page: general options as title+subtitle rows with the control
@@ -7,9 +8,13 @@ sealed class SettingsPage : Panel
 {
     readonly AppConfig _config;
 
-    readonly NumericUpDown _interval;
+    readonly InputBox _interval;
     readonly ToggleSwitch _autoStart, _debug, _updateCheck;
+    readonly ComboBox _theme;
     bool _autoStartInitial;
+
+    static readonly string[] ThemeValues = ["system", "light", "dark"];
+    static readonly string[] ThemeLabels = ["System", "Light", "Dark"];
 
     public SettingsPage(AppConfig config, Action markDirty)
     {
@@ -23,22 +28,32 @@ sealed class SettingsPage : Panel
         };
         Controls.Add(title);
 
-        _interval = new NumericUpDown
-        {
-            Minimum = 0.5m, Maximum = 3600, DecimalPlaces = 1, Increment = 0.5m,
-            Value = (decimal)config.General.PublishIntervalSeconds,
-            Width = 70, TextAlign = HorizontalAlignment.Right,
-            BackColor = Theme.InputBg, ForeColor = Theme.Fg,
-        };
-        _interval.ValueChanged += (_, _) => markDirty();
+        // Plain text field (no spinner arrows) — validated and clamped on Save.
+        _interval = new InputBox();
+        _interval.Box.TextAlign = HorizontalAlignment.Center;
+        _interval.Box.Text = config.General.PublishIntervalSeconds.ToString("0.0", CultureInfo.InvariantCulture);
+        _interval.Box.TextChanged += (_, _) => markDirty();
         _autoStart   = MakeToggle(markDirty);
         _debug       = MakeToggle(markDirty);
         _updateCheck = MakeToggle(markDirty);
         _debug.SetChecked(config.General.DebugEnabled);
         _updateCheck.SetChecked(config.General.UpdateCheckEnabled);
 
+        // Standard rendering on purpose — the dark color mode themes the native
+        // ComboBox correctly; FlatStyle/custom colors break its arrow drawing.
+        _theme = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Width = 100,
+        };
+        _theme.Items.AddRange(ThemeLabels);
+        int themeIdx = Array.IndexOf(ThemeValues, config.General.Theme?.ToLowerInvariant());
+        _theme.SelectedIndex = themeIdx >= 0 ? themeIdx : 0;
+        _theme.SelectedIndexChanged += (_, _) => markDirty();
+
         var card1 = new SettingsCard { Location = new Point(16, 42) };
         card1.AddRow("Publish interval", "Seconds between two measurements", _interval);
+        card1.AddRow("Theme", "Changing restarts the app", _theme);
         card1.AddRow("Start with Windows", "Scheduled task with highest privileges", _autoStart);
         card1.AddRow("Debug logging", "Verbose entries in app.log", _debug);
         Controls.Add(card1);
@@ -70,9 +85,15 @@ sealed class SettingsPage : Panel
         return t;
     }
 
-    public void Apply()
+    // Returns true when the app must restart to apply (theme change —
+    // WinForms cannot switch its color mode at runtime).
+    public bool Apply()
     {
-        _config.General.PublishIntervalSeconds = (double)_interval.Value;
+        // Accept both "1.5" and "1,5"; keep the previous value on garbage input.
+        if (double.TryParse(_interval.Box.Text.Replace(',', '.'),
+                NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds))
+            _config.General.PublishIntervalSeconds = Math.Clamp(seconds, 0.5, 3600);
+        _interval.Box.Text = _config.General.PublishIntervalSeconds.ToString("0.0", CultureInfo.InvariantCulture);
         _config.General.DebugEnabled           = _debug.Checked;
         _config.General.UpdateCheckEnabled     = _updateCheck.Checked;
 
@@ -82,6 +103,11 @@ sealed class SettingsPage : Panel
             _autoStartInitial = enable;
             Task.Run(() => AutoStart.Apply(enable));   // schtasks is slow — off the UI thread
         }
+
+        var theme = ThemeValues[_theme.SelectedIndex];
+        bool themeChanged = !string.Equals(_config.General.Theme, theme, StringComparison.OrdinalIgnoreCase);
+        _config.General.Theme = theme;
+        return themeChanged;
     }
 }
 

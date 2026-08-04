@@ -57,16 +57,24 @@ class Program
 
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
-#pragma warning disable WFO5001 // SetColorMode is marked experimental
-        Application.SetColorMode(SystemColorMode.System);   // dark title bar, menus, controls
-#pragma warning restore WFO5001
-        Theme.Init();   // palette for all owner-drawn UI — after SetColorMode
 
         // Config lives next to the exe — Program Files when installed (works because
         // the app always runs elevated), or bin\Debug during development. Survives
         // upgrades because the installer only replaces the exe, never config.json.
         var configPath = Path.Combine(AppContext.BaseDirectory, "config.json");
         var config = ConfigLoader.Load(configPath);
+
+        // Color mode from config (system/light/dark). A change in Settings saves
+        // the config and restarts the app — WinForms cannot re-theme live.
+#pragma warning disable WFO5001 // SetColorMode is marked experimental
+        Application.SetColorMode(config.General.Theme?.ToLowerInvariant() switch
+        {
+            "light" => SystemColorMode.Classic,
+            "dark"  => SystemColorMode.Dark,
+            _       => SystemColorMode.System,
+        });
+#pragma warning restore WFO5001
+        Theme.Init();   // palette for all owner-drawn UI — after SetColorMode
 
         Log($"=== PC MQTT Monitor v{UpdateChecker.CurrentVersion.ToString(3)} starting ===");
         Log($"MQTT:     {(config.Mqtt.Enabled && !string.IsNullOrWhiteSpace(config.Mqtt.Host) ? $"{config.Mqtt.Host}:{config.Mqtt.Port} (topic root '{config.Mqtt.TopicRoot}')" : "disabled")}");

@@ -137,10 +137,11 @@ sealed class DashboardView : Control
         if (_m == null) return;
 
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.TranslateTransform(0, -_offset);
 
+        // Scrolling is plain coordinate arithmetic — TextRenderer (GDI) ignores
+        // GDI+ transforms, so a TranslateTransform would scroll shapes but not text.
         int w = Width - PadX * 2 - (MaxOffset > 0 ? ScrollW - 2 : 0);
-        int x = PadX, y = PadY;
+        int x = PadX, y = PadY - _offset;
 
         if (_m.Cpu != null)
         {
@@ -180,8 +181,7 @@ sealed class DashboardView : Control
             y += h;
         }
 
-        _contentH = y + PadY;
-        g.ResetTransform();
+        _contentH = y + _offset + PadY;
 
         // slim scrollbar, drawn last so it overlays the card edge
         var thumb = ThumbRect();
@@ -284,7 +284,7 @@ sealed class DashboardView : Control
         TextRenderer.DrawText(g, big, Theme.BigValue, new Point(x, y), Theme.Fg);
         int bigW = TextRenderer.MeasureText(big, Theme.BigValue).Width;
         string tail = extra != null ? $" %   ·   {extra}" : " %";
-        TextRenderer.DrawText(g, tail, Theme.Base, new Point(x + bigW - 2, y + 12), Theme.Fg2);
+        TextRenderer.DrawText(g, tail, Theme.Base, new Point(x + bigW - 2, y + 14), Theme.Fg2);
         y += BigH;
         DrawBar(g, x, y, card.Width - CardPadX * 2, pct ?? 0);
         y += BarBlockH;

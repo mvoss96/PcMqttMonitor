@@ -13,14 +13,12 @@ sealed class OutputsPage : Panel
     readonly OutputCard _mqttCard, _udpCard, _tcpCard;
 
     // MQTT fields
-    readonly TextBox _host, _username, _password, _topic;
-    readonly NumericUpDown _port;
-    readonly CheckBox _useTls, _haDiscovery;
+    readonly TextBox _host, _username, _password, _topic, _port;
+    readonly FlatCheck _useTls, _haDiscovery;
     // UDP fields
-    readonly TextBox _udpHost;
-    readonly NumericUpDown _udpPort;
+    readonly TextBox _udpHost, _udpPort;
     // TCP fields
-    readonly NumericUpDown _tcpPort;
+    readonly TextBox _tcpPort;
 
     // live MQTT state pushed in from the sink via MainWindow
     bool _mqttConnected;
@@ -42,7 +40,7 @@ sealed class OutputsPage : Panel
         // ── MQTT ────────────────────────────────────────────────────────────
         _mqttCard = new OutputCard("MQTT", markDirty) { Open = true };
         _host     = _mqttCard.AddTextRow("Host", config.Mqtt.Host);
-        _port     = _mqttCard.AddNumberRow("Port", config.Mqtt.Port, 1, 65535);
+        _port     = _mqttCard.AddPortRow("Port", config.Mqtt.Port);
         _username = _mqttCard.AddTextRow("Username", config.Mqtt.Username);
         _password = _mqttCard.AddTextRow("Password", config.Mqtt.Password, password: true);
         _topic    = _mqttCard.AddTextRow("Topic root", config.Mqtt.TopicRoot);
@@ -53,12 +51,12 @@ sealed class OutputsPage : Panel
         // ── UDP ─────────────────────────────────────────────────────────────
         _udpCard = new OutputCard("UDP", markDirty);
         _udpHost = _udpCard.AddTextRow("Host", config.Udp.Host);
-        _udpPort = _udpCard.AddNumberRow("Port", config.Udp.Port, 1, 65535);
+        _udpPort = _udpCard.AddPortRow("Port", config.Udp.Port);
         _udpCard.Toggle.SetChecked(config.Udp.Enabled);
 
         // ── TCP ─────────────────────────────────────────────────────────────
         _tcpCard = new OutputCard("TCP", markDirty);
-        _tcpPort = _tcpCard.AddNumberRow("Listen port", config.Tcp.ListenPort, 1, 65535);
+        _tcpPort = _tcpCard.AddPortRow("Listen port", config.Tcp.ListenPort);
         _tcpCard.Toggle.SetChecked(config.Tcp.Enabled);
 
         foreach (var card in new[] { _mqttCard, _udpCard, _tcpCard })
@@ -108,10 +106,10 @@ sealed class OutputsPage : Panel
         else if (string.IsNullOrWhiteSpace(_udpHost.Text))
             _udpCard.SetStatus("Not configured — set a host", false);
         else
-            _udpCard.SetStatus($"Sending to {_udpHost.Text}:{(int)_udpPort.Value}", true);
+            _udpCard.SetStatus($"Sending to {_udpHost.Text}:{_udpPort.Text}", true);
 
         _tcpCard.SetStatus(_tcpCard.Toggle.Checked
-            ? $"Listening on {(int)_tcpPort.Value}" : "Disabled",
+            ? $"Listening on {_tcpPort.Text}" : "Disabled",
             _tcpCard.Toggle.Checked);
     }
 
@@ -120,7 +118,7 @@ sealed class OutputsPage : Panel
     {
         _config.Mqtt.Enabled            = _mqttCard.Toggle.Checked;
         _config.Mqtt.Host               = _host.Text.Trim();
-        _config.Mqtt.Port               = (int)_port.Value;
+        _config.Mqtt.Port               = ParsePort(_port, _config.Mqtt.Port);
         _config.Mqtt.Username           = _username.Text;
         _config.Mqtt.Password           = _password.Text;
         _config.Mqtt.TopicRoot          = _topic.Text.Trim();
@@ -129,12 +127,21 @@ sealed class OutputsPage : Panel
 
         _config.Udp.Enabled = _udpCard.Toggle.Checked;
         _config.Udp.Host    = _udpHost.Text.Trim();
-        _config.Udp.Port    = (int)_udpPort.Value;
+        _config.Udp.Port    = ParsePort(_udpPort, _config.Udp.Port);
 
         _config.Tcp.Enabled    = _tcpCard.Toggle.Checked;
-        _config.Tcp.ListenPort = (int)_tcpPort.Value;
+        _config.Tcp.ListenPort = ParsePort(_tcpPort, _config.Tcp.ListenPort);
 
         RefreshStatus();
+    }
+
+    // Valid port or the previous value — the field is normalized either way.
+    static int ParsePort(TextBox box, int fallback)
+    {
+        if (!int.TryParse(box.Text.Trim(), out var port) || port is < 1 or > 65535)
+            port = fallback;
+        box.Text = port.ToString();
+        return port;
     }
 }
 
@@ -142,7 +149,7 @@ sealed class OutputsPage : Panel
 // enable switch), body rows added by the page. Clicking the header toggles.
 sealed class OutputCard : CardPanel
 {
-    const int HeadH = 40, RowStep = 30, LabelW = 104, BodyPad = 8;
+    const int HeadH = 40, RowStep = 36, LabelW = 104, BodyPad = 8;
 
     public readonly ToggleSwitch Toggle = new();
     public Action? HeightChanged;
@@ -192,38 +199,27 @@ sealed class OutputCard : CardPanel
 
     public TextBox AddTextRow(string label, string value, bool password = false)
     {
-        var box = new TextBox
-        {
-            Text = value,
-            UseSystemPasswordChar = password,
-            BorderStyle = BorderStyle.FixedSingle,
-            BackColor = Theme.InputBg,
-            ForeColor = Theme.Fg,
-        };
-        box.TextChanged += (_, _) => _markDirty();
-        AddRow(label, box, stretch: true);
-        return box;
+        var input = new InputBox();
+        input.Box.Text = value;
+        input.Box.UseSystemPasswordChar = password;
+        input.Box.TextChanged += (_, _) => _markDirty();
+        AddRow(label, input, stretch: true);
+        return input.Box;
     }
 
-    public NumericUpDown AddNumberRow(string label, decimal value, decimal min, decimal max)
+    public TextBox AddPortRow(string label, int value)
     {
-        var num = new NumericUpDown
-        {
-            Minimum = min, Maximum = max, Value = value, Width = 90,
-            BackColor = Theme.InputBg, ForeColor = Theme.Fg,
-        };
-        num.ValueChanged += (_, _) => _markDirty();
-        AddRow(label, num, stretch: false);
-        return num;
+        var input = new InputBox();
+        input.Box.Text = value.ToString();
+        input.Box.TextChanged += (_, _) => _markDirty();
+        AddRow(label, input, stretch: true);   // full width, same as the text fields
+        return input.Box;
     }
 
-    public CheckBox AddCheckRow(string text, bool value)
+    public FlatCheck AddCheckRow(string text, bool value)
     {
-        var box = new CheckBox
-        {
-            Text = text, Checked = value, AutoSize = true,
-            ForeColor = Theme.Fg, Visible = _open,
-        };
+        var box = new FlatCheck { Text = text, Visible = _open };
+        box.Checked = value;
         box.CheckedChanged += (_, _) => _markDirty();
         box.Location = new Point(LabelW + 14, _bodyY + 2);
         Controls.Add(box);
@@ -236,7 +232,7 @@ sealed class OutputCard : CardPanel
         var lbl = new Label
         {
             Text = label, ForeColor = Theme.Fg2, AutoSize = false,
-            Bounds = new Rectangle(14, _bodyY + 4, LabelW - 14, 18),
+            Bounds = new Rectangle(14, _bodyY + 6, LabelW - 14, 18),
             Visible = _open,
         };
         control.Location = new Point(LabelW + 14, _bodyY);

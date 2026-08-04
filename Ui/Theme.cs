@@ -18,12 +18,13 @@ static class Theme
     public static Color InputBg,    InputBorder;
     public static Color Scroll,     ScrollHover;
 
-    public static readonly Font Base     = new("Segoe UI", 9f);
-    public static readonly Font Small    = new("Segoe UI", 8f);
-    public static readonly Font Tiny     = new("Segoe UI", 7.5f);
-    public static readonly Font SemiBold = new("Segoe UI Semibold", 9f);
-    public static readonly Font Title    = new("Segoe UI Semibold", 11f);
-    public static readonly Font BigValue = new("Segoe UI Semibold", 17f);
+    // Sizes mirror the mockup's CSS pixel values (px * 72 / 96 = pt).
+    public static readonly Font Base     = new("Segoe UI", 9.75f);           // 13px
+    public static readonly Font Small    = new("Segoe UI", 8.5f);            // 11.5px
+    public static readonly Font Tiny     = new("Segoe UI", 8f);              // 10.5px
+    public static readonly Font SemiBold = new("Segoe UI Semibold", 9.75f);  // 13px
+    public static readonly Font Title    = new("Segoe UI Semibold", 12f);    // 16px
+    public static readonly Font BigValue = new("Segoe UI Semibold", 19.5f);  // 26px
 
     public static void Init()
     {

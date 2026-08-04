@@ -54,6 +54,9 @@ sealed class GeneralConfig
 {
     public double PublishIntervalSeconds { get; set; } = 1.0;
     public bool DebugEnabled { get; set; } = false;
+    // UI color mode: "system" (follow Windows), "light" or "dark".
+    // Applied at startup; changing it in Settings restarts the app.
+    public string Theme { get; set; } = "system";
     // Daily check against GitHub releases; shows a tray notification when a
     // newer version exists. Notify-only — never downloads or installs anything.
     public bool UpdateCheckEnabled { get; set; } = true;

@@ -25,9 +25,7 @@ sealed class MainWindow : Form
     public Action<bool>? PauseChangeRequested;   // set by TrayApp (central pause switch)
 
     // floating save panel
-    readonly CardPanel _saveBar;
-    readonly Label _saveMsg;
-    readonly PillButton _saveBtn;
+    readonly SaveBar _saveBar;
     readonly System.Windows.Forms.Timer _savedFlash = new() { Interval = 1200 };
     bool _dirty, _outputsDirty;
 
@@ -48,8 +46,9 @@ sealed class MainWindow : Form
         Text = $"PC MQTT Monitor  v{version.ToString(3)}";
         Icon = TrayApp.CreateIcon();
         Size = new Size(500, 700);
-        MinimumSize = new Size(460, 560);
-        StartPosition = FormStartPosition.CenterScreen;
+        FormBorderStyle = FormBorderStyle.FixedSingle;   // fixed window per the mockup
+        MaximizeBox = false;
+        StartPosition = FormStartPosition.Manual;        // anchored near the tray on Show
         ShowInTaskbar = true;
         BackColor = Theme.WinBg;
         Font = Theme.Base;
@@ -100,7 +99,7 @@ sealed class MainWindow : Form
             var btn = new NavButton
             {
                 IconPainter = navDefs[i].Icon,
-                Location = new Point(5, 8 + i * 39),
+                Location = new Point(0, 8 + i * 39),
             };
             btn.Click += (_, _) => SelectPage(index);
             tips.SetToolTip(btn, navDefs[i].Tip);
@@ -112,17 +111,9 @@ sealed class MainWindow : Form
         Controls.Add(sidebar);   // added after Fill so Left wins
 
         // ── floating save panel (bottom-right, only while dirty) ────────────
-        _saveMsg = new Label
-        {
-            Text = "Unsaved changes", ForeColor = Theme.Fg2, Font = Theme.Small,
-            AutoSize = true, BackColor = Theme.CardBg,
-        };
-        _saveBtn = new PillButton { Text = "Save", Size = new Size(64, 26) };
-        _saveBtn.Click += (_, _) => Save();
-        _saveBar = new CardPanel { Size = new Size(0, 42), Visible = false };
-        _saveBar.Controls.Add(_saveMsg);
-        _saveBar.Controls.Add(_saveBtn);
-        LayoutSaveBar();
+        _saveBar = new SaveBar();
+        _saveBar.Button.Click += (_, _) => Save();
+        _saveBar.SizeChanged += (_, _) => PositionSaveBar();
         Controls.Add(_saveBar);
         _saveBar.BringToFront();
         _savedFlash.Tick += (_, _) => { _savedFlash.Stop(); if (!_dirty) _saveBar.Visible = false; };
@@ -137,13 +128,24 @@ sealed class MainWindow : Form
         Controls.Add(_updatePill);
         _updatePill.BringToFront();
 
-        Resize += (_, _) => LayoutSaveBar();
+        Resize += (_, _) => PositionSaveBar();
 
         SelectPage(0);
 
         // Force handle creation so BeginInvoke works before the window is first shown.
         _ = Handle;
+
+        // Coming back from a settings-triggered restart (theme change): reopen
+        // the window on the Settings page instead of starting hidden in the tray.
+        if (File.Exists(RestartMarker))
+        {
+            try { File.Delete(RestartMarker); } catch { }
+            BeginInvoke(ShowSettings);   // runs once the message loop is up
+        }
     }
+
+    // One-shot marker surviving the Application.Restart round trip.
+    static string RestartMarker => Path.Combine(Path.GetTempPath(), "PcMqttMonitor.reopen");
 
     // ── page switching ────────────────────────────────────────────────────────
 
@@ -159,9 +161,19 @@ sealed class MainWindow : Form
             _dashboard.SetMetrics(_lastMetrics);
     }
 
-    public void ShowDashboard() { SelectPage(0); Show(); BringToFront(); }
-    public void ShowSettings()  { SelectPage(3); Show(); BringToFront(); }
-    void ShowAbout()            { SelectPage(4); Show(); BringToFront(); }
+    public void ShowDashboard() { SelectPage(0); ShowAnchored(); }
+    public void ShowSettings()  { SelectPage(3); ShowAnchored(); }
+    void ShowAbout()            { SelectPage(4); ShowAnchored(); }
+
+    // Tray-flyout placement: bottom-right of the working area (above the
+    // taskbar) on whichever screen the cursor is on.
+    void ShowAnchored()
+    {
+        var area = Screen.FromPoint(Cursor.Position).WorkingArea;
+        Location = new Point(area.Right - Width - 8, area.Bottom - Height - 8);
+        Show();
+        BringToFront();
+    }
 
     // ── dirty / save ──────────────────────────────────────────────────────────
 
@@ -170,10 +182,11 @@ sealed class MainWindow : Form
         _dirty = true;
         _outputsDirty |= outputs;
         _savedFlash.Stop();
-        _saveMsg.Text = "Unsaved changes";
-        _saveMsg.ForeColor = Theme.Fg2;
-        _saveBtn.Visible = true;
-        LayoutSaveBar();
+        _saveBar.Msg.Text = "Unsaved changes";
+        _saveBar.Msg.ForeColor = Theme.Fg2;
+        _saveBar.Button.Visible = true;
+        _saveBar.PerformLayout();
+        PositionSaveBar();
         _saveBar.Visible = true;
     }
 
@@ -181,8 +194,17 @@ sealed class MainWindow : Form
     {
         _outputs.Apply();
         _sensors.Apply();
-        _settings.Apply();
+        bool needsRestart = _settings.Apply();
         ConfigLoader.Save(_configPath, _config);
+
+        // A theme change restarts the whole app — the config is already saved,
+        // the restarted instance picks the new color mode up at startup.
+        if (needsRestart)
+        {
+            try { File.WriteAllText(RestartMarker, ""); } catch { }
+            Application.Restart();
+            return;
+        }
 
         // Output settings need a sink rebuild; general/sensor settings apply
         // live through the shared config object.
@@ -191,22 +213,17 @@ sealed class MainWindow : Form
 
         _dirty = false;
         _outputsDirty = false;
-        _saveMsg.Text = "✓ Saved";
-        _saveMsg.ForeColor = Theme.Good;
-        _saveBtn.Visible = false;
-        LayoutSaveBar();
+        _saveBar.Msg.Text = "✓ Saved";
+        _saveBar.Msg.ForeColor = Theme.Good;
+        _saveBar.Button.Visible = false;
+        _saveBar.PerformLayout();
+        PositionSaveBar();
         _savedFlash.Start();
     }
 
-    void LayoutSaveBar()
-    {
-        int msgW = TextRenderer.MeasureText(_saveMsg.Text, _saveMsg.Font).Width;
-        int w = 14 + msgW + (_saveBtn.Visible ? 10 + _saveBtn.Width : 2) + 8;
-        _saveBar.Size = new Size(w, 42);
-        _saveMsg.Location = new Point(14, (42 - _saveMsg.Height) / 2);
-        _saveBtn.Location = new Point(w - _saveBtn.Width - 8, (42 - _saveBtn.Height) / 2);
-        _saveBar.Location = new Point(ClientSize.Width - w - 12, ClientSize.Height - 42 - 12);
-    }
+    void PositionSaveBar() => _saveBar.Location = new Point(
+        ClientSize.Width - _saveBar.Width - 12,
+        ClientSize.Height - _saveBar.Height - 12);
 
     // ── update pill ───────────────────────────────────────────────────────────
 

@@ -23,7 +23,10 @@ sealed class NavButton : Control
     {
         SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint
                | ControlStyles.UserPaint, true);
-        Size = new Size(38, 36);
+        // Almost the full rail width — the accent marker sits at the rail's left
+        // edge, so it must be inside this control's client area to be visible.
+        // One pixel stays free on the right for the rail's separator line.
+        Size = new Size(47, 36);
         Cursor = Cursors.Hand;
     }
 
@@ -39,14 +42,14 @@ sealed class NavButton : Control
         if (_active || _hover)
         {
             using var bg = new SolidBrush(_active ? Theme.AccentSoft : Theme.Hover);
-            using var path = Theme.RoundedRect(new RectangleF(0.5f, 0.5f, Width - 1, Height - 1), 5);
+            using var path = Theme.RoundedRect(new RectangleF(5.5f, 0.5f, Width - 10, Height - 1), 5);
             g.FillPath(bg, path);
         }
         if (_active)
         {
-            // 3px accent marker at the left edge of the rail (button sits at x=5).
             using var accent = new SolidBrush(Theme.Accent);
-            g.FillRectangle(accent, -5, 8, 3, Height - 16);
+            using var path = Theme.RoundedRect(new RectangleF(0, 8, 3, Height - 16), 1.5f);
+            g.FillPath(accent, path);
         }
 
         var iconColor = _active || _hover ? Theme.Fg : Theme.Fg2;
@@ -64,10 +67,11 @@ static class NavIcons
     public static void Dashboard(Graphics g, RectangleF b, Color c)
     {
         using var pen = MakePen(c);
-        float s = b.Width * 0.34f, gap = b.Width - 2 * s;
-        foreach (var (x, y) in new[] { (0f, 0f), (s + gap, 0f), (0f, s + gap), (s + gap, s + gap) })
+        // Same geometry as the mockup SVG: 5.4px squares at 1.5/9.1 on a 16px box.
+        float u = b.Width / 16f, s = 5.4f * u;
+        foreach (var (x, y) in new[] { (1.5f, 1.5f), (9.1f, 1.5f), (1.5f, 9.1f), (9.1f, 9.1f) })
         {
-            using var p = Theme.RoundedRect(new RectangleF(b.X + x, b.Y + y, s, s), 2);
+            using var p = Theme.RoundedRect(new RectangleF(b.X + x * u, b.Y + y * u, s, s), u);
             g.DrawPath(pen, p);
         }
     }
@@ -215,6 +219,168 @@ class CardPanel : Panel
         using var border = new Pen(Theme.CardBorder);
         g.FillPath(bg, path);
         g.DrawPath(border, path);
+    }
+}
+
+// Mockup-style checkbox: 15px rounded box, accent fill with a white check
+// when set, crisp Theme.Fg label. Replaces CheckBox, whose dark-mode
+// rendering washes the label out against card backgrounds.
+sealed class FlatCheck : Control
+{
+    const int BoxSize = 15, Gap = 8;
+    bool _checked, _hover;
+
+    public event EventHandler? CheckedChanged;
+
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public bool Checked
+    {
+        get => _checked;
+        set { if (_checked != value) { _checked = value; Invalidate(); CheckedChanged?.Invoke(this, EventArgs.Empty); } }
+    }
+
+    public FlatCheck()
+    {
+        SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint
+               | ControlStyles.UserPaint, true);
+        Cursor = Cursors.Hand;
+        Font = Theme.Base;
+        Height = 22;
+    }
+
+    protected override void OnTextChanged(EventArgs e)
+    {
+        Width = BoxSize + Gap + TextRenderer.MeasureText(Text, Font).Width + 4;
+        Invalidate();
+        base.OnTextChanged(e);
+    }
+
+    protected override void OnClick(EventArgs e) { Checked = !Checked; base.OnClick(e); }
+    protected override void OnMouseEnter(EventArgs e) { _hover = true;  Invalidate(); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { _hover = false; Invalidate(); base.OnMouseLeave(e); }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.Clear(Parent?.BackColor ?? Theme.CardBg);
+
+        var box = new RectangleF(0.5f, (Height - BoxSize) / 2f + 0.5f, BoxSize - 1, BoxSize - 1);
+        using var path = Theme.RoundedRect(box, 3);
+        if (_checked)
+        {
+            using var fill = new SolidBrush(Theme.Accent);
+            g.FillPath(fill, path);
+            using var check = new Pen(Theme.AccentFg, 1.8f)
+                { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
+            float bx = box.X, by = box.Y;
+            g.DrawLines(check,
+            [
+                new PointF(bx + 3.2f, by + 7.2f),
+                new PointF(bx + 6.0f, by + 10f),
+                new PointF(bx + 10.8f, by + 4.2f),
+            ]);
+        }
+        else
+        {
+            using var fill = new SolidBrush(Theme.InputBg);
+            using var border = new Pen(_hover ? Theme.Fg3 : Theme.InputBorder, 1.2f);
+            g.FillPath(fill, path);
+            g.DrawPath(border, path);
+        }
+
+        TextRenderer.DrawText(g, Text, Font,
+            new Rectangle(BoxSize + Gap, 0, Width - BoxSize - Gap, Height), Theme.Fg,
+            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+    }
+}
+
+// A mockup-style input: rounded border, vertically centered text, accent
+// bottom edge while focused. Wraps a borderless TextBox because a bare
+// WinForms TextBox can neither round its corners nor center vertically.
+sealed class InputBox : Control
+{
+    public readonly TextBox Box;
+
+    public InputBox()
+    {
+        SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint
+               | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
+        // Box must exist before Size is set — the Size setter triggers OnLayout.
+        Box = new TextBox
+        {
+            BorderStyle = BorderStyle.None,
+            BackColor = Theme.InputBg,
+            ForeColor = Theme.Fg,
+            Font = Theme.Base,
+        };
+        Box.GotFocus  += (_, _) => Invalidate();
+        Box.LostFocus += (_, _) => Invalidate();
+        Controls.Add(Box);
+        Size = new Size(70, 28);
+        Cursor = Cursors.IBeam;
+        Click += (_, _) => Box.Focus();
+    }
+
+    protected override void OnLayout(LayoutEventArgs levent)
+    {
+        base.OnLayout(levent);
+        Box?.SetBounds(8, (Height - Box.Height) / 2 + 1, Width - 16, Box.Height);
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.Clear(Parent?.BackColor ?? Theme.CardBg);
+        var r = new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
+        using var path = Theme.RoundedRect(r, 4);
+        using var bg = new SolidBrush(Theme.InputBg);
+        using var border = new Pen(Theme.InputBorder);
+        g.FillPath(bg, path);
+        g.DrawPath(border, path);
+        // 2px bottom edge, accent while the field has focus (mockup style)
+        using var bottom = new Pen(Box.Focused ? Theme.Accent : Theme.InputBorder, 2f);
+        g.DrawLine(bottom, 4, Height - 1.5f, Width - 4, Height - 1.5f);
+    }
+}
+
+// The floating "unsaved changes" panel. Sizes itself from the ACTUAL child
+// sizes at layout time (never from cached text measurements — those break as
+// soon as DPI scaling resizes the children after creation).
+sealed class SaveBar : CardPanel
+{
+    public readonly Label Msg;
+    public readonly PillButton Button;
+
+    public SaveBar()
+    {
+        Msg = new Label
+        {
+            Text = "Unsaved changes", AutoSize = true,
+            Font = Theme.Small, ForeColor = Theme.Fg2, BackColor = Theme.CardBg,
+        };
+        Button = new PillButton { Text = "Save", Size = new Size(64, 26) };
+        Controls.Add(Msg);
+        Controls.Add(Button);
+        Msg.TextChanged += (_, _) => PerformLayout();
+        Visible = false;
+    }
+
+    // Message on the left, button on the right, bar shrink-wraps both.
+    protected override void OnLayout(LayoutEventArgs levent)
+    {
+        base.OnLayout(levent);
+        const int h = 42;
+        int x = 14;
+        Msg.Location = new Point(x, (h - Msg.Height) / 2);
+        x += Msg.Width + 12;
+        if (Button.Visible)
+        {
+            Button.Location = new Point(x, (h - Button.Height) / 2);
+            x += Button.Width;
+        }
+        Size = new Size(x + 8, h);
     }
 }
 

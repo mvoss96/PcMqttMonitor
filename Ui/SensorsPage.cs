@@ -6,7 +6,7 @@ using System.Windows.Forms;
 // from LHM and not published.
 sealed class SensorsPage : Panel
 {
-    readonly List<(CheckBox Box, Action<SensorConfig, bool> Setter)> _boxes = new();
+    readonly List<(FlatCheck Box, Action<SensorConfig, bool> Setter)> _boxes = new();
     readonly AppConfig _config;
     readonly CardPanel _card;
 
@@ -100,11 +100,12 @@ sealed class SensorsPage : Panel
 
     void Add(Action markDirty, string label, bool value, Action<SensorConfig, bool> setter)
     {
-        var box = new CheckBox
+        var box = new FlatCheck
         {
-            Text = label, Checked = value, AutoSize = true, ForeColor = Theme.Fg,
+            Text = label,
             Location = new Point(_col1 ? Col1 : Col0, _y)
         };
+        box.Checked = value;
         box.CheckedChanged += (_, _) => markDirty();
         _card.Controls.Add(box);
         _boxes.Add((box, setter));
