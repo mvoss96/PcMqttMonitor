@@ -212,9 +212,9 @@ sealed class DashboardView : Control
     static int DrivesHeight(int drives) =>
         CardPadY * 2 + HeadH + drives * 27 - 6;
 
-    // Per adapter: header (name + rates) 17, IP 16, MAC 14; 9px between blocks.
+    // Per adapter: header (name + IP) 17, rates line 16; 9px between blocks.
     static int NetworkHeight(int adapters) =>
-        CardPadY * 2 + HeadH + adapters * 47 + (adapters - 1) * 9;
+        CardPadY * 2 + HeadH + adapters * 33 + (adapters - 1) * 9;
 
     static int SystemHeight =>
         CardPadY * 2 + HeadH + 4 * RowH;
@@ -415,10 +415,10 @@ sealed class DashboardView : Control
         }
     }
 
-    // Per adapter (approved mockup): header line with the adapter name bold
-    // and the ↑/↓ rates right-aligned, the IP prominent below, the MAC as a
-    // muted third line. No sparkline — an aggregate over several adapters
-    // would be ambiguous, and the rates already carry the activity.
+    // Per adapter, two lines: name bold left + IP right-aligned, then the
+    // ↑/↓ rates on their own FULL-width line (a shared line kept clipping the
+    // upload part at high rates). The MAC is not drawn — it lives in the
+    // hover tooltip of the name line and on MQTT.
     void DrawNetworkCard(Graphics g, Rectangle card)
     {
         var net = _m!.Network!;
@@ -434,23 +434,19 @@ sealed class DashboardView : Control
                 using var pen = new Pen(Theme.CardBorder);
                 g.DrawLine(pen, x, y - 5, x + w, y - 5);
             }
-            // The name only claims its measured width (capped at half) — the
-            // rates get all the rest, otherwise a right-aligned string wider
-            // than its rect is clipped on the LEFT and eats the ↑ part.
             int nameW = Math.Min(TextRenderer.MeasureText(a.Name, Theme.SemiBold).Width + 4, w / 2);
             TextRenderer.DrawText(g, a.Name, Theme.SemiBold, new Rectangle(x, y, nameW, 17), Theme.Fg,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
-            AddTipIfTruncated(x, y, nameW, a.Name, Theme.SemiBold);
-            string rates = $"↑ {FmtSpeed(a.UploadKbps)}  ↓ {FmtSpeed(a.DownloadKbps)}";
-            TextRenderer.DrawText(g, rates, Theme.Tiny, new Rectangle(x + nameW, y, w - nameW, 17), Theme.Fg2,
+            TextRenderer.DrawText(g, a.IpAddress ?? "—", Theme.Small, new Rectangle(x + nameW, y, w - nameW, 17), Theme.Fg,
                 TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+            var tip = new List<string> { a.Name };
+            if (a.Mac != null) tip.Add($"MAC {a.Mac}");
+            _tipZones.Add((new Rectangle(x, y, w, 17), string.Join(" · ", tip)));
             y += 17;
-            TextRenderer.DrawText(g, a.IpAddress ?? "—", Theme.Small, new Rectangle(x, y, w, 16), Theme.Fg,
+            string rates = $"↑ {FmtSpeed(a.UploadKbps)}   ↓ {FmtSpeed(a.DownloadKbps)}";
+            TextRenderer.DrawText(g, rates, Theme.Small, new Rectangle(x, y, w, 16), Theme.Fg2,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
-            y += 16;
-            TextRenderer.DrawText(g, a.Mac ?? "", Theme.Tiny, new Rectangle(x, y, w, 14), Theme.Fg3,
-                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
-            y += 14 + 9;
+            y += 16 + 9;
         }
     }
 

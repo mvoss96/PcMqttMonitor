@@ -163,7 +163,13 @@ sealed class MainWindow : Form
         var area = Screen.FromPoint(Cursor.Position).WorkingArea;
         Location = new Point(area.Right - Width - 8, area.Bottom - Height - 8);
         Show();
-        BringToFront();
+        // A first Show() from a tray click doesn't reliably raise the window —
+        // BringToFront alone can leave it behind the current foreground window.
+        // The TopMost pulse forces it to the top of the z-order; Activate gives
+        // it focus (permitted here — the user just clicked our tray icon).
+        TopMost = true;
+        TopMost = false;
+        Activate();
     }
 
     // ── dirty / save ──────────────────────────────────────────────────────────
