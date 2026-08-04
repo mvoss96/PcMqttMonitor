@@ -100,7 +100,8 @@ sealed class TrayApp : ApplicationContext
         });
     }
 
-    static void OpenReleasesPage()
+    // Also used by the Settings tab's "Check for updates" button.
+    internal static void OpenReleasesPage()
     {
         try
         {

@@ -194,6 +194,48 @@ sealed class MainWindow : Form
         generalTable.Controls.Add(_updateCheck);
         generalTable.SetColumnSpan(_updateCheck, 2);
 
+        // Manual update check: button + inline result. The result label doubles
+        // as a download link when a newer version is found.
+        var updateStatus = new LinkLabel
+        {
+            Text     = $"Installed version: v{UpdateChecker.CurrentVersion.ToString(3)}",
+            LinkArea = new LinkArea(0, 0),   // plain text until there is something to link to
+            AutoSize = true,
+            Margin   = new Padding(18, 4, 0, 0)
+        };
+        updateStatus.LinkClicked += (_, _) => TrayApp.OpenReleasesPage();
+
+        var checkUpdateBtn = new Button { Text = "Check for updates", AutoSize = true, Margin = new Padding(18, 8, 0, 2) };
+        checkUpdateBtn.Click += async (_, _) =>
+        {
+            checkUpdateBtn.Enabled = false;
+            updateStatus.LinkArea  = new LinkArea(0, 0);
+            updateStatus.Text      = "Checking...";
+            try
+            {
+                var newer = await UpdateChecker.CheckAsync(CancellationToken.None);
+                if (newer != null)
+                {
+                    const string linkText = "open download page";
+                    updateStatus.Text     = $"Version {newer.ToString(3)} is available — {linkText}";
+                    updateStatus.LinkArea = new LinkArea(updateStatus.Text.Length - linkText.Length, linkText.Length);
+                }
+                else
+                {
+                    updateStatus.Text = $"Up to date (v{UpdateChecker.CurrentVersion.ToString(3)})";
+                }
+            }
+            catch (Exception ex)
+            {
+                updateStatus.Text = $"Check failed: {ex.Message}";
+            }
+            finally { checkUpdateBtn.Enabled = true; }
+        };
+        generalTable.Controls.Add(checkUpdateBtn);
+        generalTable.SetColumnSpan(checkUpdateBtn, 2);
+        generalTable.Controls.Add(updateStatus);
+        generalTable.SetColumnSpan(updateStatus, 2);
+
         // ── Sensors section ──────────────────────────────────────────────────────
         // Each group: bold title with a horizontal rule extending to the right,
         // then checkboxes in a wrapping flow (auto-arrange, no rigid columns).
