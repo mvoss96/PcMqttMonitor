@@ -134,7 +134,7 @@ sealed class OutputsPage : Panel
         else if (string.IsNullOrWhiteSpace(_serialPort.Text))
             _serialCard.SetStatus("Not configured — set a port (e.g. COM3)", false);
         else
-            _serialCard.SetStatus($"Sending on {_serialPort.Text.Trim().ToUpperInvariant()} @ {_serialBaud.Text} baud", true);
+            _serialCard.SetStatus($"Sending on {ExtractComPort(_serialPort.Text)} @ {_serialBaud.Text} baud", true);
     }
 
     // Write the edited values back into the shared config. Called on Save.
@@ -157,7 +157,7 @@ sealed class OutputsPage : Panel
         _config.Tcp.ListenPort = ParsePort(_tcpPort, _config.Tcp.ListenPort);
 
         _config.Serial.Enabled = _serialCard.Toggle.Checked;
-        _config.Serial.Port    = _serialPort.Text.Trim().ToUpperInvariant();
+        _config.Serial.Port    = ExtractComPort(_serialPort.Text);
         _config.Serial.Baud    = ParseBaud(_serialBaud, _config.Serial.Baud);
 
         RefreshStatus();
@@ -180,13 +180,44 @@ sealed class OutputsPage : Panel
         return baud;
     }
 
-    // "COM2" before "COM10"; GetPortNames can report duplicates.
-    static object[] AvailableComPorts() =>
-        System.IO.Ports.SerialPort.GetPortNames()
+    // Dropdown entries like "COM9 — Silicon Labs CP210x USB to UART Bridge":
+    // friendly names come from WMI (Win32_PnPEntity), matched to the raw port
+    // list; ports without a PnP entry stay plain. "COM2" before "COM10".
+    static object[] AvailableComPorts()
+    {
+        var ports = System.IO.Ports.SerialPort.GetPortNames()
             .Distinct()
             .OrderBy(p => p.Length).ThenBy(p => p)
+            .ToList();
+
+        var names = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            using var searcher = new System.Management.ManagementObjectSearcher(
+                "SELECT Name FROM Win32_PnPEntity WHERE Name LIKE '%(COM%'");
+            foreach (var device in searcher.Get())
+            {
+                if (device["Name"] is not string name) continue;   // e.g. "… Bridge (COM9)"
+                var match = System.Text.RegularExpressions.Regex.Match(name, @"\((COM\d+)\)");
+                if (match.Success)
+                    names[match.Groups[1].Value] = name[..match.Index].Trim();
+            }
+        }
+        catch { /* WMI unavailable — plain port names still work */ }
+
+        return ports
+            .Select(p => names.TryGetValue(p, out var n) && n.Length > 0 ? $"{p} — {n}" : p)
             .Cast<object>()
             .ToArray();
+    }
+
+    // The combo shows "COM9 — <description>", the config stores only "COM9".
+    static string ExtractComPort(string text)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(
+            text.Trim(), @"^COM\d+", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return match.Success ? match.Value.ToUpperInvariant() : text.Trim().ToUpperInvariant();
+    }
 }
 
 // A collapsible sink card: fixed header (chevron, name, status dot + text,

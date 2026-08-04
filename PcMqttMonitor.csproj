@@ -8,7 +8,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>app.ico</ApplicationIcon>
-    <Version>2.2.0</Version>
+    <Version>2.2.1</Version>
   </PropertyGroup>
 
   <ItemGroup>
@@ -20,6 +20,7 @@
     <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.6" />
     <PackageReference Include="MQTTnet" Version="5.1.0.1559" />
     <PackageReference Include="System.IO.Ports" Version="10.0.10" />
+    <PackageReference Include="System.Management" Version="10.0.10" />
   </ItemGroup>
 
 </Project>
