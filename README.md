@@ -9,6 +9,11 @@ All four outputs can run at the same time and are toggled independently in the a
 <p>
   <img src="docs/dashboard.png" width="484" alt="Dashboard">
 </p>
+<p>
+  <img src="docs/outputs.png" width="236" alt="Outputs">
+  <img src="docs/sensors.png" width="236" alt="Sensors">
+  <img src="docs/settings.png" width="236" alt="Settings">
+</p>
 
 ## Features
 
