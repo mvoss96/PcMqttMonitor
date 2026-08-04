@@ -10,11 +10,11 @@ sealed class SettingsPage : Panel
 
     readonly InputBox _interval;
     readonly ToggleSwitch _autoStart, _debug, _updateCheck;
-    readonly ComboBox _theme;
+    readonly ComboBox _theme, _language;
     bool _autoStartInitial;
 
     static readonly string[] ThemeValues = ["system", "light", "dark"];
-    static readonly string[] ThemeLabels = ["System", "Light", "Dark"];
+    static readonly string[] LangValues  = ["system", "en", "de"];
 
     public SettingsPage(AppConfig config, Action markDirty)
     {
@@ -23,7 +23,7 @@ sealed class SettingsPage : Panel
 
         var title = new Label
         {
-            Text = "Settings", Font = Theme.Title, ForeColor = Theme.Fg,
+            Text = L.T.SettingsTitle, Font = Theme.Title, ForeColor = Theme.Fg,
             AutoSize = true, Location = new Point(16, 12)
         };
         Controls.Add(title);
@@ -46,20 +46,32 @@ sealed class SettingsPage : Panel
             DropDownStyle = ComboBoxStyle.DropDownList,
             Width = 100,
         };
-        _theme.Items.AddRange(ThemeLabels);
+        _theme.Items.AddRange([L.T.ThemeSystem, L.T.ThemeLight, L.T.ThemeDark]);
         int themeIdx = Array.IndexOf(ThemeValues, config.General.Theme?.ToLowerInvariant());
         _theme.SelectedIndex = themeIdx >= 0 ? themeIdx : 0;
         _theme.SelectedIndexChanged += (_, _) => markDirty();
 
+        // Language names stay in their own language — the standard convention.
+        _language = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Width = 100,
+        };
+        _language.Items.AddRange([L.T.LangSystem, "English", "Deutsch"]);
+        int langIdx = Array.IndexOf(LangValues, config.General.Language?.ToLowerInvariant());
+        _language.SelectedIndex = langIdx >= 0 ? langIdx : 0;
+        _language.SelectedIndexChanged += (_, _) => markDirty();
+
         var card1 = new SettingsCard { Location = new Point(16, 42) };
-        card1.AddRow("Publish interval", "Seconds between two measurements", _interval);
-        card1.AddRow("Theme", "Changing restarts the app", _theme);
-        card1.AddRow("Start with Windows", "Scheduled task with highest privileges", _autoStart);
-        card1.AddRow("Debug logging", "Verbose entries in app.log", _debug);
+        card1.AddRow(L.T.SetInterval, L.T.SetIntervalSub, _interval);
+        card1.AddRow(L.T.SetTheme, L.T.SetRestartSub, _theme);
+        card1.AddRow(L.T.SetLanguage, L.T.SetRestartSub, _language);
+        card1.AddRow(L.T.SetAutostart, L.T.SetAutostartSub, _autoStart);
+        card1.AddRow(L.T.SetDebug, L.T.SetDebugSub, _debug);
         Controls.Add(card1);
 
         var card2 = new SettingsCard { Location = new Point(16, card1.Bottom + 10) };
-        card2.AddRow("Notify about new versions", "Checks the GitHub releases daily", _updateCheck);
+        card2.AddRow(L.T.SetUpdates, L.T.SetUpdatesSub, _updateCheck);
         Controls.Add(card2);
 
         foreach (var card in new[] { card1, card2 })
@@ -85,8 +97,8 @@ sealed class SettingsPage : Panel
         return t;
     }
 
-    // Returns true when the app must restart to apply (theme change —
-    // WinForms cannot switch its color mode at runtime).
+    // Returns true when the app must restart to apply (theme or language
+    // change — WinForms can switch neither color mode nor strings at runtime).
     public bool Apply()
     {
         // Accept both "1.5" and "1,5"; keep the previous value on garbage input.
@@ -107,7 +119,12 @@ sealed class SettingsPage : Panel
         var theme = ThemeValues[_theme.SelectedIndex];
         bool themeChanged = !string.Equals(_config.General.Theme, theme, StringComparison.OrdinalIgnoreCase);
         _config.General.Theme = theme;
-        return themeChanged;
+
+        var language = LangValues[_language.SelectedIndex];
+        bool languageChanged = !string.Equals(_config.General.Language, language, StringComparison.OrdinalIgnoreCase);
+        _config.General.Language = language;
+
+        return themeChanged || languageChanged;
     }
 }
 

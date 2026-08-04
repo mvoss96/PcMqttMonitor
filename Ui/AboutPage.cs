@@ -25,13 +25,13 @@ sealed class AboutPage : Panel
         };
         var version = new Label
         {
-            Text = $"Version {UpdateChecker.CurrentVersion.ToString(3)}",
+            Text = string.Format(L.T.AboutVersion, UpdateChecker.CurrentVersion.ToString(3)),
             ForeColor = Theme.Fg2, AutoSize = true
         };
         _updStatus = new Label { ForeColor = Theme.Fg3, AutoSize = true };
         _updLink = new LinkLabel
         {
-            Text = "Download on GitHub", AutoSize = true, Visible = false,
+            Text = L.T.AboutDownload, AutoSize = true, Visible = false,
             LinkColor = Theme.Accent, ActiveLinkColor = Theme.Accent,
         };
         _updLink.LinkClicked += (_, _) => TrayApp.OpenReleasesPage();
@@ -50,7 +50,7 @@ sealed class AboutPage : Panel
         };
         var deps = new Label
         {
-            Text = "Uses LibreHardwareMonitor (MPL-2.0) and MQTTnet (MIT)",
+            Text = L.T.AboutDeps,
             ForeColor = Theme.Fg3, Font = Theme.Small, AutoSize = true
         };
 
@@ -95,7 +95,7 @@ sealed class AboutPage : Panel
         _checkCts?.Cancel();
         var cts = _checkCts = new CancellationTokenSource();
 
-        _updStatus.Text = "Checking for updates…";
+        _updStatus.Text = L.T.AboutChecking;
         _updStatus.ForeColor = Theme.Fg3;
         _updLink.Visible = false;
         PerformLayout();
@@ -106,21 +106,21 @@ sealed class AboutPage : Panel
             if (cts.Token.IsCancellationRequested) return;
             if (newer != null)
             {
-                _updStatus.Text = $"Update {newer.ToString(3)} available";
+                _updStatus.Text = string.Format(L.T.AboutUpdateFound, newer.ToString(3));
                 _updStatus.ForeColor = Theme.Fg;
                 _updLink.Visible = true;
                 _updateFound(newer);
             }
             else
             {
-                _updStatus.Text = "✓ Up to date";
+                _updStatus.Text = L.T.AboutUpToDate;
                 _updStatus.ForeColor = Theme.Good;
             }
         }
         catch (OperationCanceledException) { return; }
         catch (Exception ex)
         {
-            _updStatus.Text = $"Check failed: {ex.Message}";
+            _updStatus.Text = string.Format(L.T.AboutCheckFailed, ex.Message);
             _updStatus.ForeColor = Theme.Fg3;
         }
         PerformLayout();

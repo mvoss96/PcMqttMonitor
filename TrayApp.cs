@@ -13,7 +13,7 @@ sealed class TrayApp : ApplicationContext
     readonly ContextMenuStrip _menu;
     ToolStripMenuItem? _updateItem;
     Version? _notifiedUpdate;
-    volatile string _statusText = "Starting...";
+    volatile string _statusText = L.T.StatusStarting;
     volatile bool _paused;
 
     public bool IsPaused => _paused;
@@ -40,7 +40,7 @@ sealed class TrayApp : ApplicationContext
         };
 
         var statusItem = new ToolStripMenuItem(_statusText) { Enabled = false };
-        var pauseItem  = new ToolStripMenuItem("Pause Publishing");
+        var pauseItem  = new ToolStripMenuItem(L.T.TrayPause);
         _pauseItem = pauseItem;
 
         pauseItem.Click += (_, _) => SetPaused(!_paused);
@@ -61,11 +61,11 @@ sealed class TrayApp : ApplicationContext
         menu.Opening += (_, _) => statusItem.Text = _statusText;
         menu.Items.Add(statusItem);
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Dashboard", null, (_, _) => _window.ShowDashboard());
-        menu.Items.Add("Settings",  null, (_, _) => _window.ShowSettings());
+        menu.Items.Add(L.T.NavDashboard, null, (_, _) => _window.ShowDashboard());
+        menu.Items.Add(L.T.NavSettings,  null, (_, _) => _window.ShowSettings());
         menu.Items.Add(pauseItem);
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Exit", null, (_, _) =>
+        menu.Items.Add(L.T.TrayExit, null, (_, _) =>
         {
             shutdown.Cancel();
             _tray.Visible = false;
@@ -100,11 +100,11 @@ sealed class TrayApp : ApplicationContext
                 // Directly under the status line, above Show Sensors.
                 _menu.Items.Insert(2, _updateItem);
             }
-            _updateItem.Text = $"Update available: v{version.ToString(3)}";
-            _window.SetUpdateAvailable(version);   // pill in the main window
+            _updateItem.Text = string.Format(L.T.TrayUpdateItem, version.ToString(3));
+            _window.SetUpdateAvailable(version);   // title-bar text + About badge
 
             _tray.BalloonTipTitle = "PC MQTT Monitor";
-            _tray.BalloonTipText  = $"Version {version.ToString(3)} is available — click to open the download page.";
+            _tray.BalloonTipText  = string.Format(L.T.BalloonUpdate, version.ToString(3));
             _tray.BalloonTipIcon  = ToolTipIcon.Info;
             _tray.ShowBalloonTip(10_000);
         });
@@ -129,7 +129,7 @@ sealed class TrayApp : ApplicationContext
     void SetPaused(bool paused)
     {
         _paused         = paused;
-        _pauseItem.Text = paused ? "Resume Publishing" : "Pause Publishing";
+        _pauseItem.Text = paused ? L.T.TrayResume : L.T.TrayPause;
         _tray.Icon      = paused ? _pausedIcon : _normalIcon;
         _window.SetPauseState(paused);
     }
@@ -167,7 +167,7 @@ sealed class TrayApp : ApplicationContext
 
         var ramString = m.Ram?.Load != null ? $"RAM {m.Ram.Load}%" : null;
 
-        var header = paused ? "PC MQTT Monitor (Paused)" : "PC MQTT Monitor";
+        var header = paused ? $"PC MQTT Monitor {L.T.TrayPausedSuffix}" : "PC MQTT Monitor";
         var parts  = new[] { header, cpuString, gpuString, ramString }
             .Where(s => !string.IsNullOrEmpty(s));
 

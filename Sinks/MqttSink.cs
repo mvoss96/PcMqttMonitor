@@ -69,7 +69,7 @@ sealed class MqttSink : IMetricsSink
             try
             {
                 _log($"Connecting to {_config.Host}:{_config.Port}...");
-                _setStatus($"Connecting to {_config.Host}:{_config.Port}...");
+                _setStatus(string.Format(L.T.StatusConnectingTo, $"{_config.Host}:{_config.Port}"));
                 await _client.ConnectAsync(_options, ct);
                 _log("MQTT connected.");
                 _setConnectionStatus(true, $"{_config.Host}:{_config.Port}");
@@ -80,7 +80,7 @@ sealed class MqttSink : IMetricsSink
             catch (Exception ex)
             {
                 _log($"[error] Connection failed: {ex.Message}");
-                _setStatus("Disconnected — open Settings to configure MQTT broker");
+                _setStatus(L.T.StatusDisconnected);
                 _setConnectionStatus(false, "");
                 return;
             }
@@ -91,12 +91,12 @@ sealed class MqttSink : IMetricsSink
         try
         {
             await PublishMetricsAsync(metrics, ct);
-            _setStatus($"Connected — {_config.Host}:{_config.Port}");
+            _setStatus(string.Format(L.T.StatusConnected, $"{_config.Host}:{_config.Port}"));
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
-            _setStatus($"Error: {ex.Message}");
+            _setStatus(string.Format(L.T.StatusError, ex.Message));
             if (!_client.IsConnected)
                 _setConnectionStatus(false, "");
             throw;   // the main loop logs it as "[error] MQTT publish: ..."

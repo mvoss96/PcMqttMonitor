@@ -376,10 +376,14 @@ sealed class SaveBar : CardPanel
     {
         Msg = new Label
         {
-            Text = "Unsaved changes", AutoSize = true,
+            Text = L.T.UnsavedChanges, AutoSize = true,
             Font = Theme.Small, ForeColor = Theme.Fg2, BackColor = Theme.CardBg,
         };
-        Button = new PillButton { Text = "Save", Size = new Size(64, 26) };
+        Button = new PillButton
+        {
+            Text = L.T.Save,   // "Speichern" needs more room than "Save"
+            Size = new Size(Math.Max(64, TextRenderer.MeasureText(L.T.Save, Theme.SemiBold).Width + 24), 26),
+        };
         Controls.Add(Msg);
         Controls.Add(Button);
         Msg.TextChanged += (_, _) => PerformLayout();

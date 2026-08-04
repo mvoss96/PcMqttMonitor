@@ -59,6 +59,8 @@ sealed class GeneralConfig
     // UI color mode: "system" (follow Windows), "light" or "dark".
     // Applied at startup; changing it in Settings restarts the app.
     public string Theme { get; set; } = "system";
+    // UI language: "system" (follow Windows), "en" or "de". Restart to apply.
+    public string Language { get; set; } = "system";
     // Daily check against GitHub releases; shows a tray notification when a
     // newer version exists. Notify-only — never downloads or installs anything.
     public bool UpdateCheckEnabled { get; set; } = true;

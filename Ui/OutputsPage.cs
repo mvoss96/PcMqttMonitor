@@ -35,36 +35,36 @@ sealed class OutputsPage : Panel
 
         var title = new Label
         {
-            Text = "Outputs", Font = Theme.Title, ForeColor = Theme.Fg,
+            Text = L.T.OutputsTitle, Font = Theme.Title, ForeColor = Theme.Fg,
             AutoSize = true, Location = new Point(16, 12)
         };
         Controls.Add(title);
 
         // ── MQTT ────────────────────────────────────────────────────────────
         _mqttCard = new OutputCard("MQTT", markDirty) { Open = true };
-        _host     = _mqttCard.AddTextRow("Host", config.Mqtt.Host);
-        _port     = _mqttCard.AddPortRow("Port", config.Mqtt.Port);
-        _username = _mqttCard.AddTextRow("Username", config.Mqtt.Username);
-        _password = _mqttCard.AddTextRow("Password", config.Mqtt.Password, password: true);
-        _topic    = _mqttCard.AddTextRow("Topic root", config.Mqtt.TopicRoot);
-        _useTls      = _mqttCard.AddCheckRow("Use TLS (typically port 8883)", config.Mqtt.UseTls);
-        _haDiscovery = _mqttCard.AddCheckRow("Home Assistant MQTT Discovery", config.Mqtt.HaDiscoveryEnabled);
+        _host     = _mqttCard.AddTextRow(L.T.FieldHost, config.Mqtt.Host);
+        _port     = _mqttCard.AddPortRow(L.T.FieldPort, config.Mqtt.Port);
+        _username = _mqttCard.AddTextRow(L.T.FieldUsername, config.Mqtt.Username);
+        _password = _mqttCard.AddTextRow(L.T.FieldPassword, config.Mqtt.Password, password: true);
+        _topic    = _mqttCard.AddTextRow(L.T.FieldTopicRoot, config.Mqtt.TopicRoot);
+        _useTls      = _mqttCard.AddCheckRow(L.T.FieldUseTls, config.Mqtt.UseTls);
+        _haDiscovery = _mqttCard.AddCheckRow(L.T.FieldDiscovery, config.Mqtt.HaDiscoveryEnabled);
         _mqttCard.Toggle.SetChecked(config.Mqtt.Enabled);
 
         // ── UDP ─────────────────────────────────────────────────────────────
         _udpCard = new OutputCard("UDP", markDirty);
-        _udpHost = _udpCard.AddTextRow("Host", config.Udp.Host);
-        _udpPort = _udpCard.AddPortRow("Port", config.Udp.Port);
+        _udpHost = _udpCard.AddTextRow(L.T.FieldHost, config.Udp.Host);
+        _udpPort = _udpCard.AddPortRow(L.T.FieldPort, config.Udp.Port);
         _udpCard.Toggle.SetChecked(config.Udp.Enabled);
 
         // ── TCP ─────────────────────────────────────────────────────────────
         _tcpCard = new OutputCard("TCP", markDirty);
-        _tcpPort = _tcpCard.AddPortRow("Listen port", config.Tcp.ListenPort);
+        _tcpPort = _tcpCard.AddPortRow(L.T.FieldListenPort, config.Tcp.ListenPort);
         _tcpCard.Toggle.SetChecked(config.Tcp.Enabled);
 
         // ── Serial ──────────────────────────────────────────────────────────
         _serialCard = new OutputCard("Serial", markDirty);
-        _serialPort = _serialCard.AddComboRow("Port", config.Serial.Port, AvailableComPorts());
+        _serialPort = _serialCard.AddComboRow(L.T.FieldPort, config.Serial.Port, AvailableComPorts());
         // Re-enumerate on every open — USB adapters come and go.
         _serialPort.DropDown += (_, _) =>
         {
@@ -73,7 +73,7 @@ sealed class OutputsPage : Panel
             _serialPort.Items.AddRange(AvailableComPorts());
             _serialPort.Text = current;
         };
-        _serialBaud = _serialCard.AddPortRow("Baud rate", config.Serial.Baud);
+        _serialBaud = _serialCard.AddPortRow(L.T.FieldBaudRate, config.Serial.Baud);
         _serialCard.Toggle.SetChecked(config.Serial.Enabled);
 
         foreach (var card in new[] { _mqttCard, _udpCard, _tcpCard, _serialCard })
@@ -110,31 +110,31 @@ sealed class OutputsPage : Panel
     void RefreshStatus()
     {
         if (!_mqttCard.Toggle.Checked)
-            _mqttCard.SetStatus("Disabled", false);
+            _mqttCard.SetStatus(L.T.OutDisabled, false);
         else if (string.IsNullOrWhiteSpace(_host.Text))
-            _mqttCard.SetStatus("Not configured — set a host", false);
+            _mqttCard.SetStatus(L.T.OutNoHost, false);
         else if (_mqttConnected)
-            _mqttCard.SetStatus($"Connected — {_mqttBroker}", true);
+            _mqttCard.SetStatus(string.Format(L.T.StatusConnected, _mqttBroker), true);
         else
-            _mqttCard.SetStatus("Not connected", false);
+            _mqttCard.SetStatus(L.T.OutNotConnected, false);
 
         if (!_udpCard.Toggle.Checked)
-            _udpCard.SetStatus("Disabled", false);
+            _udpCard.SetStatus(L.T.OutDisabled, false);
         else if (string.IsNullOrWhiteSpace(_udpHost.Text))
-            _udpCard.SetStatus("Not configured — set a host", false);
+            _udpCard.SetStatus(L.T.OutNoHost, false);
         else
-            _udpCard.SetStatus($"Sending to {_udpHost.Text}:{_udpPort.Text}", true);
+            _udpCard.SetStatus(string.Format(L.T.OutSendingTo, _udpHost.Text, _udpPort.Text), true);
 
         _tcpCard.SetStatus(_tcpCard.Toggle.Checked
-            ? $"Listening on {_tcpPort.Text}" : "Disabled",
+            ? string.Format(L.T.OutListeningOn, _tcpPort.Text) : L.T.OutDisabled,
             _tcpCard.Toggle.Checked);
 
         if (!_serialCard.Toggle.Checked)
-            _serialCard.SetStatus("Disabled", false);
+            _serialCard.SetStatus(L.T.OutDisabled, false);
         else if (string.IsNullOrWhiteSpace(_serialPort.Text))
-            _serialCard.SetStatus("Not configured — set a port (e.g. COM3)", false);
+            _serialCard.SetStatus(L.T.OutNoComPort, false);
         else
-            _serialCard.SetStatus($"Sending on {ExtractComPort(_serialPort.Text)} @ {_serialBaud.Text} baud", true);
+            _serialCard.SetStatus(string.Format(L.T.OutSendingCom, ExtractComPort(_serialPort.Text), _serialBaud.Text), true);
     }
 
     // Write the edited values back into the shared config. Called on Save.

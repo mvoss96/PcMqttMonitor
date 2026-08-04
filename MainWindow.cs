@@ -87,11 +87,11 @@ sealed class MainWindow : Form
         var tips = new ToolTip { InitialDelay = 400, ReshowDelay = 100 };
         (string Tip, Action<Graphics, RectangleF, Color> Icon)[] navDefs =
         [
-            ("Dashboard", NavIcons.Dashboard),
-            ("Outputs",   NavIcons.Outputs),
-            ("Sensors",   NavIcons.Sensors),
-            ("Settings",  NavIcons.Settings),
-            ("About",     NavIcons.About),
+            (L.T.NavDashboard, NavIcons.Dashboard),
+            (L.T.NavOutputs,   NavIcons.Outputs),
+            (L.T.NavSensors,   NavIcons.Sensors),
+            (L.T.NavSettings,  NavIcons.Settings),
+            (L.T.NavAbout,     NavIcons.About),
         ];
         _navButtons = new NavButton[navDefs.Length];
         for (int i = 0; i < navDefs.Length; i++)
@@ -179,7 +179,7 @@ sealed class MainWindow : Form
         _dirty = true;
         _outputsDirty |= outputs;
         _savedFlash.Stop();
-        _saveBar.Msg.Text = "Unsaved changes";
+        _saveBar.Msg.Text = L.T.UnsavedChanges;
         _saveBar.Msg.ForeColor = Theme.Fg2;
         _saveBar.Button.Visible = true;
         _saveBar.PerformLayout();
@@ -210,7 +210,7 @@ sealed class MainWindow : Form
 
         _dirty = false;
         _outputsDirty = false;
-        _saveBar.Msg.Text = "✓ Saved";
+        _saveBar.Msg.Text = L.T.Saved;
         _saveBar.Msg.ForeColor = Theme.Good;
         _saveBar.Button.Visible = false;
         _saveBar.PerformLayout();
@@ -229,7 +229,7 @@ sealed class MainWindow : Form
         // Right where the user asked for it: next to the version in the title
         // bar — plus an accent dot on the About icon as the clickable cue
         // (About carries the details and the download link).
-        Text = $"PC MQTT Monitor  v{UpdateChecker.CurrentVersion.ToString(3)}  —  v{version.ToString(3)} available";
+        Text = $"PC MQTT Monitor  v{UpdateChecker.CurrentVersion.ToString(3)}  —  {string.Format(L.T.TitleUpdate, version.ToString(3))}";
         _navButtons[^1].Badge = true;
     }
 
@@ -278,14 +278,14 @@ sealed class MainWindow : Form
         };
         var label = new Label
         {
-            Text = "Publishing is paused",
+            Text = L.T.PausedBanner,
             AutoSize = true,
             ForeColor = Theme.Dark ? Color.FromArgb(240, 216, 137) : Color.FromArgb(102, 77, 3),
             Location = new Point(14, 10),
         };
         var resume = new Button
         {
-            Text = "Resume", AutoSize = true,
+            Text = L.T.Resume, AutoSize = true,
             FlatStyle = FlatStyle.Flat,
             ForeColor = label.ForeColor,
             Anchor = AnchorStyles.Top | AnchorStyles.Right,

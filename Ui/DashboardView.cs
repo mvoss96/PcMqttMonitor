@@ -30,7 +30,7 @@ sealed class DashboardView : Control
     string? _tipText;
 
     // Shown centered while no snapshot has arrived yet (startup phases).
-    string _placeholder = "Starting…";
+    string _placeholder = L.T.StatusStarting;
 
     public void SetPlaceholder(string text)
     {
@@ -353,7 +353,7 @@ sealed class DashboardView : Control
     {
         var c = _m!.Cpu!;
         DrawCardBg(g, card);
-        DrawHead(g, card, "CPU");
+        DrawHead(g, card, L.T.CardCpu);
         int y = card.Y + CardPadY + HeadH;
         DrawBigPercent(g, card, ref y, c.Load);
         DrawDetail(g, card.X + CardPadX, y, Segments(
@@ -368,7 +368,7 @@ sealed class DashboardView : Control
     {
         var gpu = _m!.Gpu!;
         DrawCardBg(g, card);
-        DrawHead(g, card, "GPU");
+        DrawHead(g, card, L.T.CardGpu);
         int y = card.Y + CardPadY + HeadH;
         DrawBigPercent(g, card, ref y, gpu.Load);
         // Per the approved compact design the fan speed is dropped here —
@@ -388,7 +388,7 @@ sealed class DashboardView : Control
     {
         var ram = _m!.Ram!;
         DrawCardBg(g, card);
-        DrawHead(g, card, "RAM");
+        DrawHead(g, card, L.T.CardRam);
         int y = card.Y + CardPadY + HeadH;
         DrawBigPercent(g, card, ref y, ram.Load);
         string? usage = ram.UsedGb != null || ram.TotalGb != null
@@ -402,7 +402,7 @@ sealed class DashboardView : Control
     void DrawDrivesCard(Graphics g, Rectangle card)
     {
         DrawCardBg(g, card);
-        DrawHead(g, card, "Drives");
+        DrawHead(g, card, L.T.CardDrives);
         int x = card.X + CardPadX, w = card.Width - CardPadX * 2;
         int y = card.Y + CardPadY + HeadH;
         foreach (var d in _m!.Drives!)
@@ -439,7 +439,7 @@ sealed class DashboardView : Control
     {
         var net = _m!.Network!;
         DrawCardBg(g, card);
-        DrawHead(g, card, "Network");
+        DrawHead(g, card, L.T.CardNetwork);
         int x = card.X + CardPadX, w = card.Width - CardPadX * 2;
         int y = card.Y + CardPadY + HeadH;
         for (int i = 0; i < net.Count; i++)
@@ -469,33 +469,38 @@ sealed class DashboardView : Control
     void DrawSystemCard(Graphics g, Rectangle card)
     {
         DrawCardBg(g, card);
-        DrawHead(g, card, "System");
+        DrawHead(g, card, L.T.CardSystem);
         int x = card.X + CardPadX, y = card.Y + CardPadY + HeadH;
-        int valueW = card.Width - CardPadX * 2 - 52;
-        DrawRow(g, x, y, 52, "Uptime", FmtUptime(_m!.System?.UptimeSec), valueW); y += RowH;
-        DrawRow(g, x, y, 52, "Host", _m.Host, valueW);
-        AddTipIfTruncated(x + 52, y, valueW, _m.Host, Theme.Base); y += RowH;
-        DrawRow(g, x, y, 52, "OS", _m.System?.OsVersion ?? "—", valueW);
-        AddTipIfTruncated(x + 52, y, valueW, _m.System?.OsVersion, Theme.Base); y += RowH;
-        DrawRow(g, x, y, 52, "Board", _m.Motherboard?.Name ?? "—", valueW);
-        AddTipIfTruncated(x + 52, y, valueW, _m.Motherboard?.Name, Theme.Base);
+        // Label column sized to the longest localized label of this card.
+        int labelW = new[] { L.T.RowUptime, L.T.RowHost, L.T.RowOs, L.T.RowBoard }
+            .Max(l => TextRenderer.MeasureText(l, Theme.Base).Width) + 8;
+        int valueW = card.Width - CardPadX * 2 - labelW;
+        DrawRow(g, x, y, labelW, L.T.RowUptime, FmtUptime(_m!.System?.UptimeSec), valueW); y += RowH;
+        DrawRow(g, x, y, labelW, L.T.RowHost, _m.Host, valueW);
+        AddTipIfTruncated(x + labelW, y, valueW, _m.Host, Theme.Base); y += RowH;
+        DrawRow(g, x, y, labelW, L.T.RowOs, _m.System?.OsVersion ?? "—", valueW);
+        AddTipIfTruncated(x + labelW, y, valueW, _m.System?.OsVersion, Theme.Base); y += RowH;
+        DrawRow(g, x, y, labelW, L.T.RowBoard, _m.Motherboard?.Name ?? "—", valueW);
+        AddTipIfTruncated(x + labelW, y, valueW, _m.Motherboard?.Name, Theme.Base);
     }
 
     // ── formatting ────────────────────────────────────────────────────────────
 
+    // UI numbers follow the app language ("72,6 °C" in German); MQTT/JSON
+    // stays invariant — the two paths are fully separate.
     static string FmtNum(float? v, string fmt = "0.#") =>
-        v?.ToString(fmt, CultureInfo.InvariantCulture) ?? "?";
+        v?.ToString(fmt, L.Culture) ?? "?";
 
     static string? Fmt(float? v, string unit, string fmt = "0.#") =>
-        v == null ? null : $"{v.Value.ToString(fmt, CultureInfo.InvariantCulture)} {unit}";
+        v == null ? null : $"{v.Value.ToString(fmt, L.Culture)} {unit}";
 
     static string FmtGb(float? mb) =>
-        mb == null ? "?" : (mb.Value / 1024f).ToString("0.#", CultureInfo.InvariantCulture);
+        mb == null ? "?" : (mb.Value / 1024f).ToString("0.#", L.Culture);
 
     static string FmtSpeed(float? kbps) =>
         kbps == null ? "—"
-        : kbps.Value >= 1024 ? $"{kbps.Value / 1024f:0.##} MB/s"
-        : $"{kbps.Value:0.#} KB/s";
+        : kbps.Value >= 1024 ? $"{(kbps.Value / 1024f).ToString("0.##", L.Culture)} MB/s"
+        : $"{kbps.Value.ToString("0.#", L.Culture)} KB/s";
 
     static string FmtUptime(int? sec)
     {

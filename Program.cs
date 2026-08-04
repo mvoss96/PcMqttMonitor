@@ -27,8 +27,8 @@ class Program
         {
             WriteCrashLog(e.Exception.ToString());
             MessageBox.Show(
-                $"{e.Exception.Message}\n\nDetails gespeichert in:\n{CrashLogPath}",
-                "PC MQTT Monitor — Fehler",
+                $"{e.Exception.Message}\n\n{L.T.CrashDetails}\n{CrashLogPath}",
+                L.T.CrashTitle,
                 MessageBoxButtons.OK, MessageBoxIcon.Error);
         };
 
@@ -50,8 +50,8 @@ class Program
             }
 
             MessageBox.Show(
-                $"{msg}\n\nDetails gespeichert in:\n{CrashLogPath}",
-                "PC MQTT Monitor — Kritischer Fehler",
+                $"{msg}\n\n{L.T.CrashDetails}\n{CrashLogPath}",
+                L.T.CrashTitleFatal,
                 MessageBoxButtons.OK, MessageBoxIcon.Error);
         };
 
@@ -63,6 +63,9 @@ class Program
         // upgrades because the installer only replaces the exe, never config.json.
         var configPath = Path.Combine(AppContext.BaseDirectory, "config.json");
         var config = ConfigLoader.Load(configPath);
+
+        // Language before any UI is built; changing it restarts the app.
+        L.Init(config.General.Language);
 
         // Color mode from config (system/light/dark). A change in Settings saves
         // the config and restarts the app — WinForms cannot re-theme live.
@@ -155,12 +158,12 @@ class Program
         {
             var waitSec = (int)Math.Ceiling(30 - uptimeSec);
             Log($"System just booted — waiting {waitSec}s for drivers to settle...");
-            tray.SetStatus($"Waiting for system drivers ({waitSec}s)...");
+            tray.SetStatus(string.Format(L.T.StatusWaitingDrivers, waitSec));
             await Task.Delay(TimeSpan.FromSeconds(waitSec), cancellationToken);
         }
 
         Log("Opening sensors (this may take a few seconds)...");
-        tray.SetStatus("Opening sensors...");
+        tray.SetStatus(L.T.StatusOpeningSensors);
         using var sensors = new SensorService(
             config.Sensors,
             message => { if (config.General.DebugEnabled) LogDebug(message); },
@@ -173,12 +176,12 @@ class Program
             if (active.Count == 0)
             {
                 Log("No outputs configured — sensor-only mode.");
-                tray.SetStatus("No outputs configured — sensors only");
+                tray.SetStatus(L.T.StatusNoOutputs);
             }
             else if (!active.Any(s => s.Name == "MQTT"))
             {
                 // MqttSink maintains the tray status itself; without it, say once what runs.
-                tray.SetStatus("Publishing to " + string.Join(" + ", active.Select(s => s.Name)));
+                tray.SetStatus(string.Format(L.T.StatusPublishingTo, string.Join(" + ", active.Select(s => s.Name))));
             }
         }
 
@@ -249,7 +252,7 @@ class Program
                 }
                 else
                 {
-                    tray.SetStatus("Paused");
+                    tray.SetStatus(L.T.StatusPaused);
                 }
 
                 // Poll more frequently while paused so resume feels instant.

@@ -22,7 +22,7 @@ sealed class SensorsPage : Panel
 
         var title = new Label
         {
-            Text = "Sensors to publish", Font = Theme.Title, ForeColor = Theme.Fg,
+            Text = L.T.SensorsTitle, Font = Theme.Title, ForeColor = Theme.Fg,
             AutoSize = true, Location = new Point(16, 12)
         };
         Controls.Add(title);
@@ -36,34 +36,34 @@ sealed class SensorsPage : Panel
 
         var s = config.Sensors;
 
-        Group("CPU");
-        Add(markDirty, "Load",          s.CpuLoad,         (c, v) => c.CpuLoad = v);
-        Add(markDirty, "Temperature",   s.CpuTemp,         (c, v) => c.CpuTemp = v);
-        Add(markDirty, "Package Power", s.CpuPackagePower, (c, v) => c.CpuPackagePower = v);
-        Add(markDirty, "Core Voltage",  s.CpuCoreVoltage,  (c, v) => c.CpuCoreVoltage = v);
+        Group(L.T.CardCpu);
+        Add(markDirty, L.T.SensorLoad,     s.CpuLoad,         (c, v) => c.CpuLoad = v);
+        Add(markDirty, L.T.SensorTemp,     s.CpuTemp,         (c, v) => c.CpuTemp = v);
+        Add(markDirty, L.T.SensorPkgPower, s.CpuPackagePower, (c, v) => c.CpuPackagePower = v);
+        Add(markDirty, L.T.SensorCoreVolt, s.CpuCoreVoltage,  (c, v) => c.CpuCoreVoltage = v);
 
-        Group("GPU");
-        Add(markDirty, "Load",         s.GpuLoad,        (c, v) => c.GpuLoad = v);
-        Add(markDirty, "Temperature",  s.GpuTemp,        (c, v) => c.GpuTemp = v);
-        Add(markDirty, "Board Power",  s.GpuBoardPower,  (c, v) => c.GpuBoardPower = v);
-        Add(markDirty, "Fan Speed",    s.GpuFanSpeed,    (c, v) => c.GpuFanSpeed = v);
-        Add(markDirty, "Memory Load",  s.GpuMemoryLoad,  (c, v) => c.GpuMemoryLoad = v);
-        Add(markDirty, "Memory Used",  s.GpuMemoryUsed,  (c, v) => c.GpuMemoryUsed = v);
-        Add(markDirty, "Memory Total", s.GpuMemoryTotal, (c, v) => c.GpuMemoryTotal = v);
+        Group(L.T.CardGpu);
+        Add(markDirty, L.T.SensorLoad,       s.GpuLoad,        (c, v) => c.GpuLoad = v);
+        Add(markDirty, L.T.SensorTemp,       s.GpuTemp,        (c, v) => c.GpuTemp = v);
+        Add(markDirty, L.T.SensorBoardPower, s.GpuBoardPower,  (c, v) => c.GpuBoardPower = v);
+        Add(markDirty, L.T.SensorFanSpeed,   s.GpuFanSpeed,    (c, v) => c.GpuFanSpeed = v);
+        Add(markDirty, L.T.SensorMemLoad,    s.GpuMemoryLoad,  (c, v) => c.GpuMemoryLoad = v);
+        Add(markDirty, L.T.SensorMemUsed,    s.GpuMemoryUsed,  (c, v) => c.GpuMemoryUsed = v);
+        Add(markDirty, L.T.SensorMemTotal,   s.GpuMemoryTotal, (c, v) => c.GpuMemoryTotal = v);
 
-        Group("RAM");
-        Add(markDirty, "Load",  s.RamLoad,  (c, v) => c.RamLoad = v);
-        Add(markDirty, "Used",  s.RamUsed,  (c, v) => c.RamUsed = v);
-        Add(markDirty, "Total", s.RamTotal, (c, v) => c.RamTotal = v);
+        Group(L.T.CardRam);
+        Add(markDirty, L.T.SensorLoad,  s.RamLoad,  (c, v) => c.RamLoad = v);
+        Add(markDirty, L.T.SensorUsed,  s.RamUsed,  (c, v) => c.RamUsed = v);
+        Add(markDirty, L.T.SensorTotal, s.RamTotal, (c, v) => c.RamTotal = v);
 
-        Group("Network");
-        Add(markDirty, "Upload",   s.NetworkUpload,   (c, v) => c.NetworkUpload = v);
-        Add(markDirty, "Download", s.NetworkDownload, (c, v) => c.NetworkDownload = v);
+        Group(L.T.CardNetwork);
+        Add(markDirty, L.T.SensorUpload,   s.NetworkUpload,   (c, v) => c.NetworkUpload = v);
+        Add(markDirty, L.T.SensorDownload, s.NetworkDownload, (c, v) => c.NetworkDownload = v);
 
-        Group("Other");
-        Add(markDirty, "Motherboard", s.MotherboardName, (c, v) => c.MotherboardName = v);
-        Add(markDirty, "Drives",      s.Drives,          (c, v) => c.Drives = v);
-        Add(markDirty, "Uptime",      s.Uptime,          (c, v) => c.Uptime = v);
+        Group(L.T.GroupOther);
+        Add(markDirty, L.T.SensorBoard,  s.MotherboardName, (c, v) => c.MotherboardName = v);
+        Add(markDirty, L.T.SensorDrives, s.Drives,          (c, v) => c.Drives = v);
+        Add(markDirty, L.T.SensorUptime, s.Uptime,          (c, v) => c.Uptime = v);
 
         if (_col1) _y += RowStep;
         _card.Height = _y + 10;
