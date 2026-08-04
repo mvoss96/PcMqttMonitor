@@ -1,19 +1,32 @@
-# PC MQTT Monitor
+<h1 align="center">PC MQTT Monitor</h1>
 
-A lightweight Windows system-tray app that reads hardware sensors (CPU, GPU, RAM, drives, network) via [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) and streams them to wherever you need them:
-
-> **MQTT** (with native **Home Assistant discovery**)  ·  **UDP** datagrams  ·  **TCP** JSON stream  ·  **Serial port** (e.g. ESP32 displays)
-
-All four outputs can run at the same time and are toggled independently in the app.
-
-<p>
-  <img src="docs/dashboard.png" width="484" alt="Dashboard">
+<p align="center">
+  A lightweight Windows tray app that streams your PC's hardware sensors —<br>
+  CPU, GPU, RAM, drives, network — wherever you need them:<br>
+  <b>MQTT</b> (native Home Assistant discovery) · <b>UDP</b> · <b>TCP</b> · <b>Serial</b>
 </p>
-<p>
-  <img src="docs/outputs.png" width="236" alt="Outputs">
-  <img src="docs/sensors.png" width="236" alt="Sensors">
-  <img src="docs/settings.png" width="236" alt="Settings">
+
+<p align="center">
+  <a href="https://github.com/mvoss96/PcMqttMonitor/releases/latest"><img src="https://img.shields.io/github/v/release/mvoss96/PcMqttMonitor?label=release" alt="Latest release"></a>
+  <img src="https://img.shields.io/github/downloads/mvoss96/PcMqttMonitor/total" alt="Downloads">
+  <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4" alt="Platform">
+  <img src="https://img.shields.io/github/license/mvoss96/PcMqttMonitor" alt="License">
 </p>
+
+<p align="center">
+  <img src="docs/dashboard.png" width="440" alt="Dashboard">
+</p>
+
+<details>
+  <summary><b>More screenshots</b> — Outputs · Sensors · Settings</summary>
+  <p align="center">
+    <img src="docs/outputs.png" width="236" alt="Outputs">
+    <img src="docs/sensors.png" width="236" alt="Sensors">
+    <img src="docs/settings.png" width="236" alt="Settings">
+  </p>
+</details>
+
+Sensors are read via [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor). All four outputs can run at the same time and are toggled independently in the app.
 
 ## Features
 
@@ -96,8 +109,8 @@ pc/myhost/system/uptime       86400              (seconds)
 
 When Home Assistant discovery is enabled, a retained device-discovery config is published under `homeassistant/device/...` and HA picks up all sensors automatically — the PC appears as one device with all its entities:
 
-<p>
-  <img src="docs/home-assistant.png" width="464" alt="Home Assistant device page">
+<p align="center">
+  <img src="docs/home-assistant.png" width="420" alt="Home Assistant device page">
 </p>
 
 ## UDP / TCP / Serial streams
