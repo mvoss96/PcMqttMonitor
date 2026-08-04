@@ -20,7 +20,8 @@ sealed class OutputsPage : Panel
     // TCP fields
     readonly TextBox _tcpPort;
     // Serial fields
-    readonly TextBox _serialPort, _serialBaud;
+    readonly ComboBox _serialPort;
+    readonly TextBox _serialBaud;
 
     // live MQTT state pushed in from the sink via MainWindow
     bool _mqttConnected;
@@ -63,7 +64,15 @@ sealed class OutputsPage : Panel
 
         // ── Serial ──────────────────────────────────────────────────────────
         _serialCard = new OutputCard("Serial", markDirty);
-        _serialPort = _serialCard.AddTextRow("Port", config.Serial.Port);
+        _serialPort = _serialCard.AddComboRow("Port", config.Serial.Port, AvailableComPorts());
+        // Re-enumerate on every open — USB adapters come and go.
+        _serialPort.DropDown += (_, _) =>
+        {
+            var current = _serialPort.Text;
+            _serialPort.Items.Clear();
+            _serialPort.Items.AddRange(AvailableComPorts());
+            _serialPort.Text = current;
+        };
         _serialBaud = _serialCard.AddPortRow("Baud rate", config.Serial.Baud);
         _serialCard.Toggle.SetChecked(config.Serial.Enabled);
 
@@ -170,6 +179,14 @@ sealed class OutputsPage : Panel
         box.Text = baud.ToString();
         return baud;
     }
+
+    // "COM2" before "COM10"; GetPortNames can report duplicates.
+    static object[] AvailableComPorts() =>
+        System.IO.Ports.SerialPort.GetPortNames()
+            .Distinct()
+            .OrderBy(p => p.Length).ThenBy(p => p)
+            .Cast<object>()
+            .ToArray();
 }
 
 // A collapsible sink card: fixed header (chevron, name, status dot + text,
@@ -241,6 +258,20 @@ sealed class OutputCard : CardPanel
         input.Box.TextChanged += (_, _) => _markDirty();
         AddRow(label, input, stretch: true);   // full width, same as the text fields
         return input.Box;
+    }
+
+    // Native rendering on purpose — same reason as the theme selector in
+    // SettingsPage: the dark color mode themes the ComboBox correctly, custom
+    // colors break its arrow drawing. Editable so a port that is not currently
+    // plugged in can still be typed.
+    public ComboBox AddComboRow(string label, string value, object[] items)
+    {
+        var combo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDown };
+        combo.Items.AddRange(items);
+        combo.Text = value;
+        combo.TextChanged += (_, _) => _markDirty();
+        AddRow(label, combo, stretch: true);
+        return combo;
     }
 
     public FlatCheck AddCheckRow(string text, bool value)
