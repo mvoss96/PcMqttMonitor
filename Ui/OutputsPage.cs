@@ -32,6 +32,11 @@ sealed class OutputsPage : Panel
         _config = config;
         _markDirty = markDirty;
         BackColor = Theme.WinBg;
+        // With every card expanded the content exceeds the window — scroll.
+        // Selectable so the panel can take focus and receive the mouse wheel.
+        AutoScroll = true;
+        SetStyle(ControlStyles.Selectable, true);
+        MouseEnter += (_, _) => Select();
 
         var title = new Label
         {
@@ -90,12 +95,15 @@ sealed class OutputsPage : Panel
 
     void Relayout()
     {
-        int x = 16, w = Width - 32, y = 42;
+        // AutoScrollPosition.Y is negative while scrolled — cards are laid out
+        // in scrolled coordinates so a relayout never snaps back to the top.
+        int x = 16, w = ClientSize.Width - 32, y = 42 + AutoScrollPosition.Y;
         foreach (var card in new[] { _mqttCard, _udpCard, _tcpCard, _serialCard })
         {
             card.SetBounds(x, y, w, card.WantedHeight);
             y += card.WantedHeight + 10;
         }
+        AutoScrollMinSize = new Size(0, y - AutoScrollPosition.Y + 6);
     }
 
     // Called by MainWindow when the MQTT sink reports a connection change,
