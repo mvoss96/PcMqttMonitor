@@ -135,7 +135,12 @@ sealed class TrayApp : ApplicationContext
     }
 
     // Called from any thread to update the status shown in the context menu.
-    public void SetStatus(string status) => _statusText = status;
+    // Also feeds the dashboard's startup placeholder until first data arrives.
+    public void SetStatus(string status)
+    {
+        _statusText = status;
+        _window.SetLoadingStatus(status);
+    }
 
     // Called from the MQTT loop thread to update the connection indicator in the Settings tab.
     public void SetConnectionStatus(bool connected, string broker)

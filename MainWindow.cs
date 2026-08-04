@@ -246,6 +246,15 @@ sealed class MainWindow : Form
         });
     }
 
+    // Called from TrayApp (any thread) — feeds the dashboard's startup
+    // placeholder ("Waiting for system drivers…", "Opening sensors…") until
+    // the first snapshot arrives; after that it is irrelevant and skipped.
+    public void SetLoadingStatus(string status)
+    {
+        if (_lastMetrics != null || !IsHandleCreated) return;
+        BeginInvoke(() => _dashboard.SetPlaceholder(status));
+    }
+
     // Called from the MQTT sink (any thread) — feeds the Outputs page status line.
     public void SetConnectionStatus(bool connected, string broker)
     {

@@ -29,6 +29,15 @@ sealed class DashboardView : Control
     readonly List<(Rectangle Rect, string Text)> _tipZones = new();
     string? _tipText;
 
+    // Shown centered while no snapshot has arrived yet (startup phases).
+    string _placeholder = "Starting…";
+
+    public void SetPlaceholder(string text)
+    {
+        _placeholder = text;
+        if (_m == null) Invalidate();
+    }
+
     // scrolling state
     int _offset;
     int _contentH;
@@ -161,7 +170,14 @@ sealed class DashboardView : Control
         var g = e.Graphics;
         g.Clear(Theme.WinBg);
         _tipZones.Clear();
-        if (_m == null) return;
+        if (_m == null)
+        {
+            // No snapshot yet — show the startup phase instead of a blank page.
+            TextRenderer.DrawText(g, _placeholder, Theme.Base,
+                new Rectangle(0, 0, Width, Height), Theme.Fg2,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+            return;
+        }
 
         g.SmoothingMode = SmoothingMode.AntiAlias;
 
