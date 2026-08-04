@@ -68,6 +68,7 @@ sealed class Lang
     public string CardDrives  { get; init; } = "Drives";
     public string CardNetwork { get; init; } = "Network";
     public string CardSystem  { get; init; } = "System";
+    public string DriveFree   { get; init; } = "free";   // "170 GB free"
     public string RowUptime   { get; init; } = "Uptime";
     public string RowHost     { get; init; } = "Host";
     public string RowOs       { get; init; } = "OS";
@@ -182,6 +183,7 @@ sealed class Lang
 
         CardDrives  = "Laufwerke",
         CardNetwork = "Netzwerk",
+        DriveFree   = "frei",
         RowUptime   = "Laufzeit",
         RowBoard    = "Board",
 

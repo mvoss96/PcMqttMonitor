@@ -308,14 +308,28 @@ sealed class DashboardView : Control
 
     // The ONE detail line per card: colored segments drawn back to back
     // (NoPadding on both draw and measure so the pieces join seamlessly).
-    static void DrawDetail(Graphics g, int x, int y, List<(string Text, Color Color)> parts)
+    // Clipped at maxW — an overflowing segment gets an ellipsis and the full
+    // line moves into a hover tooltip instead of bleeding over the card edge.
+    void DrawDetail(Graphics g, int x, int y, int maxW, List<(string Text, Color Color)> parts)
     {
         const TextFormatFlags flags = TextFormatFlags.Left | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding;
+        int right = x + maxW, cx = x;
+        bool truncated = false;
         foreach (var (text, color) in parts)
         {
-            TextRenderer.DrawText(g, text, Theme.Small, new Point(x, y), color, flags);
-            x += TextRenderer.MeasureText(g, text, Theme.Small, Size.Empty, flags).Width;
+            int w = TextRenderer.MeasureText(g, text, Theme.Small, Size.Empty, flags).Width;
+            if (cx + w > right)
+            {
+                TextRenderer.DrawText(g, text, Theme.Small, new Rectangle(cx, y, right - cx, DetailH), color,
+                    TextFormatFlags.Left | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
+                truncated = true;
+                break;
+            }
+            TextRenderer.DrawText(g, text, Theme.Small, new Point(cx, y), color, flags);
+            cx += w;
         }
+        if (truncated)
+            _tipZones.Add((new Rectangle(x, y, maxW, DetailH), string.Concat(parts.Select(p => p.Text))));
     }
 
     // Builds "a · b · c" segments, skipping missing values.
@@ -356,9 +370,10 @@ sealed class DashboardView : Control
         DrawHead(g, card, L.T.CardCpu);
         int y = card.Y + CardPadY + HeadH;
         DrawBigPercent(g, card, ref y, c.Load);
-        DrawDetail(g, card.X + CardPadX, y, Segments(
+        // Whole watts — the decimal adds width, not information.
+        DrawDetail(g, card.X + CardPadX, y, card.Width - CardPadX * 2, Segments(
             (Fmt(c.TempC, "°C"), Theme.TempColor(c.TempC)),
-            (Fmt(c.PackagePowerW, "W"), Theme.Fg2),
+            (Fmt(c.PackagePowerW, "W", "0"), Theme.Fg2),
             (Fmt(c.CoreVoltageV, "V", "0.###"), Theme.Fg2)));
         y += DetailH + SparkGap;
         DrawMiniSpark(g, card, y, _cpuHist, 100);
@@ -373,12 +388,14 @@ sealed class DashboardView : Control
         DrawBigPercent(g, card, ref y, gpu.Load);
         // Per the approved compact design the fan speed is dropped here —
         // idle GPUs report 0 RPM, lowest information value of all details.
+        // Total VRAM in whole GB: "8.3/12 GB" — the card size's decimal only
+        // eats width the line doesn't have.
         string? vram = gpu.MemoryUsedMb != null || gpu.MemoryTotalMb != null
-            ? $"VRAM {FmtGb(gpu.MemoryUsedMb)}/{FmtGb(gpu.MemoryTotalMb)} GB"
+            ? $"VRAM {FmtGb(gpu.MemoryUsedMb)}/{(gpu.MemoryTotalMb != null ? MathF.Round(gpu.MemoryTotalMb.Value / 1024f).ToString(L.Culture) : "?")} GB"
             : null;
-        DrawDetail(g, card.X + CardPadX, y, Segments(
+        DrawDetail(g, card.X + CardPadX, y, card.Width - CardPadX * 2, Segments(
             (Fmt(gpu.TempC, "°C"), Theme.TempColor(gpu.TempC)),
-            (Fmt(gpu.BoardPowerW, "W"), Theme.Fg2),
+            (Fmt(gpu.BoardPowerW, "W", "0"), Theme.Fg2),
             (vram, Theme.Fg2)));
         y += DetailH + SparkGap;
         DrawMiniSpark(g, card, y, _gpuHist, 100);
@@ -394,7 +411,7 @@ sealed class DashboardView : Control
         string? usage = ram.UsedGb != null || ram.TotalGb != null
             ? $"{FmtNum(ram.UsedGb)} / {FmtNum(ram.TotalGb)} GB"
             : null;
-        DrawDetail(g, card.X + CardPadX, y, Segments((usage, Theme.Fg2)));
+        DrawDetail(g, card.X + CardPadX, y, card.Width - CardPadX * 2, Segments((usage, Theme.Fg2)));
         y += DetailH + SparkGap;
         DrawMiniSpark(g, card, y, _ramHist, 100);
     }
@@ -412,10 +429,15 @@ sealed class DashboardView : Control
             var letter = d.Name.TrimEnd('\\');
             int paren = letter.LastIndexOf('(');
             if (paren >= 0) letter = letter[paren..].Trim('(', ')');
-            TextRenderer.DrawText(g, letter, Theme.SemiBold, new Rectangle(x, y, w / 2, 16), Theme.Fg,
+            TextRenderer.DrawText(g, letter, Theme.SemiBold, new Rectangle(x, y, 40, 16), Theme.Fg,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
-            TextRenderer.DrawText(g, d.UsedPercent != null ? $"{d.UsedPercent} %" : "—", Theme.Small,
-                new Rectangle(x + w / 2, y, w - w / 2, 16), Theme.Fg2,
+            // "82 % · 170 GB free" — the free space matters most day to day;
+            // used/total live in the hover tooltip.
+            var rightParts = new List<string>();
+            if (d.UsedPercent != null) rightParts.Add($"{d.UsedPercent} %");
+            if (d.FreeGb != null) rightParts.Add($"{FmtNum(d.FreeGb, "0")} GB {L.T.DriveFree}");
+            TextRenderer.DrawText(g, rightParts.Count > 0 ? string.Join(" · ", rightParts) : "—", Theme.Small,
+                new Rectangle(x + 40, y, w - 40, 16), Theme.Fg2,
                 TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
             // The compact card drops volume names and GB — hovering the row
             // reveals them ("System (C:) · 245.1 / 389.4 GB · 61 %").
