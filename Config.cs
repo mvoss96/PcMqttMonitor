@@ -28,6 +28,7 @@ static class ConfigLoader
         config.Mqtt    ??= new MqttConfig();
         config.Udp     ??= new UdpConfig();
         config.Tcp     ??= new TcpConfig();
+        config.Serial  ??= new SerialConfig();
         config.Sensors ??= new SensorConfig();
         if (config.General.PublishIntervalSeconds <= 0)
             config.General.PublishIntervalSeconds = 1.0;
@@ -47,6 +48,7 @@ sealed class AppConfig
     public MqttConfig Mqtt { get; set; } = new();
     public UdpConfig Udp { get; set; } = new();
     public TcpConfig Tcp { get; set; } = new();
+    public SerialConfig Serial { get; set; } = new();
     public SensorConfig Sensors { get; set; } = new();
 }
 
@@ -91,6 +93,14 @@ sealed class TcpConfig
 {
     public bool Enabled { get; set; } = false;
     public int ListenPort { get; set; } = 5556;
+}
+
+// Writes line-delimited JSON to a serial port (e.g. an ESP32 status display).
+sealed class SerialConfig
+{
+    public bool Enabled { get; set; } = false;
+    public string Port { get; set; } = string.Empty;   // e.g. "COM3"
+    public int Baud { get; set; } = 115200;
 }
 
 // Feature flags that enable/disable specific metrics.

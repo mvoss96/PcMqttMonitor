@@ -10,7 +10,7 @@ sealed class OutputsPage : Panel
     readonly AppConfig _config;
     readonly Action _markDirty;
 
-    readonly OutputCard _mqttCard, _udpCard, _tcpCard;
+    readonly OutputCard _mqttCard, _udpCard, _tcpCard, _serialCard;
 
     // MQTT fields
     readonly TextBox _host, _username, _password, _topic, _port;
@@ -19,6 +19,8 @@ sealed class OutputsPage : Panel
     readonly TextBox _udpHost, _udpPort;
     // TCP fields
     readonly TextBox _tcpPort;
+    // Serial fields
+    readonly TextBox _serialPort, _serialBaud;
 
     // live MQTT state pushed in from the sink via MainWindow
     bool _mqttConnected;
@@ -59,7 +61,13 @@ sealed class OutputsPage : Panel
         _tcpPort = _tcpCard.AddPortRow("Listen port", config.Tcp.ListenPort);
         _tcpCard.Toggle.SetChecked(config.Tcp.Enabled);
 
-        foreach (var card in new[] { _mqttCard, _udpCard, _tcpCard })
+        // ── Serial ──────────────────────────────────────────────────────────
+        _serialCard = new OutputCard("Serial", markDirty);
+        _serialPort = _serialCard.AddTextRow("Port", config.Serial.Port);
+        _serialBaud = _serialCard.AddPortRow("Baud rate", config.Serial.Baud);
+        _serialCard.Toggle.SetChecked(config.Serial.Enabled);
+
+        foreach (var card in new[] { _mqttCard, _udpCard, _tcpCard, _serialCard })
         {
             card.Toggle.CheckedChanged += (_, _) => { markDirty(); RefreshStatus(); };
             card.HeightChanged = Relayout;
@@ -74,7 +82,7 @@ sealed class OutputsPage : Panel
     void Relayout()
     {
         int x = 16, w = Width - 32, y = 42;
-        foreach (var card in new[] { _mqttCard, _udpCard, _tcpCard })
+        foreach (var card in new[] { _mqttCard, _udpCard, _tcpCard, _serialCard })
         {
             card.SetBounds(x, y, w, card.WantedHeight);
             y += card.WantedHeight + 10;
@@ -111,6 +119,13 @@ sealed class OutputsPage : Panel
         _tcpCard.SetStatus(_tcpCard.Toggle.Checked
             ? $"Listening on {_tcpPort.Text}" : "Disabled",
             _tcpCard.Toggle.Checked);
+
+        if (!_serialCard.Toggle.Checked)
+            _serialCard.SetStatus("Disabled", false);
+        else if (string.IsNullOrWhiteSpace(_serialPort.Text))
+            _serialCard.SetStatus("Not configured — set a port (e.g. COM3)", false);
+        else
+            _serialCard.SetStatus($"Sending on {_serialPort.Text.Trim().ToUpperInvariant()} @ {_serialBaud.Text} baud", true);
     }
 
     // Write the edited values back into the shared config. Called on Save.
@@ -132,6 +147,10 @@ sealed class OutputsPage : Panel
         _config.Tcp.Enabled    = _tcpCard.Toggle.Checked;
         _config.Tcp.ListenPort = ParsePort(_tcpPort, _config.Tcp.ListenPort);
 
+        _config.Serial.Enabled = _serialCard.Toggle.Checked;
+        _config.Serial.Port    = _serialPort.Text.Trim().ToUpperInvariant();
+        _config.Serial.Baud    = ParseBaud(_serialBaud, _config.Serial.Baud);
+
         RefreshStatus();
     }
 
@@ -142,6 +161,14 @@ sealed class OutputsPage : Panel
             port = fallback;
         box.Text = port.ToString();
         return port;
+    }
+
+    static int ParseBaud(TextBox box, int fallback)
+    {
+        if (!int.TryParse(box.Text.Trim(), out var baud) || baud < 1)
+            baud = fallback;
+        box.Text = baud.ToString();
+        return baud;
     }
 }
 

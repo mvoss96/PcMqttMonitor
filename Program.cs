@@ -80,6 +80,7 @@ class Program
         Log($"MQTT:     {(config.Mqtt.Enabled && !string.IsNullOrWhiteSpace(config.Mqtt.Host) ? $"{config.Mqtt.Host}:{config.Mqtt.Port} (topic root '{config.Mqtt.TopicRoot}')" : "disabled")}");
         Log($"UDP:      {(config.Udp.Enabled ? $"{config.Udp.Host}:{config.Udp.Port}" : "disabled")}");
         Log($"TCP:      {(config.Tcp.Enabled ? $"listening on {config.Tcp.ListenPort}" : "disabled")}");
+        Log($"Serial:   {(config.Serial.Enabled && !string.IsNullOrWhiteSpace(config.Serial.Port) ? $"{config.Serial.Port} @ {config.Serial.Baud} baud" : "disabled")}");
         Log($"Interval: {config.General.PublishIntervalSeconds}s");
 
         using var shutdown = new CancellationTokenSource();
@@ -132,6 +133,12 @@ class Program
         {
             try { sinks.Add(new TcpSink(config.Tcp, Log)); }
             catch (Exception ex) { Log($"[error] TCP sink: {ex.Message}"); }
+        }
+
+        if (config.Serial.Enabled && !string.IsNullOrWhiteSpace(config.Serial.Port))
+        {
+            try { sinks.Add(new SerialSink(config.Serial, Log)); }
+            catch (Exception ex) { Log($"[error] Serial sink: {ex.Message}"); }
         }
 
         return sinks;

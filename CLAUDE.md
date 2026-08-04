@@ -46,7 +46,8 @@ git tag v1.x.y && git push origin main --tags
   scalar metric — drives MQTT subtopics AND HA discovery; drives are special-cased)
 - `Sinks/` — `IMetricsSink` (the project's only interface) + `MqttSink` (connection,
   availability/LWT, subtopics, HA discovery sync), `UdpSink` (JSON datagram per snapshot),
-  `TcpSink` (line-delimited JSON server)
+  `TcpSink` (line-delimited JSON server), `SerialSink` (line-delimited JSON on a COM port,
+  lazy open/reopen)
 - `Config.cs` — JSON config in sections: `general`, `mqtt`, `udp`, `tcp`, `sensors`
   (v2 schema, breaking vs. 1.x — no migration by design)
 - `UpdateChecker.cs` — daily GitHub-releases check, notify-only (tray balloon + menu item)
