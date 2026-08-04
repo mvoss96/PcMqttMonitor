@@ -10,6 +10,7 @@ sealed class SensorService : IDisposable
     readonly Computer _computer;
     readonly SensorConfig _config;
     readonly Action<string>? _log;
+    readonly bool _buildSummary;
 
     IHardware? _cpu;
     IHardware? _gpu;
@@ -20,10 +21,11 @@ sealed class SensorService : IDisposable
     long _netLastBytesReceived = -1;
     DateTime _netLastTime;
 
-    public SensorService(SensorConfig? config, Action<string>? log = null)
+    public SensorService(SensorConfig? config, Action<string>? log = null, bool buildSummary = true)
     {
         _config = config ?? new SensorConfig();
         _log = log;
+        _buildSummary = buildSummary;
         _computer = new Computer
         {
             IsCpuEnabled = true,
@@ -105,41 +107,35 @@ sealed class SensorService : IDisposable
 
         var uptimeSec = _config.Uptime ? (int?)(Environment.TickCount64 / 1000) : null;
 
+        // The one-line console summary is only ever seen with --console — skip
+        // the string building entirely otherwise.
         var summaryParts = new List<string>();
-
-        var cpuSummary = BuildCpuSummary(cpuName, cpuLoad, cpuTemp, cpuPackagePower, cpuCoreVoltage);
-        if (cpuSummary != null)
+        if (_buildSummary)
         {
-            summaryParts.Add(cpuSummary);
+            var cpuSummary = BuildCpuSummary(cpuName, cpuLoad, cpuTemp, cpuPackagePower, cpuCoreVoltage);
+            if (cpuSummary != null)
+                summaryParts.Add(cpuSummary);
+
+            var gpuSummary = BuildGpuSummary(gpuName, gpuLoad, gpuTemp, gpuBoardPower, gpuFan, gpuMemLoad, gpuMemUsed, gpuMemTotal);
+            if (gpuSummary != null)
+                summaryParts.Add(gpuSummary);
+
+            var ramSummary = BuildRamSummary(ramLoad, ramUsed, ramTotal);
+            if (ramSummary != null)
+                summaryParts.Add(ramSummary);
+
+            if (!string.IsNullOrWhiteSpace(motherboardName))
+                summaryParts.Add($"MB {motherboardName}");
+
+            if (driveMetrics.Count > 0)
+                summaryParts.Add(BuildDrivesSummary(driveMetrics));
+
+            var netSummary = BuildNetworkSummary(netUp, netDown);
+            if (netSummary != null)
+                summaryParts.Add(netSummary);
         }
 
-        var gpuSummary = BuildGpuSummary(gpuName, gpuLoad, gpuTemp, gpuBoardPower, gpuFan, gpuMemLoad, gpuMemUsed, gpuMemTotal);
-        if (gpuSummary != null)
-        {
-            summaryParts.Add(gpuSummary);
-        }
-
-        var ramSummary = BuildRamSummary(ramLoad, ramUsed, ramTotal);
-        if (ramSummary != null)
-        {
-            summaryParts.Add(ramSummary);
-        }
-
-        if (!string.IsNullOrWhiteSpace(motherboardName))
-        {
-            summaryParts.Add($"MB {motherboardName}");
-        }
-
-        if (driveMetrics.Count > 0)
-        {
-            summaryParts.Add(BuildDrivesSummary(driveMetrics));
-        }
-
-        var netSummary = BuildNetworkSummary(netUp, netDown);
-        if (netSummary != null)
-            summaryParts.Add(netSummary);
-
-        var metrics = new MqttMetrics
+        var metrics = new MetricsSnapshot
         {
             TimestampUtc = DateTime.UtcNow,
             Host = Environment.MachineName,
@@ -634,78 +630,4 @@ sealed class SensorService : IDisposable
     }
 }
 
-sealed record SensorSnapshot(string Summary, MqttMetrics Metrics);
-
-// MQTT payload root containing grouped metrics.
-sealed class MqttMetrics
-{
-    public DateTime TimestampUtc { get; set; }
-    public string Host { get; set; } = string.Empty;
-    public CpuMetrics? Cpu { get; set; }
-    public GpuMetrics? Gpu { get; set; }
-    public RamMetrics? Ram { get; set; }
-    public MotherboardMetrics? Motherboard { get; set; }
-    public List<StorageMetrics>? Drives { get; set; }
-    public NetworkMetrics? Network { get; set; }
-    public SystemMetrics? System { get; set; }
-}
-
-// System-level metrics payload.
-sealed class SystemMetrics
-{
-    public int? UptimeSec { get; set; }
-}
-
-// CPU metrics payload.
-sealed class CpuMetrics
-{
-    public string Name { get; set; } = string.Empty;
-    public int? Load { get; set; }
-    public float? TempC { get; set; }
-    public float? PackagePowerW { get; set; }
-    public float? CoreVoltageV { get; set; }
-}
-
-// GPU metrics payload.
-sealed class GpuMetrics
-{
-    public string Name { get; set; } = string.Empty;
-    public int? Load { get; set; }
-    public float? TempC { get; set; }
-    public float? BoardPowerW { get; set; }
-    public float? FanRpm { get; set; }
-    public int? MemoryLoad { get; set; }
-    public float? MemoryUsedMb { get; set; }
-    public float? MemoryTotalMb { get; set; }
-}
-
-// RAM metrics payload.
-sealed class RamMetrics
-{
-    public int? Load { get; set; }
-    public float? UsedGb { get; set; }
-    public float? TotalGb { get; set; }
-}
-
-// Motherboard metrics payload.
-sealed class MotherboardMetrics
-{
-    public string Name { get; set; } = string.Empty;
-}
-
-// Storage metrics payload for each drive.
-sealed class StorageMetrics
-{
-    public string Name { get; set; } = string.Empty;
-    public float? UsedGb { get; set; }
-    public float? FreeGb { get; set; }
-    public float? TotalGb { get; set; }
-    public int? UsedPercent { get; set; }
-}
-
-// Network throughput metrics payload.
-sealed class NetworkMetrics
-{
-    public float? UploadKbps { get; set; }
-    public float? DownloadKbps { get; set; }
-}
+// SensorSnapshot and the metrics model live in Metrics.cs.

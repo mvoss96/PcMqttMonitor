@@ -122,19 +122,19 @@ sealed class MainWindow : Form
         ShowSensorsPlaceholder("Opening sensors — this may take a few seconds...");
 
         // ── Tab 2: Settings ──────────────────────────────────────────────────────
-        var sensors = config.Sensors ?? new SensorConfig();
+        var sensors = config.Sensors;
 
-        _host         = new TextBox { Text = config.BrokerHost, Anchor = AnchorStyles.Left | AnchorStyles.Right };
-        _port         = new NumericUpDown { Minimum = 1, Maximum = 65535, Value = config.BrokerPort, Anchor = AnchorStyles.Left | AnchorStyles.Right };
-        _useTls       = new CheckBox { Text = "Use TLS (typically port 8883)", Checked = config.UseTls, AutoSize = true };
-        _username     = new TextBox { Text = config.Username, Anchor = AnchorStyles.Left | AnchorStyles.Right };
-        _password     = new TextBox { Text = config.Password, Anchor = AnchorStyles.Left | AnchorStyles.Right, UseSystemPasswordChar = true };
-        _topic        = new TextBox { Text = config.TopicRoot, Anchor = AnchorStyles.Left | AnchorStyles.Right };
-        _interval     = new NumericUpDown { Minimum = 0.5m, Maximum = 3600, Value = (decimal)config.PublishIntervalSeconds, DecimalPlaces = 1, Increment = 0.5m, Anchor = AnchorStyles.Left | AnchorStyles.Right };
-        _debugEnabled = new CheckBox { Text = "Enable debug logging", Checked = config.DebugEnabled, AutoSize = true };
+        _host         = new TextBox { Text = config.Mqtt.Host, Anchor = AnchorStyles.Left | AnchorStyles.Right };
+        _port         = new NumericUpDown { Minimum = 1, Maximum = 65535, Value = config.Mqtt.Port, Anchor = AnchorStyles.Left | AnchorStyles.Right };
+        _useTls       = new CheckBox { Text = "Use TLS (typically port 8883)", Checked = config.Mqtt.UseTls, AutoSize = true };
+        _username     = new TextBox { Text = config.Mqtt.Username, Anchor = AnchorStyles.Left | AnchorStyles.Right };
+        _password     = new TextBox { Text = config.Mqtt.Password, Anchor = AnchorStyles.Left | AnchorStyles.Right, UseSystemPasswordChar = true };
+        _topic        = new TextBox { Text = config.Mqtt.TopicRoot, Anchor = AnchorStyles.Left | AnchorStyles.Right };
+        _interval     = new NumericUpDown { Minimum = 0.5m, Maximum = 3600, Value = (decimal)config.General.PublishIntervalSeconds, DecimalPlaces = 1, Increment = 0.5m, Anchor = AnchorStyles.Left | AnchorStyles.Right };
+        _debugEnabled = new CheckBox { Text = "Enable debug logging", Checked = config.General.DebugEnabled, AutoSize = true };
         _autoStart    = new CheckBox { Text = "Start with Windows",   Checked = false,                 AutoSize = true };
-        _haDiscovery  = new CheckBox { Text = "Home Assistant MQTT Discovery", Checked = config.HaDiscoveryEnabled, AutoSize = true };
-        _updateCheck  = new CheckBox { Text = "Notify about new versions (checks GitHub daily)", Checked = config.UpdateCheckEnabled, AutoSize = true };
+        _haDiscovery  = new CheckBox { Text = "Home Assistant MQTT Discovery", Checked = config.Mqtt.HaDiscoveryEnabled, AutoSize = true };
+        _updateCheck  = new CheckBox { Text = "Notify about new versions (checks GitHub daily)", Checked = config.General.UpdateCheckEnabled, AutoSize = true };
 
         // ── MQTT Broker section ──────────────────────────────────────────────────
         _connStatus = new Label
@@ -447,9 +447,9 @@ sealed class MainWindow : Form
         BringToFront();
     }
 
-    MqttMetrics? _lastMetrics;
+    MetricsSnapshot? _lastMetrics;
 
-    public void SetLatestMetrics(MqttMetrics m)
+    public void SetLatestMetrics(MetricsSnapshot m)
     {
         _lastMetrics = m;
         if (!IsHandleCreated) return;
@@ -535,7 +535,7 @@ sealed class MainWindow : Form
         {
             public readonly string Label;
             public readonly bool   HasBar;
-            public readonly Func<MqttMetrics, (int? Pct, string? Value, Color Color)> Get;
+            public readonly Func<MetricsSnapshot, (int? Pct, string? Value, Color Color)> Get;
             public int?   Pct;
             public string Value = "—";
             public Color  Color = SystemColors.ControlText;
@@ -560,7 +560,7 @@ sealed class MainWindow : Form
             BackColor = SystemColors.Window;
         }
 
-        public void SetMetrics(MqttMetrics m)
+        public void SetMetrics(MetricsSnapshot m)
         {
             var fp = MakeFingerprint(m);
             if (_fingerprint != fp)
@@ -575,7 +575,7 @@ sealed class MainWindow : Form
             Invalidate();
         }
 
-        void Rebuild(MqttMetrics m, string fp)
+        void Rebuild(MetricsSnapshot m, string fp)
         {
             _sections = new List<Section>();
             void Add(string title, string? sub, IReadOnlyList<RowDef> defs)
@@ -682,12 +682,12 @@ sealed class MainWindow : Form
     // Which top-level sections are present — used to detect structural changes.
     // Drive NAMES (not just the count) must be part of the fingerprint: swapping one
     // USB drive for another keeps the count identical but needs a row rebuild.
-    static string MakeFingerprint(MqttMetrics m) =>
+    static string MakeFingerprint(MetricsSnapshot m) =>
         $"{m.Cpu != null}|{m.Gpu != null}|{m.Ram != null}|{string.Join(",", m.Drives?.Select(d => d.Name) ?? [])}|{m.Network != null}|{m.System != null}";
 
     // Called every refresh interval.  Owner-drawn — just hand the new reading to the
     // dashboard, which copies values and invalidates (one fast paint, no layout).
-    void RefreshSensors(MqttMetrics m)
+    void RefreshSensors(MetricsSnapshot m)
     {
         if (_sensorsView == null)
         {
@@ -709,7 +709,7 @@ sealed class MainWindow : Form
 
     // A row definition: static label text, whether it has a progress bar,
     // and a delegate that extracts (bar %, display value, colour) from metrics.
-    record RowDef(string Label, bool HasBar, Func<MqttMetrics, (int? Pct, string? Value, Color Color)> GetData);
+    record RowDef(string Label, bool HasBar, Func<MetricsSnapshot, (int? Pct, string? Value, Color Color)> GetData);
 
     static (int?, string?, Color) IntVal(int? v, string unit) =>
         v == null ? (null, null, SystemColors.ControlText)
@@ -890,11 +890,10 @@ sealed class MainWindow : Form
 
     void OnSave(object? sender, EventArgs e)
     {
-        _config.PublishIntervalSeconds = (double)_interval.Value;
-        _config.DebugEnabled           = _debugEnabled.Checked;
-        _config.HaDiscoveryEnabled     = _haDiscovery.Checked;
-        _config.UpdateCheckEnabled     = _updateCheck.Checked;
-        _config.Sensors ??= new SensorConfig();
+        _config.General.PublishIntervalSeconds = (double)_interval.Value;
+        _config.General.DebugEnabled           = _debugEnabled.Checked;
+        _config.Mqtt.HaDiscoveryEnabled        = _haDiscovery.Checked;
+        _config.General.UpdateCheckEnabled     = _updateCheck.Checked;
         foreach (var (box, setter) in _sensorBoxes)
             setter(_config.Sensors, box.Checked);
 
@@ -1009,12 +1008,13 @@ sealed class MainWindow : Form
         }
 
         // Connection succeeded — persist the MQTT settings and restart.
-        _config.BrokerHost = _host.Text.Trim();
-        _config.BrokerPort = (int)_port.Value;
-        _config.UseTls     = _useTls.Checked;
-        _config.Username   = _username.Text;
-        _config.Password   = _password.Text;
-        _config.TopicRoot  = _topic.Text.Trim();
+        _config.Mqtt.Enabled   = true;
+        _config.Mqtt.Host      = _host.Text.Trim();
+        _config.Mqtt.Port      = (int)_port.Value;
+        _config.Mqtt.UseTls    = _useTls.Checked;
+        _config.Mqtt.Username  = _username.Text;
+        _config.Mqtt.Password  = _password.Text;
+        _config.Mqtt.TopicRoot = _topic.Text.Trim();
 
         File.WriteAllText(_configPath,
             JsonSerializer.Serialize(_config, new JsonSerializerOptions { WriteIndented = true }));

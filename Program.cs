@@ -1,5 +1,4 @@
 using System.Runtime.InteropServices;
-using MQTTnet;
 using System.Windows.Forms;
 
 class Program
@@ -11,7 +10,8 @@ class Program
     {
         // Pass --console to see log output in the terminal that launched the app.
         // Without it no console is allocated (WinExe) so output is silenced.
-        if (args.Contains("--console"))
+        bool consoleAttached = args.Contains("--console");
+        if (consoleAttached)
             AttachConsole(-1); // -1 = attach to parent process' console
         else
             Console.SetOut(TextWriter.Null);
@@ -51,16 +51,17 @@ class Program
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
 
-        // Config lives next to the exe — which is %LocalAppData%\PcMqttMonitor\ when
-        // installed, or bin\Debug\ during development. Survives upgrades because the
-        // installer only replaces the exe, never config.json.
+        // Config lives next to the exe — Program Files when installed (works because
+        // the app always runs elevated), or bin\Debug during development. Survives
+        // upgrades because the installer only replaces the exe, never config.json.
         var configPath = Path.Combine(AppContext.BaseDirectory, "config.json");
         var config = ConfigLoader.Load(configPath);
 
-        Log($"=== PC MQTT Monitor v{typeof(Program).Assembly.GetName().Version?.ToString(3)} starting ===");
-        Log($"Broker:   {config.BrokerHost}:{config.BrokerPort}");
-        Log($"TopicRoot: {config.TopicRoot}");
-        Log($"Interval: {config.PublishIntervalSeconds}s");
+        Log($"=== PC MQTT Monitor v{UpdateChecker.CurrentVersion.ToString(3)} starting ===");
+        Log($"MQTT:     {(config.Mqtt.Enabled && !string.IsNullOrWhiteSpace(config.Mqtt.Host) ? $"{config.Mqtt.Host}:{config.Mqtt.Port} (topic root '{config.Mqtt.TopicRoot}')" : "disabled")}");
+        Log($"UDP:      {(config.Udp.Enabled ? $"{config.Udp.Host}:{config.Udp.Port}" : "disabled")}");
+        Log($"TCP:      {(config.Tcp.Enabled ? $"listening on {config.Tcp.ListenPort}" : "disabled")}");
+        Log($"Interval: {config.General.PublishIntervalSeconds}s");
 
         using var shutdown = new CancellationTokenSource();
         var tray = new TrayApp(shutdown, configPath, config);
@@ -72,10 +73,10 @@ class Program
             Application.Exit();
         };
 
-        // Run the MQTT + sensor loop on a background thread so the UI stays responsive.
-        var mqttTask = Task.Run(async () =>
+        // Run the sensor + publish loop on a background thread so the UI stays responsive.
+        var publishTask = Task.Run(async () =>
         {
-            try { await RunMqttLoopAsync(config, tray, shutdown.Token); }
+            try { await RunPublishLoopAsync(config, tray, consoleAttached, shutdown.Token); }
             catch (Exception ex) { Log($"[fatal] Background task crashed: {ex}"); }
         });
 
@@ -87,29 +88,37 @@ class Program
 
         // Tray was closed — cancel the loop and wait for it to finish cleanly.
         shutdown.Cancel();
-        try { mqttTask.Wait(); } catch { }
+        try { publishTask.Wait(); } catch { }
     }
 
-    // Builds MQTT client options from the current config — called on connect and reconnect.
-    static MQTTnet.MqttClientOptions BuildMqttOptions(MqttClientFactory factory, AppConfig config)
+    // Builds the active sinks from config. A sink whose constructor throws
+    // (bad MQTT options, TCP port taken) is logged and skipped — the others run.
+    static List<IMetricsSink> CreateSinks(AppConfig config, TrayApp tray)
     {
-        var builder = factory.CreateClientOptionsBuilder()
-            .WithTcpServer(config.BrokerHost, config.BrokerPort)
-            .WithCredentials(config.Username, config.Password)
-            .WithClientId($"pcmqtt-{Environment.MachineName.ToLowerInvariant()}")
-            // LWT: if the connection dies without a clean disconnect (crash, power
-            // loss), the broker publishes "offline" on our behalf once the
-            // keep-alive times out — subscribers always learn we are gone.
-            .WithWillTopic(MqttPublisher.AvailabilityTopic(config.TopicRoot, Environment.MachineName.ToLowerInvariant()))
-            .WithWillPayload("offline")
-            .WithWillRetain(true)
-            .WithWillQualityOfServiceLevel(MQTTnet.Protocol.MqttQualityOfServiceLevel.AtLeastOnce);
-        if (config.UseTls)
-            builder = builder.WithTlsOptions(o => o.UseTls());
-        return builder.Build();
+        var sinks = new List<IMetricsSink>();
+
+        if (config.Mqtt.Enabled && !string.IsNullOrWhiteSpace(config.Mqtt.Host))
+        {
+            try { sinks.Add(new MqttSink(config.Mqtt, Log, tray.SetStatus, tray.SetConnectionStatus)); }
+            catch (Exception ex) { Log($"[error] Invalid MQTT config: {ex.Message}"); }
+        }
+
+        if (config.Udp.Enabled && !string.IsNullOrWhiteSpace(config.Udp.Host))
+        {
+            try { sinks.Add(new UdpSink(config.Udp)); }
+            catch (Exception ex) { Log($"[error] UDP sink: {ex.Message}"); }
+        }
+
+        if (config.Tcp.Enabled)
+        {
+            try { sinks.Add(new TcpSink(config.Tcp, Log)); }
+            catch (Exception ex) { Log($"[error] TCP sink: {ex.Message}"); }
+        }
+
+        return sinks;
     }
 
-    static async Task RunMqttLoopAsync(AppConfig config, TrayApp tray, CancellationToken cancellationToken)
+    static async Task RunPublishLoopAsync(AppConfig config, TrayApp tray, bool consoleAttached, CancellationToken cancellationToken)
     {
         Log("Background task started.");
 
@@ -128,45 +137,29 @@ class Program
         tray.SetStatus("Opening sensors...");
         using var sensors = new SensorService(
             config.Sensors,
-            message => { if (config.DebugEnabled) LogDebug(message); });
+            message => { if (config.General.DebugEnabled) LogDebug(message); },
+            buildSummary: consoleAttached);
         sensors.Open();
         Log("Sensors ready.");
 
-        // MQTT is optional — skip entirely if no broker is configured.
-        bool hasBroker = !string.IsNullOrWhiteSpace(config.BrokerHost);
-        var mqttFactory = new MqttClientFactory();
-        using var mqttClient = mqttFactory.CreateMqttClient();
-        MqttClientOptions? mqttOptions = null;
-        if (hasBroker)
+        var sinks = CreateSinks(config, tray);
+        if (sinks.Count == 0)
         {
-            try { mqttOptions = BuildMqttOptions(mqttFactory, config); }
-            catch (Exception ex)
-            {
-                Log($"[error] Invalid MQTT config: {ex.Message}");
-                hasBroker = false;
-            }
+            Log("No outputs configured — sensor-only mode.");
+            tray.SetStatus("No outputs configured — sensors only");
+        }
+        else if (!sinks.Any(s => s.Name == "MQTT"))
+        {
+            // MqttSink maintains the tray status itself; without it, say once what runs.
+            tray.SetStatus("Publishing to " + string.Join(" + ", sinks.Select(s => s.Name)));
         }
 
-        if (!hasBroker)
-        {
-            Log("No broker configured — sensor-only mode.");
-            tray.SetStatus("No broker configured — sensors only");
-        }
-
-        var host = Environment.MachineName.ToLowerInvariant();
         bool wasPaused = false;
-        // Discovery state: republish when the toggle or the advertised component
-        // set changes; sync once after every (re)connect so the retained config
-        // on the broker always matches the current setting.
-        bool discoveryActive = false;
-        string discoveryFingerprint = "";
-        bool needsDiscoverySync = true;
-
         try
         {
             while (!cancellationToken.IsCancellationRequested)
             {
-                // Always read sensors and update the UI — regardless of MQTT status.
+                // Always read sensors and update the UI — regardless of sink status.
                 SensorSnapshot snapshot;
                 try
                 {
@@ -179,108 +172,32 @@ class Program
                 catch (Exception ex)
                 {
                     Log($"[error] sensor read: {ex.Message}");
-                    snapshot = new SensorSnapshot("", new MqttMetrics { Host = Environment.MachineName });
+                    snapshot = new SensorSnapshot("", new MetricsSnapshot { Host = Environment.MachineName });
                 }
 
                 bool paused = tray.IsPaused;
 
-                if (hasBroker && mqttOptions != null)
+                if (paused != wasPaused)
                 {
-                    // Reflect pause transitions on the availability topic while the
-                    // connection is still up, so HA shows the PC as unavailable.
-                    if (paused != wasPaused && mqttClient.IsConnected)
+                    foreach (var sink in sinks)
                     {
-                        try
-                        {
-                            await MqttPublisher.PublishAvailabilityAsync(
-                                mqttClient, config.TopicRoot, host, online: !paused, cancellationToken);
-                        }
+                        try { await sink.SetOnlineAsync(!paused, cancellationToken); }
                         catch (OperationCanceledException) { throw; }
-                        catch (Exception ex) { Log($"[error] availability publish: {ex.Message}"); }
+                        catch (Exception ex) { Log($"[error] {sink.Name} availability: {ex.Message}"); }
                     }
                     wasPaused = paused;
                 }
 
-                if (!paused && hasBroker && mqttOptions != null)
+                if (!paused)
                 {
-                    // Connect/reconnect if needed — one attempt per cycle, non-blocking.
-                    if (!mqttClient.IsConnected)
+                    foreach (var sink in sinks)
                     {
-                        try
-                        {
-                            Log($"Connecting to {config.BrokerHost}:{config.BrokerPort}...");
-                            tray.SetStatus($"Connecting to {config.BrokerHost}:{config.BrokerPort}...");
-                            await mqttClient.ConnectAsync(mqttOptions, cancellationToken);
-                            Log("MQTT connected.");
-                            tray.SetConnectionStatus(true, $"{config.BrokerHost}:{config.BrokerPort}");
-                            await MqttPublisher.PublishAvailabilityAsync(
-                                mqttClient, config.TopicRoot, host, online: true, cancellationToken);
-                            needsDiscoverySync = true;
-                        }
+                        try { await sink.PublishAsync(snapshot.Metrics, cancellationToken); }
                         catch (OperationCanceledException) { throw; }
-                        catch (Exception ex)
-                        {
-                            Log($"[error] Connection failed: {ex.Message}");
-                            tray.SetStatus("Disconnected — open Settings to configure MQTT broker");
-                            tray.SetConnectionStatus(false, "");
-                        }
-                    }
-
-                    if (mqttClient.IsConnected)
-                    {
-                        // Keep the HA discovery config on the broker in sync with the
-                        // (live-editable) setting and the advertised component set.
-                        try
-                        {
-                            bool want = config.HaDiscoveryEnabled;
-                            var fingerprint = HaDiscovery.Fingerprint(snapshot.Metrics);
-                            if (needsDiscoverySync || want != discoveryActive
-                                || (want && fingerprint != discoveryFingerprint))
-                            {
-                                if (want)
-                                {
-                                    await HaDiscovery.PublishConfigAsync(
-                                        mqttClient, config.TopicRoot, host, snapshot.Metrics,
-                                        typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.0.0",
-                                        config.BrokerHost, config.BrokerPort,
-                                        cancellationToken);
-                                    Log("HA discovery config published.");
-                                }
-                                else
-                                {
-                                    await HaDiscovery.RemoveAsync(mqttClient, host, cancellationToken);
-                                    if (discoveryActive) Log("HA discovery config removed.");
-                                }
-                                discoveryActive = want;
-                                discoveryFingerprint = fingerprint;
-                                needsDiscoverySync = false;
-                            }
-                        }
-                        catch (OperationCanceledException) { throw; }
-                        catch (Exception ex) { Log($"[error] discovery publish: {ex.Message}"); }
-
-                        try
-                        {
-                            await MqttPublisher.PublishAsync(
-                                mqttClient,
-                                config.TopicRoot,
-                                host,
-                                snapshot.Metrics,
-                                cancellationToken);
-                            LogDebug("Publish complete.");
-                            tray.SetStatus($"Connected — {config.BrokerHost}:{config.BrokerPort}");
-                        }
-                        catch (OperationCanceledException) { throw; }
-                        catch (Exception ex)
-                        {
-                            Log($"[error] publish: {ex.Message}");
-                            tray.SetStatus($"Error: {ex.Message}");
-                            if (!mqttClient.IsConnected)
-                                tray.SetConnectionStatus(false, "");
-                        }
+                        catch (Exception ex) { Log($"[error] {sink.Name} publish: {ex.Message}"); }
                     }
                 }
-                else if (paused)
+                else
                 {
                     tray.SetStatus("Paused");
                 }
@@ -288,7 +205,7 @@ class Program
                 // Poll more frequently while paused so resume feels instant.
                 var delay = tray.IsPaused
                     ? TimeSpan.FromSeconds(1)
-                    : TimeSpan.FromSeconds(config.PublishIntervalSeconds);
+                    : TimeSpan.FromSeconds(config.General.PublishIntervalSeconds);
                 await Task.Delay(delay, cancellationToken);
             }
         }
@@ -299,19 +216,9 @@ class Program
         finally
         {
             tray.SetConnectionStatus(false, "");
-            if (mqttClient.IsConnected)
+            foreach (var sink in sinks)
             {
-                // Graceful goodbye: mark ourselves offline before disconnecting —
-                // a clean disconnect does NOT fire the LWT, so we say it ourselves.
-                try
-                {
-                    await MqttPublisher.PublishAvailabilityAsync(
-                        mqttClient, config.TopicRoot, host, online: false, CancellationToken.None);
-                }
-                catch { }
-                var disconnectOptions = mqttFactory.CreateClientDisconnectOptionsBuilder().Build();
-                await mqttClient.DisconnectAsync(disconnectOptions, CancellationToken.None);
-                Log("MQTT disconnected.");
+                try { await sink.DisposeAsync(); } catch { }
             }
         }
     }
@@ -329,7 +236,7 @@ class Program
             {
                 await Task.Delay(delay, cancellationToken);
                 delay = TimeSpan.FromHours(24);
-                if (!config.UpdateCheckEnabled) continue;
+                if (!config.General.UpdateCheckEnabled) continue;
 
                 try
                 {

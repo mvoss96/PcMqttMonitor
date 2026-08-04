@@ -38,12 +38,17 @@ git tag v1.x.y && git push origin main --tags
 
 ## Project Structure
 
-- `Program.cs` — entry point, MQTT loop, crash handling
+- `Program.cs` — entry point, crash handling, publish loop (snapshot → UI → all sinks)
 - `TrayApp.cs` — system tray icon, context menu, pause/resume
 - `MainWindow.cs` — sensors tab + settings tab (WinForms)
-- `Sensor.cs` — LibreHardwareMonitor wrapper, metrics model, MQTT payload types
-- `Config.cs` — JSON config model (`config.json` lives next to the exe)
-- `MqttPublisher.cs` — MQTT publish logic
+- `SensorService.cs` — LibreHardwareMonitor wrapper, snapshot building
+- `Metrics.cs` — transport-neutral metrics model, `HostInfo`, `MetricTable` (one row per
+  scalar metric — drives MQTT subtopics AND HA discovery; drives are special-cased)
+- `Sinks/` — `IMetricsSink` (the project's only interface) + `MqttSink` (connection,
+  availability/LWT, subtopics, HA discovery sync), `UdpSink` (JSON datagram per snapshot),
+  `TcpSink` (line-delimited JSON server)
+- `Config.cs` — JSON config in sections: `general`, `mqtt`, `udp`, `tcp`, `sensors`
+  (v2 schema, breaking vs. 1.x — no migration by design)
 - `UpdateChecker.cs` — daily GitHub-releases check, notify-only (tray balloon + menu item)
 - `app.ico` — application icon (16/32/48/256px signal bars design)
 - `app.manifest` — requires `requireAdministrator` (needed for LHM hardware access)

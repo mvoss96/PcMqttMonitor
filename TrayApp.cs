@@ -140,7 +140,7 @@ sealed class TrayApp : ApplicationContext
     }
 
     // Short single-line summary for the native OS tooltip.
-    static string BuildTooltipText(MqttMetrics m, bool paused)
+    static string BuildTooltipText(MetricsSnapshot m, bool paused)
     {
         var cpuString = (m.Cpu != null && (m.Cpu.Load != null || m.Cpu.TempC != null))
             ? $"CPU{(m.Cpu.Load != null ? $" {m.Cpu.Load}%" : "")}{(m.Cpu.TempC != null ? $" {m.Cpu.TempC:0}C" : "")}"
