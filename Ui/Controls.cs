@@ -10,13 +10,22 @@ using System.Windows.Forms;
 sealed class NavButton : Control
 {
     public Action<Graphics, RectangleF, Color> IconPainter = static (_, _, _) => { };
-    bool _active, _hover;
+    bool _active, _hover, _badge;
 
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public bool Active
     {
         get => _active;
         set { if (_active != value) { _active = value; Invalidate(); } }
+    }
+
+    // Accent dot at the icon's top-right corner — used on the About button
+    // while an update is pending.
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public bool Badge
+    {
+        get => _badge;
+        set { if (_badge != value) { _badge = value; Invalidate(); } }
     }
 
     public NavButton()
@@ -55,6 +64,16 @@ sealed class NavButton : Control
         var iconColor = _active || _hover ? Theme.Fg : Theme.Fg2;
         var box = new RectangleF((Width - 16) / 2f, (Height - 16) / 2f, 16, 16);
         IconPainter(g, box, iconColor);
+
+        if (_badge)
+        {
+            // Ring in the rail color so the dot stays readable on hover/active fills.
+            using var dot  = new SolidBrush(Theme.Accent);
+            using var ring = new Pen(Parent?.BackColor ?? Theme.WinBg, 1.5f);
+            var r = new RectangleF(box.Right - 3.5f, box.Top - 3.5f, 7, 7);
+            g.FillEllipse(dot, r);
+            g.DrawEllipse(ring, r);
+        }
     }
 }
 
@@ -384,12 +403,11 @@ sealed class SaveBar : CardPanel
     }
 }
 
-// Accent-colored rounded button ("Save", update pill). Kept deliberately
+// Accent-colored rounded button (the save bar's "Save"). Kept deliberately
 // simple: flat fill, hover brightening, no focus chrome beyond the cue.
 sealed class PillButton : Control
 {
     bool _hover;
-    public bool Soft;   // true: accent-soft bg with accent text (update pill)
 
     public PillButton()
     {
@@ -410,14 +428,13 @@ sealed class PillButton : Control
         g.Clear(Parent?.BackColor ?? Theme.CardBg);
 
         var r = new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
-        using var path = Theme.RoundedRect(r, Soft ? (Height - 1) / 2f : 5);
-        var bg = Soft ? Theme.AccentSoft : Theme.Accent;
+        using var path = Theme.RoundedRect(r, 5);
+        var bg = Theme.Accent;
         if (_hover) bg = Theme.Mix(bg, Theme.Dark ? Color.White : Color.Black, 0.08f);
         using var fill = new SolidBrush(bg);
         g.FillPath(fill, path);
 
-        var fg = Soft ? Theme.Accent : Theme.AccentFg;
-        TextRenderer.DrawText(g, Text, Font, new Rectangle(0, 0, Width, Height), fg,
+        TextRenderer.DrawText(g, Text, Font, new Rectangle(0, 0, Width, Height), Theme.AccentFg,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
     }
 }
