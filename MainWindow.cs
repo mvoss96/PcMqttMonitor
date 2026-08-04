@@ -48,6 +48,7 @@ sealed class MainWindow : Form
         Size = new Size(500, 700);
         FormBorderStyle = FormBorderStyle.FixedSingle;   // fixed window per the mockup
         MaximizeBox = false;
+        MinimizeBox = false;   // close (= hide to tray) is the only sensible action
         StartPosition = FormStartPosition.Manual;        // anchored near the tray on Show
         ShowInTaskbar = true;
         BackColor = Theme.WinBg;

@@ -23,6 +23,12 @@ sealed class DashboardView : Control
     MetricsSnapshot? _m;
     readonly Queue<float> _cpuHist = new(), _gpuHist = new(), _ramHist = new();
 
+    // Hover tooltips for truncated/condensed values (full OS/board strings,
+    // drive details). Zones are rebuilt on every paint in client coordinates.
+    readonly ToolTip _tip = new();
+    readonly List<(Rectangle Rect, string Text)> _tipZones = new();
+    string? _tipText;
+
     // scrolling state
     int _offset;
     int _contentH;
@@ -113,8 +119,20 @@ sealed class DashboardView : Control
         {
             bool hover = e.X >= Width - ScrollW && MaxOffset > 0;
             if (hover != _thumbHover) { _thumbHover = hover; Invalidate(); }
+            UpdateTip(e.Location);
         }
         base.OnMouseMove(e);
+    }
+
+    void UpdateTip(Point p)
+    {
+        string? text = null;
+        foreach (var zone in _tipZones)
+            if (zone.Rect.Contains(p)) { text = zone.Text; break; }
+        if (text == _tipText) return;
+        _tipText = text;
+        if (text == null) _tip.Hide(this);
+        else _tip.Show(text, this, p.X + 14, p.Y + 20, 5000);
     }
 
     protected override void OnMouseUp(MouseEventArgs e)
@@ -126,7 +144,14 @@ sealed class DashboardView : Control
     protected override void OnMouseLeave(EventArgs e)
     {
         if (_thumbHover) { _thumbHover = false; Invalidate(); }
+        if (_tipText != null) { _tipText = null; _tip.Hide(this); }
         base.OnMouseLeave(e);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) _tip.Dispose();
+        base.Dispose(disposing);
     }
 
     // ── painting ──────────────────────────────────────────────────────────────
@@ -135,6 +160,7 @@ sealed class DashboardView : Control
     {
         var g = e.Graphics;
         g.Clear(Theme.WinBg);
+        _tipZones.Clear();
         if (_m == null) return;
 
         g.SmoothingMode = SmoothingMode.AntiAlias;
@@ -245,6 +271,15 @@ sealed class DashboardView : Control
 
         using (var dot = new SolidBrush(Theme.Accent))
             g.FillEllipse(dot, pts[^1].X - 2.4f, pts[^1].Y - 2.4f, 4.8f, 4.8f);
+    }
+
+    // Registers a hover zone when the value doesn't fit its column — the
+    // tooltip then shows the full string.
+    void AddTipIfTruncated(int x, int y, int w, string? text, Font font)
+    {
+        if (string.IsNullOrEmpty(text)) return;
+        if (TextRenderer.MeasureText(text, font).Width <= w) return;
+        _tipZones.Add((new Rectangle(x, y, w, RowH), text));
     }
 
     static void DrawRow(Graphics g, int x, int y, int labelW, string label, string value, int valueW = 220)
@@ -366,6 +401,14 @@ sealed class DashboardView : Control
             TextRenderer.DrawText(g, d.UsedPercent != null ? $"{d.UsedPercent} %" : "—", Theme.Small,
                 new Rectangle(x + w / 2, y, w - w / 2, 16), Theme.Fg2,
                 TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+            // The compact card drops volume names and GB — hovering the row
+            // reveals them ("System (C:) · 245.1 / 389.4 GB · 61 %").
+            var details = new List<string> { d.Name.TrimEnd('\\') };
+            if (d.UsedGb != null && d.TotalGb != null)
+                details.Add($"{FmtNum(d.UsedGb)} / {FmtNum(d.TotalGb)} GB");
+            if (d.UsedPercent != null)
+                details.Add($"{d.UsedPercent} %");
+            _tipZones.Add((new Rectangle(x, y, w, 27), string.Join(" · ", details)));
             y += 16;
             DrawBar(g, x, y + 2, w, d.UsedPercent ?? 0);
             y += 11;
@@ -393,6 +436,7 @@ sealed class DashboardView : Control
             }
             TextRenderer.DrawText(g, a.Name, Theme.SemiBold, new Rectangle(x, y, w / 2, 17), Theme.Fg,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+            AddTipIfTruncated(x, y, w / 2, a.Name, Theme.SemiBold);
             string rates = $"↑ {FmtSpeed(a.UploadKbps)}  ↓ {FmtSpeed(a.DownloadKbps)}";
             TextRenderer.DrawText(g, rates, Theme.Tiny, new Rectangle(x + w / 2, y, w - w / 2, 17), Theme.Fg2,
                 TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
@@ -413,9 +457,12 @@ sealed class DashboardView : Control
         int x = card.X + CardPadX, y = card.Y + CardPadY + HeadH;
         int valueW = card.Width - CardPadX * 2 - 52;
         DrawRow(g, x, y, 52, "Uptime", FmtUptime(_m!.System?.UptimeSec), valueW); y += RowH;
-        DrawRow(g, x, y, 52, "Host", _m.Host, valueW); y += RowH;
-        DrawRow(g, x, y, 52, "OS", _m.System?.OsVersion ?? "—", valueW); y += RowH;
+        DrawRow(g, x, y, 52, "Host", _m.Host, valueW);
+        AddTipIfTruncated(x + 52, y, valueW, _m.Host, Theme.Base); y += RowH;
+        DrawRow(g, x, y, 52, "OS", _m.System?.OsVersion ?? "—", valueW);
+        AddTipIfTruncated(x + 52, y, valueW, _m.System?.OsVersion, Theme.Base); y += RowH;
         DrawRow(g, x, y, 52, "Board", _m.Motherboard?.Name ?? "—", valueW);
+        AddTipIfTruncated(x + 52, y, valueW, _m.Motherboard?.Name, Theme.Base);
     }
 
     // ── formatting ────────────────────────────────────────────────────────────
