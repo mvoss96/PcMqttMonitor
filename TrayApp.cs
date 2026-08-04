@@ -32,11 +32,11 @@ sealed class TrayApp : ApplicationContext
             Text    = "PC MQTT Monitor"
         };
 
-        // Left-click opens the sensors tab.
+        // Left-click opens the dashboard.
         _tray.MouseClick += (_, e) =>
         {
             if (e.Button == MouseButtons.Left)
-                _window.ShowSensorsTab();
+                _window.ShowDashboard();
         };
 
         var statusItem = new ToolStripMenuItem(_statusText) { Enabled = false };
@@ -52,8 +52,8 @@ sealed class TrayApp : ApplicationContext
         menu.Opening += (_, _) => statusItem.Text = _statusText;
         menu.Items.Add(statusItem);
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Show Sensors", null, (_, _) => _window.ShowSensorsTab());
-        menu.Items.Add("Settings",     null, (_, _) => _window.ShowSettingsTab());
+        menu.Items.Add("Dashboard", null, (_, _) => _window.ShowDashboard());
+        menu.Items.Add("Settings",  null, (_, _) => _window.ShowSettings());
         menu.Items.Add(pauseItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit", null, (_, _) =>
@@ -92,6 +92,7 @@ sealed class TrayApp : ApplicationContext
                 _menu.Items.Insert(2, _updateItem);
             }
             _updateItem.Text = $"Update available: v{version.ToString(3)}";
+            _window.SetUpdateAvailable(version);   // pill in the main window
 
             _tray.BalloonTipTitle = "PC MQTT Monitor";
             _tray.BalloonTipText  = $"Version {version.ToString(3)} is available — click to open the download page.";
@@ -100,7 +101,7 @@ sealed class TrayApp : ApplicationContext
         });
     }
 
-    // Also used by the Settings tab's "Check for updates" button.
+    // Also used by the About page's download link.
     internal static void OpenReleasesPage()
     {
         try

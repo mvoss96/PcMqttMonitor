@@ -57,6 +57,10 @@ class Program
 
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
+#pragma warning disable WFO5001 // SetColorMode is marked experimental
+        Application.SetColorMode(SystemColorMode.System);   // dark title bar, menus, controls
+#pragma warning restore WFO5001
+        Theme.Init();   // palette for all owner-drawn UI — after SetColorMode
 
         // Config lives next to the exe — Program Files when installed (works because
         // the app always runs elevated), or bin\Debug during development. Survives
