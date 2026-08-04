@@ -2,7 +2,9 @@
 
 A lightweight Windows system-tray app that reads hardware sensors (CPU, GPU, RAM, drives, network) via [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) and publishes them to **MQTT** — with native **Home Assistant MQTT Discovery** — and optionally as **UDP datagrams** or a **TCP JSON stream**.
 
-![Dashboard](docs/dashboard.png)
+<p>
+  <img src="docs/dashboard.png" width="484" alt="Dashboard">
+</p>
 
 ## Features
 
@@ -83,7 +85,11 @@ pc/myhost/system/uptime       86400              (seconds)
 ...
 ```
 
-When Home Assistant discovery is enabled, a retained device-discovery config is published under `homeassistant/device/...` and HA picks up all sensors automatically.
+When Home Assistant discovery is enabled, a retained device-discovery config is published under `homeassistant/device/...` and HA picks up all sensors automatically — the PC appears as one device with all its entities:
+
+<p>
+  <img src="docs/home-assistant.png" width="464" alt="Home Assistant device page">
+</p>
 
 ## UDP / TCP / Serial streams
 
