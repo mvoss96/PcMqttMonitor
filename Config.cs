@@ -34,6 +34,11 @@ static class ConfigLoader
 
         return config;
     }
+
+    // The one place that writes config.json — the UI must not serialize itself.
+    public static void Save(string path, AppConfig config)
+        => File.WriteAllText(path,
+            JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
 }
 
 sealed class AppConfig

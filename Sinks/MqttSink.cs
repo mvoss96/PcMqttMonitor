@@ -40,20 +40,44 @@ sealed class MqttSink : IMetricsSink
         _setConnectionStatus = setConnectionStatus;
 
         _client = _factory.CreateMqttClient();
-        var builder = _factory.CreateClientOptionsBuilder()
+        _options = BuildOptions(_factory, config);
+    }
+
+    // Server/credentials/TLS in ONE place so the Settings test button can never
+    // pass with options the running sink wouldn't use.
+    static MqttClientOptionsBuilder BaseOptions(MqttClientFactory factory, MqttConfig config, string clientId)
+    {
+        var builder = factory.CreateClientOptionsBuilder()
             .WithTcpServer(config.Host, config.Port)
             .WithCredentials(config.Username, config.Password)
-            .WithClientId($"pcmqtt-{HostInfo.Id}")
+            .WithClientId(clientId);
+        if (config.UseTls)
+            builder = builder.WithTlsOptions(o => o.UseTls());
+        return builder;
+    }
+
+    static MqttClientOptions BuildOptions(MqttClientFactory factory, MqttConfig config)
+        => BaseOptions(factory, config, $"pcmqtt-{HostInfo.Id}")
             // LWT: if the connection dies without a clean disconnect (crash, power
             // loss), the broker publishes "offline" on our behalf once the
             // keep-alive times out — subscribers always learn we are gone.
             .WithWillTopic(AvailabilityTopic(config.TopicRoot, HostInfo.Id))
             .WithWillPayload("offline")
             .WithWillRetain(true)
-            .WithWillQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce);
-        if (config.UseTls)
-            builder = builder.WithTlsOptions(o => o.UseTls());
-        _options = builder.Build();
+            .WithWillQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
+            .Build();
+
+    // Used by the UI to verify broker + credentials before saving. Throws on
+    // failure — the caller shows the exception message. Distinct client id (the
+    // real one would kick a live sink connection) and no LWT (an aborted test
+    // must not leave a retained "offline" on the availability topic).
+    public static async Task TestConnectionAsync(MqttConfig config, CancellationToken ct)
+    {
+        var factory = new MqttClientFactory();
+        using var client = factory.CreateMqttClient();
+        await client.ConnectAsync(BaseOptions(factory, config, $"pcmqtt-{HostInfo.Id}-test").Build(), ct);
+        await client.DisconnectAsync(
+            factory.CreateClientDisconnectOptionsBuilder().Build(), CancellationToken.None);
     }
 
     public async Task PublishAsync(MetricsSnapshot metrics, CancellationToken ct)

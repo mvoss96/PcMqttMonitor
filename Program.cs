@@ -5,6 +5,13 @@ class Program
 {
     [DllImport("kernel32.dll")] static extern bool AttachConsole(int pid);
 
+    // Set by the UI after saving changed output settings: the publish loop
+    // disposes all sinks and rebuilds them from the (shared, already mutated)
+    // config on its next cycle. This is what replaces the old
+    // Application.Restart() behind "Test & Apply".
+    static volatile bool _sinksReloadRequested;
+    public static void RequestSinksReload() => _sinksReloadRequested = true;
+
     [STAThread]
     static void Main(string[] args)
     {
@@ -142,23 +149,42 @@ class Program
         sensors.Open();
         Log("Sensors ready.");
 
+        void AnnounceSinks(List<IMetricsSink> active)
+        {
+            if (active.Count == 0)
+            {
+                Log("No outputs configured — sensor-only mode.");
+                tray.SetStatus("No outputs configured — sensors only");
+            }
+            else if (!active.Any(s => s.Name == "MQTT"))
+            {
+                // MqttSink maintains the tray status itself; without it, say once what runs.
+                tray.SetStatus("Publishing to " + string.Join(" + ", active.Select(s => s.Name)));
+            }
+        }
+
         var sinks = CreateSinks(config, tray);
-        if (sinks.Count == 0)
-        {
-            Log("No outputs configured — sensor-only mode.");
-            tray.SetStatus("No outputs configured — sensors only");
-        }
-        else if (!sinks.Any(s => s.Name == "MQTT"))
-        {
-            // MqttSink maintains the tray status itself; without it, say once what runs.
-            tray.SetStatus("Publishing to " + string.Join(" + ", sinks.Select(s => s.Name)));
-        }
+        AnnounceSinks(sinks);
 
         bool wasPaused = false;
         try
         {
             while (!cancellationToken.IsCancellationRequested)
             {
+                // The UI saved changed output settings — rebuild all sinks from
+                // the updated config (live apply, no app restart).
+                if (_sinksReloadRequested)
+                {
+                    _sinksReloadRequested = false;
+                    Log("Output settings changed — reloading sinks...");
+                    foreach (var sink in sinks)
+                    {
+                        try { await sink.DisposeAsync(); } catch { }
+                    }
+                    sinks = CreateSinks(config, tray);
+                    AnnounceSinks(sinks);
+                }
+
                 // Always read sensors and update the UI — regardless of sink status.
                 SensorSnapshot snapshot;
                 try
