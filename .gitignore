@@ -17,3 +17,6 @@ installer-output/
 
 # Local config with secrets
 config.json
+
+# Local Claude Code settings
+.claude/
