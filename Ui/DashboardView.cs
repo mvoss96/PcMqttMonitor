@@ -11,12 +11,13 @@ using System.Windows.Forms;
 // drives) uses the slim custom scrollbar.
 sealed class DashboardView : Control
 {
-    // ── layout constants ──────────────────────────────────────────────────────
-    const int PadX = 14, PadY = 14, CardGap = 10;
-    const int CardPadX = 12, CardPadY = 10;
-    const int HeadH = 20, BigH = 28, BarBlockH = 12, RowH = 19, DetailH = 18;
-    const int SparkH = 20, SparkGap = 6;
-    const int ScrollW = 10;
+    // ── layout constants (design values in 96-DPI pixels, scaled once) ────────
+    static readonly int PadX = Theme.S(14), PadY = Theme.S(14), CardGap = Theme.S(10);
+    static readonly int CardPadX = Theme.S(12), CardPadY = Theme.S(10);
+    static readonly int HeadH = Theme.S(20), BigH = Theme.S(28), BarBlockH = Theme.S(12),
+                        RowH = Theme.S(19), DetailH = Theme.S(18);
+    static readonly int SparkH = Theme.S(20), SparkGap = Theme.S(6);
+    static readonly int ScrollW = Theme.S(10);
 
     const int HistoryLen = 60;   // one sample per publish cycle ≈ last 60 s
 
@@ -75,7 +76,7 @@ sealed class DashboardView : Control
 
     protected override void OnMouseWheel(MouseEventArgs e)
     {
-        SetOffset(_offset - e.Delta / 120 * 48);
+        SetOffset(_offset - e.Delta / 120 * Theme.S(48));
         base.OnMouseWheel(e);
     }
 
@@ -88,10 +89,10 @@ sealed class DashboardView : Control
     Rectangle ThumbRect()
     {
         if (MaxOffset == 0) return Rectangle.Empty;
-        int trackH = Height - 4;
-        int thumbH = Math.Max(30, trackH * Height / _contentH);
-        int thumbY = 2 + (trackH - thumbH) * _offset / MaxOffset;
-        return new Rectangle(Width - ScrollW + 2, thumbY, ScrollW - 5, thumbH);
+        int trackH = Height - Theme.S(4);
+        int thumbH = Math.Max(Theme.S(30), trackH * Height / _contentH);
+        int thumbY = Theme.S(2) + (trackH - thumbH) * _offset / MaxOffset;
+        return new Rectangle(Width - ScrollW + Theme.S(2), thumbY, ScrollW - Theme.S(5), thumbH);
     }
 
     protected override void OnMouseDown(MouseEventArgs e)
@@ -102,9 +103,9 @@ sealed class DashboardView : Control
             if (!thumb.Contains(e.Location))
             {
                 // click on the track: jump so the thumb centers on the cursor
-                int trackH = Height - 4 - thumb.Height;
+                int trackH = Height - Theme.S(4) - thumb.Height;
                 if (trackH > 0)
-                    SetOffset((e.Y - 2 - thumb.Height / 2) * MaxOffset / trackH);
+                    SetOffset((e.Y - Theme.S(2) - thumb.Height / 2) * MaxOffset / trackH);
                 thumb = ThumbRect();
             }
             _dragging = true;
@@ -120,7 +121,7 @@ sealed class DashboardView : Control
         if (_dragging)
         {
             var thumb = ThumbRect();
-            int trackH = Height - 4 - thumb.Height;
+            int trackH = Height - Theme.S(4) - thumb.Height;
             if (trackH > 0)
                 SetOffset(_dragStartOffset + (e.Y - _dragStartY) * MaxOffset / trackH);
         }
@@ -141,7 +142,7 @@ sealed class DashboardView : Control
         if (text == _tipText) return;
         _tipText = text;
         if (text == null) _tip.Hide(this);
-        else _tip.Show(text, this, p.X + 14, p.Y + 20, 5000);
+        else _tip.Show(text, this, p.X + Theme.S(14), p.Y + Theme.S(20), 5000);
     }
 
     protected override void OnMouseUp(MouseEventArgs e)
@@ -183,7 +184,7 @@ sealed class DashboardView : Control
 
         // Scrolling is plain coordinate arithmetic — TextRenderer (GDI) ignores
         // GDI+ transforms, so a TranslateTransform would scroll shapes but not text.
-        int w = Width - PadX * 2 - (MaxOffset > 0 ? ScrollW - 2 : 0);
+        int w = Width - PadX * 2 - (MaxOffset > 0 ? ScrollW - Theme.S(2) : 0);
         int half = (w - CardGap) / 2;
 
         // Present cards in fixed order, paired two per grid row. A missing
@@ -226,18 +227,18 @@ sealed class DashboardView : Control
         CardPadY * 2 + HeadH + BigH + BarBlockH + DetailH + SparkGap + SparkH;
 
     static int DrivesHeight(int drives) =>
-        CardPadY * 2 + HeadH + drives * 27 - 6;
+        CardPadY * 2 + HeadH + drives * Theme.S(27) - Theme.S(6);
 
     // Per adapter: header (name + IP) 17, rates line 16; 9px between blocks.
     static int NetworkHeight(int adapters) =>
-        CardPadY * 2 + HeadH + adapters * 33 + (adapters - 1) * 9;
+        CardPadY * 2 + HeadH + adapters * Theme.S(33) + (adapters - 1) * Theme.S(9);
 
     static int SystemHeight =>
         CardPadY * 2 + HeadH + 4 * RowH;
 
     void DrawCardBg(Graphics g, Rectangle r)
     {
-        using var path = Theme.RoundedRect(new RectangleF(r.X + .5f, r.Y + .5f, r.Width - 1, r.Height - 1), 7);
+        using var path = Theme.RoundedRect(new RectangleF(r.X + .5f, r.Y + .5f, r.Width - 1, r.Height - 1), Theme.SF(7));
         using var bg = new SolidBrush(Theme.CardBg);
         using var border = new Pen(Theme.CardBorder);
         g.FillPath(bg, path);
@@ -250,14 +251,15 @@ sealed class DashboardView : Control
 
     void DrawBar(Graphics g, int x, int y, int w, int pct)
     {
-        var track = new RectangleF(x, y, w, 5);
-        using (var path = Theme.RoundedRect(track, 2.5f))
+        float barH = Theme.SF(5);
+        var track = new RectangleF(x, y, w, barH);
+        using (var path = Theme.RoundedRect(track, barH / 2))
         using (var bg = new SolidBrush(Theme.BarTrack))
             g.FillPath(bg, path);
         int fillW = w * Math.Clamp(pct, 0, 100) / 100;
-        if (fillW > 5)
+        if (fillW > barH)
         {
-            using var path = Theme.RoundedRect(new RectangleF(x, y, fillW, 5), 2.5f);
+            using var path = Theme.RoundedRect(new RectangleF(x, y, fillW, barH), barH / 2);
             using var fg = new SolidBrush(Theme.Accent);
             g.FillPath(fg, path);
         }
@@ -273,7 +275,7 @@ sealed class DashboardView : Control
         var pts = new PointF[data.Length];
         for (int i = 0; i < data.Length; i++)
             pts[i] = new PointF(x0 + i * stepX,
-                r.Bottom - Math.Min(data[i], max) / max * (r.Height - 2) - 1);
+                r.Bottom - Math.Min(data[i], max) / max * (r.Height - Theme.SF(2)) - Theme.SF(1));
 
         var area = new PointF[data.Length + 2];
         area[0] = new PointF(pts[0].X, r.Bottom);
@@ -282,11 +284,11 @@ sealed class DashboardView : Control
         using (var fill = new SolidBrush(Theme.AccentSoft))
             g.FillPolygon(fill, area);
 
-        using (var pen = new Pen(Theme.Accent, 1.4f) { LineJoin = LineJoin.Round })
+        using (var pen = new Pen(Theme.Accent, Theme.SF(1.4f)) { LineJoin = LineJoin.Round })
             g.DrawLines(pen, pts);
 
         using (var dot = new SolidBrush(Theme.Accent))
-            g.FillEllipse(dot, pts[^1].X - 2.4f, pts[^1].Y - 2.4f, 4.8f, 4.8f);
+            g.FillEllipse(dot, pts[^1].X - Theme.SF(2.4f), pts[^1].Y - Theme.SF(2.4f), Theme.SF(4.8f), Theme.SF(4.8f));
     }
 
     // Registers a hover zone when the value doesn't fit its column — the
@@ -298,7 +300,7 @@ sealed class DashboardView : Control
         _tipZones.Add((new Rectangle(x, y, w, RowH), text));
     }
 
-    static void DrawRow(Graphics g, int x, int y, int labelW, string label, string value, int valueW = 220)
+    static void DrawRow(Graphics g, int x, int y, int labelW, string label, string value, int valueW)
     {
         TextRenderer.DrawText(g, label, Theme.Base, new Rectangle(x, y, labelW, RowH), Theme.Fg2,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
@@ -352,7 +354,7 @@ sealed class DashboardView : Control
         string big = pct?.ToString() ?? "—";
         TextRenderer.DrawText(g, big, Theme.BigCompact, new Point(x, y), Theme.Fg);
         int bigW = TextRenderer.MeasureText(big, Theme.BigCompact).Width;
-        TextRenderer.DrawText(g, "%", Theme.Small, new Point(x + bigW - 3, y + 10), Theme.Fg2);
+        TextRenderer.DrawText(g, "%", Theme.Small, new Point(x + bigW - Theme.S(3), y + Theme.S(10)), Theme.Fg2);
         y += BigH;
         DrawBar(g, x, y, card.Width - CardPadX * 2, pct ?? 0);
         y += BarBlockH;
@@ -429,7 +431,8 @@ sealed class DashboardView : Control
             var letter = d.Name.TrimEnd('\\');
             int paren = letter.LastIndexOf('(');
             if (paren >= 0) letter = letter[paren..].Trim('(', ')');
-            TextRenderer.DrawText(g, letter, Theme.SemiBold, new Rectangle(x, y, 40, 16), Theme.Fg,
+            int letterW = Theme.S(40), lineH = Theme.S(16);
+            TextRenderer.DrawText(g, letter, Theme.SemiBold, new Rectangle(x, y, letterW, lineH), Theme.Fg,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
             // "82 % · 170 GB free" — the free space matters most day to day;
             // used/total live in the hover tooltip.
@@ -437,7 +440,7 @@ sealed class DashboardView : Control
             if (d.UsedPercent != null) rightParts.Add($"{d.UsedPercent} %");
             if (d.FreeGb != null) rightParts.Add($"{FmtNum(d.FreeGb, "0")} GB {L.T.DriveFree}");
             TextRenderer.DrawText(g, rightParts.Count > 0 ? string.Join(" · ", rightParts) : "—", Theme.Small,
-                new Rectangle(x + 40, y, w - 40, 16), Theme.Fg2,
+                new Rectangle(x + letterW, y, w - letterW, lineH), Theme.Fg2,
                 TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
             // The compact card drops volume names and GB — hovering the row
             // reveals them ("System (C:) · 245.1 / 389.4 GB · 61 %").
@@ -446,10 +449,10 @@ sealed class DashboardView : Control
                 details.Add($"{FmtNum(d.UsedGb)} / {FmtNum(d.TotalGb)} GB");
             if (d.UsedPercent != null)
                 details.Add($"{d.UsedPercent} %");
-            _tipZones.Add((new Rectangle(x, y, w, 27), string.Join(" · ", details)));
-            y += 16;
-            DrawBar(g, x, y + 2, w, d.UsedPercent ?? 0);
-            y += 11;
+            _tipZones.Add((new Rectangle(x, y, w, Theme.S(27)), string.Join(" · ", details)));
+            y += lineH;
+            DrawBar(g, x, y + Theme.S(2), w, d.UsedPercent ?? 0);
+            y += Theme.S(11);
         }
     }
 
@@ -470,21 +473,22 @@ sealed class DashboardView : Control
             if (i > 0)
             {
                 using var pen = new Pen(Theme.CardBorder);
-                g.DrawLine(pen, x, y - 5, x + w, y - 5);
+                g.DrawLine(pen, x, y - Theme.S(5), x + w, y - Theme.S(5));
             }
-            int nameW = Math.Min(TextRenderer.MeasureText(a.Name, Theme.SemiBold).Width + 4, w / 2);
-            TextRenderer.DrawText(g, a.Name, Theme.SemiBold, new Rectangle(x, y, nameW, 17), Theme.Fg,
+            int headLineH = Theme.S(17), rateLineH = Theme.S(16);
+            int nameW = Math.Min(TextRenderer.MeasureText(a.Name, Theme.SemiBold).Width + Theme.S(4), w / 2);
+            TextRenderer.DrawText(g, a.Name, Theme.SemiBold, new Rectangle(x, y, nameW, headLineH), Theme.Fg,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
-            TextRenderer.DrawText(g, a.IpAddress ?? "—", Theme.Small, new Rectangle(x + nameW, y, w - nameW, 17), Theme.Fg,
+            TextRenderer.DrawText(g, a.IpAddress ?? "—", Theme.Small, new Rectangle(x + nameW, y, w - nameW, headLineH), Theme.Fg,
                 TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
             var tip = new List<string> { a.Name };
             if (a.Mac != null) tip.Add($"MAC {a.Mac}");
-            _tipZones.Add((new Rectangle(x, y, w, 17), string.Join(" · ", tip)));
-            y += 17;
+            _tipZones.Add((new Rectangle(x, y, w, headLineH), string.Join(" · ", tip)));
+            y += headLineH;
             string rates = $"↑ {FmtSpeed(a.UploadKbps)}   ↓ {FmtSpeed(a.DownloadKbps)}";
-            TextRenderer.DrawText(g, rates, Theme.Small, new Rectangle(x, y, w, 16), Theme.Fg2,
+            TextRenderer.DrawText(g, rates, Theme.Small, new Rectangle(x, y, w, rateLineH), Theme.Fg2,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
-            y += 16 + 9;
+            y += rateLineH + Theme.S(9);
         }
     }
 
@@ -495,7 +499,7 @@ sealed class DashboardView : Control
         int x = card.X + CardPadX, y = card.Y + CardPadY + HeadH;
         // Label column sized to the longest localized label of this card.
         int labelW = new[] { L.T.RowUptime, L.T.RowHost, L.T.RowOs, L.T.RowBoard }
-            .Max(l => TextRenderer.MeasureText(l, Theme.Base).Width) + 8;
+            .Max(l => TextRenderer.MeasureText(l, Theme.Base).Width) + Theme.S(8);
         int valueW = card.Width - CardPadX * 2 - labelW;
         DrawRow(g, x, y, labelW, L.T.RowUptime, FmtUptime(_m!.System?.UptimeSec), valueW); y += RowH;
         DrawRow(g, x, y, labelW, L.T.RowHost, _m.Host, valueW);

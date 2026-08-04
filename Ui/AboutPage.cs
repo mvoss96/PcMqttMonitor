@@ -17,10 +17,10 @@ sealed class AboutPage : Panel
         _updateFound = updateFound;
         BackColor = Theme.WinBg;
 
-        var logo = new LogoBox { Size = new Size(52, 52) };
+        var logo = new LogoBox { Size = new Size(Theme.S(52), Theme.S(52)) };
         var name = new Label
         {
-            Text = "PC MQTT Monitor", Font = new Font("Segoe UI Semibold", 12f),
+            Text = "PC MQTT Monitor", Font = Theme.Title,
             ForeColor = Theme.Fg, AutoSize = true
         };
         var version = new Label
@@ -71,15 +71,15 @@ sealed class AboutPage : Panel
     protected override void OnLayout(LayoutEventArgs levent)
     {
         base.OnLayout(levent);
-        int y = 64;
+        int y = Theme.S(64);
         foreach (Control c in Controls)
         {
             if (c == _updLink && !_updLink.Visible) continue;
             c.Left = (Width - c.Width) / 2;
             c.Top = y;
-            y += c.Height + (c is LogoBox ? 14 : 6);
+            y += c.Height + Theme.S(c is LogoBox ? 14 : 6);
             // extra gap between the update block and the repo link
-            if (c == _updLink || (c == _updStatus && !_updLink.Visible)) y += 10;
+            if (c == _updLink || (c == _updStatus && !_updLink.Visible)) y += Theme.S(10);
         }
     }
 

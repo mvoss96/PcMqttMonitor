@@ -4,11 +4,12 @@ using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 // Hidden dev mode for CI-generated screenshots:
-//   PcMqttMonitor.exe --screenshots <dir> [--lang en|de] [--theme dark|light]
+//   PcMqttMonitor.exe --screenshots <dir> [--lang en|de] [--theme dark|light] [--scale N]
 // Renders every page with deterministic demo data (no sensors, no sinks, no
 // tray) and writes one PNG per page, then exits. The screenshots workflow uses
 // this so the README images never go stale — real hardware values would be
-// empty on a CI VM.
+// empty on a CI VM. --scale 2 renders everything at twice the size for
+// high-res README images, independent of the machine's actual DPI.
 static class DemoMode
 {
     public static bool TryRun(string[] args, string configPath)
@@ -29,7 +30,12 @@ static class DemoMode
             ? SystemColorMode.Classic
             : SystemColorMode.Dark);
 #pragma warning restore WFO5001
-        Theme.Init();
+        // Fixed scale 1 by default: identical output on every machine. The
+        // font/layout pipeline runs entirely off Theme.Scale, so the override
+        // works even on a 96-DPI CI runner.
+        float scale = float.TryParse(Arg("--scale"), System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out var s) && s is >= 1f and <= 4f ? s : 1f;
+        Theme.Init(scale);
 
         var config = DemoConfig();
         var window = new MainWindow(configPath, config);
@@ -60,26 +66,39 @@ static class DemoMode
 
     // ── capture ───────────────────────────────────────────────────────────────
 
-    // GetWindowRect on purpose, NOT DwmGetWindowAttribute: this process is
-    // DPI-unaware, so CopyFromScreen works in virtualized coordinates — and
-    // GetWindowRect is virtualized to match, while the DWM API returns
-    // physical pixels and would capture the wrong screen region.
     [DllImport("user32.dll")]
     static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
     [StructLayout(LayoutKind.Sequential)]
     struct RECT { public int Left, Top, Right, Bottom; }
 
+    // PW_RENDERFULLCONTENT: DWM-composed content, works even if the window is
+    // partially covered or larger than the screen (a --scale 2 window exceeds
+    // the CI runner's 1080p display; screen capture would clip it).
+    [DllImport("user32.dll")]
+    static extern bool PrintWindow(IntPtr hwnd, IntPtr hdc, uint flags);
+
+    [DllImport("user32.dll")]
+    static extern uint GetDpiForWindow(IntPtr hwnd);
+
     static void Capture(IntPtr hwnd, string path)
     {
         GetWindowRect(hwnd, out var r);
-        // Win11 windows carry 7px invisible borders on the left/right/bottom
-        // (none on top) — without the insets the capture shows desktop slivers.
-        const int inset = 7;
-        int w = r.Right - r.Left - 2 * inset, h = r.Bottom - r.Top - inset;
-        using var bmp = new Bitmap(w, h, PixelFormat.Format32bppArgb);
-        using var g = Graphics.FromImage(bmp);
-        g.CopyFromScreen(r.Left + inset, r.Top, 0, 0, bmp.Size);
-        bmp.Save(path, ImageFormat.Png);
+        int fw = r.Right - r.Left, fh = r.Bottom - r.Top;
+        using var full = new Bitmap(fw, fh, PixelFormat.Format32bppArgb);
+        using (var g = Graphics.FromImage(full))
+        {
+            var hdc = g.GetHdc();
+            PrintWindow(hwnd, hdc, 2 /* PW_RENDERFULLCONTENT */);
+            g.ReleaseHdc(hdc);
+        }
+        // Win11 windows carry invisible borders on the left/right/bottom (none
+        // on top) — 7px at 96 DPI, scaling with the WINDOW's DPI (not with
+        // --scale, which is pure in-window rendering). Without the insets the
+        // capture has transparent slivers around the edges.
+        int inset = (int)MathF.Round(7f * GetDpiForWindow(hwnd) / 96f);
+        using var crop = full.Clone(
+            new Rectangle(inset, 0, fw - 2 * inset, fh - inset), PixelFormat.Format32bppArgb);
+        crop.Save(path, ImageFormat.Png);
     }
 
     // ── demo data ─────────────────────────────────────────────────────────────

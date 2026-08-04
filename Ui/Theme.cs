@@ -10,6 +10,22 @@ static class Theme
 {
     public static bool Dark { get; private set; }
 
+    // DPI scale factor (1.0 at 100%, 1.75 at 175%). The process runs
+    // system-DPI-aware, so this is fixed for the app's lifetime: system DPI at
+    // startup, or an explicit override (demo mode renders high-res screenshots
+    // with --scale). Everything visual goes through it — S()/SF() for every
+    // hand-drawn pixel value (layout constants, icon strokes, corner radii,
+    // control sizes) and the fonts below, which use pixel units for exactly
+    // this reason: point-based fonts would follow the OS DPI instead of the
+    // override.
+    public static float Scale { get; private set; } = 1f;
+
+    public static int S(int px) => (int)MathF.Round(px * Scale);
+    public static float SF(float px) => px * Scale;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    static extern uint GetDpiForSystem();
+
     public static Color WinBg,      CardBg,   CardBorder;
     public static Color Fg,         Fg2,      Fg3;
     public static Color Accent,     AccentSoft, AccentFg;
@@ -18,17 +34,30 @@ static class Theme
     public static Color InputBg,    InputBorder;
     public static Color Scroll,     ScrollHover;
 
-    // Sizes mirror the mockup's CSS pixel values (px * 72 / 96 = pt).
-    public static readonly Font Base     = new("Segoe UI", 9.75f);           // 13px
-    public static readonly Font Small    = new("Segoe UI", 8.5f);            // 11.5px
-    public static readonly Font Tiny     = new("Segoe UI", 8f);              // 10.5px
-    public static readonly Font SemiBold = new("Segoe UI Semibold", 9.75f);  // 13px
-    public static readonly Font Title    = new("Segoe UI Semibold", 12f);    // 16px
-    public static readonly Font BigValue = new("Segoe UI Semibold", 19.5f);  // 26px
-    public static readonly Font BigCompact = new("Segoe UI Semibold", 15.75f); // 21px — dashboard half-width cards
+    // Sizes are the mockup's CSS pixel values, created in Init once the scale
+    // factor is known.
+    public static Font Base       = null!;   // 13px
+    public static Font Small      = null!;   // 11.5px
+    public static Font Tiny       = null!;   // 10.5px
+    public static Font SemiBold   = null!;   // 13px
+    public static Font Title      = null!;   // 16px
+    public static Font BigValue   = null!;   // 26px
+    public static Font BigCompact = null!;   // 21px — dashboard half-width cards
+    public static Font GroupHead  = null!;   // 10.5px semibold — sensors page group labels
 
-    public static void Init()
+    public static void Init(float? scaleOverride = null)
     {
+        Scale = scaleOverride ?? GetDpiForSystem() / 96f;
+
+        Base       = Px("Segoe UI", 13f);
+        Small      = Px("Segoe UI", 11.5f);
+        Tiny       = Px("Segoe UI", 10.5f);
+        SemiBold   = Px("Segoe UI Semibold", 13f);
+        Title      = Px("Segoe UI Semibold", 16f);
+        BigValue   = Px("Segoe UI Semibold", 26f);
+        BigCompact = Px("Segoe UI Semibold", 21f);
+        GroupHead  = Px("Segoe UI Semibold", 10.5f);
+
 #pragma warning disable WFO5001 // SetColorMode/IsDarkModeEnabled are marked experimental
         Dark = Application.IsDarkModeEnabled;
 #pragma warning restore WFO5001
@@ -76,6 +105,9 @@ static class Theme
             ScrollHover = FromHex("a8abb1");
         }
     }
+
+    static Font Px(string family, float designPx) =>
+        new(family, SF(designPx), System.Drawing.GraphicsUnit.Pixel);
 
     // Traffic-light coloring for temperatures — applied to the value text only.
     public static Color TempColor(float? c) =>

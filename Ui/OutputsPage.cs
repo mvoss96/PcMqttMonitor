@@ -47,7 +47,7 @@ sealed class OutputsPage : Panel
         _title = new Label
         {
             Text = L.T.OutputsTitle, Font = Theme.Title, ForeColor = Theme.Fg,
-            AutoSize = true, Location = new Point(16, 12)
+            AutoSize = true, Location = new Point(Theme.S(16), Theme.S(12))
         };
         Controls.Add(_title);
 
@@ -103,7 +103,7 @@ sealed class OutputsPage : Panel
 
     protected override void OnMouseWheel(MouseEventArgs e)
     {
-        SetScroll(_scroll - e.Delta / 120 * 48);
+        SetScroll(_scroll - e.Delta / 120 * Theme.S(48));
         base.OnMouseWheel(e);
     }
 
@@ -119,14 +119,14 @@ sealed class OutputsPage : Panel
 
     void Relayout()
     {
-        int x = 16, w = Width - 32, y = 42 - _scroll;
-        _title.Top = 12 - _scroll;
+        int x = Theme.S(16), w = Width - Theme.S(32), y = Theme.S(42) - _scroll;
+        _title.Top = Theme.S(12) - _scroll;
         foreach (var card in new[] { _mqttCard, _udpCard, _tcpCard, _serialCard })
         {
             card.SetBounds(x, y, w, card.WantedHeight);
-            y += card.WantedHeight + 10;
+            y += card.WantedHeight + Theme.S(10);
         }
-        _contentH = y + _scroll + 6;
+        _contentH = y + _scroll + Theme.S(6);
         // a collapse may have shrunk the content below the current offset
         if (_scroll > Math.Max(0, _contentH - Height))
             _scroll = Math.Max(0, _contentH - Height);
@@ -147,9 +147,9 @@ sealed class OutputsPage : Panel
             SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint
                    | ControlStyles.UserPaint, true);
             BackColor = Theme.WinBg;
-            Width = 10;
+            Width = Theme.S(10);
             Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
-            page.Resize += (_, _) => Bounds = new Rectangle(page.Width - 10, 0, 10, page.Height);
+            page.Resize += (_, _) => Bounds = new Rectangle(page.Width - Width, 0, Width, page.Height);
         }
 
         int Max => Math.Max(0, _page._contentH - _page.Height);
@@ -157,10 +157,10 @@ sealed class OutputsPage : Panel
         Rectangle Thumb()
         {
             if (Max == 0 || _page._contentH <= 0) return Rectangle.Empty;
-            int trackH = Height - 4;
-            int thumbH = Math.Max(30, trackH * _page.Height / _page._contentH);
-            int thumbY = 2 + (trackH - thumbH) * _page._scroll / Max;
-            return new Rectangle(2, thumbY, Width - 5, thumbH);
+            int trackH = Height - Theme.S(4);
+            int thumbH = Math.Max(Theme.S(30), trackH * _page.Height / _page._contentH);
+            int thumbY = Theme.S(2) + (trackH - thumbH) * _page._scroll / Max;
+            return new Rectangle(Theme.S(2), thumbY, Width - Theme.S(5), thumbH);
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -180,9 +180,9 @@ sealed class OutputsPage : Panel
             if (thumb.IsEmpty) return;
             if (!thumb.Contains(e.Location))
             {
-                int trackH = Height - 4 - thumb.Height;
+                int trackH = Height - Theme.S(4) - thumb.Height;
                 if (trackH > 0)
-                    _page.SetScroll((e.Y - 2 - thumb.Height / 2) * Max / trackH);
+                    _page.SetScroll((e.Y - Theme.S(2) - thumb.Height / 2) * Max / trackH);
             }
             _drag = true;
             _dragY = e.Y;
@@ -195,7 +195,7 @@ sealed class OutputsPage : Panel
             if (_drag)
             {
                 var thumb = Thumb();
-                int trackH = Height - 4 - thumb.Height;
+                int trackH = Height - Theme.S(4) - thumb.Height;
                 if (trackH > 0)
                     _page.SetScroll(_dragStart + (e.Y - _dragY) * Max / trackH);
             }
@@ -333,10 +333,16 @@ sealed class OutputsPage : Panel
 // enable switch), body rows added by the page. Clicking the header toggles.
 sealed class OutputCard : CardPanel
 {
-    const int HeadH = 40, RowStep = 36, LabelW = 104, BodyPad = 8;
+    static readonly int HeadH = Theme.S(40), RowStep = Theme.S(36),
+                        LabelW = Theme.S(104), BodyPad = Theme.S(8);
 
     public readonly ToggleSwitch Toggle = new();
     public Action? HeightChanged;
+
+    // Full-width body controls, resized explicitly on card resize. Anchoring
+    // would compute from the card's tiny default width, where the target width
+    // is negative and gets clamped — the anchor delta is then permanently off.
+    readonly List<Control> _stretch = new();
 
     readonly Action _markDirty;
     readonly string _name;
@@ -368,7 +374,12 @@ sealed class OutputCard : CardPanel
         _markDirty = markDirty;
         Toggle.Anchor = AnchorStyles.Top | AnchorStyles.Right;
         Controls.Add(Toggle);
-        Resize += (_, _) => Toggle.Location = new Point(Width - Toggle.Width - 14, (HeadH - Toggle.Height) / 2);
+        Resize += (_, _) =>
+        {
+            Toggle.Location = new Point(Width - Toggle.Width - Theme.S(14), (HeadH - Toggle.Height) / 2);
+            foreach (var c in _stretch)
+                c.Width = Width - LabelW - Theme.S(28);
+        };
     }
 
     public void SetStatus(string text, bool on)
@@ -419,9 +430,9 @@ sealed class OutputCard : CardPanel
         var box = new FlatCheck { Text = text, Visible = _open };
         box.Checked = value;
         box.CheckedChanged += (_, _) => _markDirty();
-        box.Location = new Point(LabelW + 14, _bodyY + 2);
+        box.Location = new Point(LabelW + Theme.S(14), _bodyY + Theme.S(2));
         Controls.Add(box);
-        _bodyY += 26;
+        _bodyY += Theme.S(26);
         return box;
     }
 
@@ -430,16 +441,13 @@ sealed class OutputCard : CardPanel
         var lbl = new Label
         {
             Text = label, ForeColor = Theme.Fg2, AutoSize = false,
-            Bounds = new Rectangle(14, _bodyY + 6, LabelW - 14, 18),
+            Bounds = new Rectangle(Theme.S(14), _bodyY + Theme.S(6), LabelW - Theme.S(14), Theme.S(18)),
             Visible = _open,
         };
-        control.Location = new Point(LabelW + 14, _bodyY);
+        control.Location = new Point(LabelW + Theme.S(14), _bodyY);
         control.Visible = _open;
         if (stretch)
-        {
-            control.Width = Width - LabelW - 28;
-            control.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-        }
+            _stretch.Add(control);   // width follows the card in the Resize handler
         Controls.Add(lbl);
         Controls.Add(control);
         _bodyY += RowStep;
@@ -476,33 +484,35 @@ sealed class OutputCard : CardPanel
         if (_headHover)
         {
             using var hover = new SolidBrush(Theme.Hover);
-            using var path = Theme.RoundedRect(new RectangleF(1, 1, Width - 2, HeadH - (_open ? 0 : 2)), 6);
+            using var path = Theme.RoundedRect(new RectangleF(1, 1, Width - 2, HeadH - (_open ? 0 : 2)), Theme.SF(6));
             g.FillPath(hover, path);
         }
 
         // chevron
-        using (var pen = new Pen(Theme.Fg3, 1.5f) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+        using (var pen = new Pen(Theme.Fg3, Theme.SF(1.5f)) { StartCap = LineCap.Round, EndCap = LineCap.Round })
         {
-            float cx = 19, cy = HeadH / 2f;
+            float cx = Theme.SF(19), cy = HeadH / 2f;
+            float a = Theme.SF(3.5f), b = Theme.SF(2);
             if (_open)
             {
-                g.DrawLine(pen, cx - 3.5f, cy - 2, cx, cy + 2);
-                g.DrawLine(pen, cx, cy + 2, cx + 3.5f, cy - 2);
+                g.DrawLine(pen, cx - a, cy - b, cx, cy + b);
+                g.DrawLine(pen, cx, cy + b, cx + a, cy - b);
             }
             else
             {
-                g.DrawLine(pen, cx - 2, cy - 3.5f, cx + 2, cy);
-                g.DrawLine(pen, cx + 2, cy, cx - 2, cy + 3.5f);
+                g.DrawLine(pen, cx - b, cy - a, cx + b, cy);
+                g.DrawLine(pen, cx + b, cy, cx - b, cy + a);
             }
         }
 
-        TextRenderer.DrawText(g, _name, Theme.SemiBold, new Rectangle(30, 0, 52, HeadH), Theme.Fg,
+        TextRenderer.DrawText(g, _name, Theme.SemiBold, new Rectangle(Theme.S(30), 0, Theme.S(52), HeadH), Theme.Fg,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
 
         // status dot + text
         using (var dot = new SolidBrush(_statusOn ? Theme.Good : Theme.Fg3))
-            g.FillEllipse(dot, 84, HeadH / 2f - 4, 8, 8);
-        var statusRect = new Rectangle(98, 0, Width - 98 - Toggle.Width - 24, HeadH);
+            g.FillEllipse(dot, Theme.SF(84), HeadH / 2f - Theme.SF(4), Theme.SF(8), Theme.SF(8));
+        int statusX = Theme.S(98);
+        var statusRect = new Rectangle(statusX, 0, Width - statusX - Toggle.Width - Theme.S(24), HeadH);
         TextRenderer.DrawText(g, _status, Theme.Small, statusRect, Theme.Fg2,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
 

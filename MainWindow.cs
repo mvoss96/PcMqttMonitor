@@ -45,8 +45,9 @@ sealed class MainWindow : Form
         var version = UpdateChecker.CurrentVersion;
         Text = $"PC MQTT Monitor  v{version.ToString(3)}";
         Icon = TrayApp.CreateIcon();
-        Size = new Size(500, 700);
+        Size = new Size(Theme.S(500), Theme.S(700));
         FormBorderStyle = FormBorderStyle.FixedSingle;   // fixed window per the mockup
+        AutoScaleMode = AutoScaleMode.None;   // all DPI scaling is explicit via Theme.S
         MaximizeBox = false;
         MinimizeBox = false;   // close (= hide to tray) is the only sensible action
         StartPosition = FormStartPosition.Manual;        // anchored near the tray on Show
@@ -77,7 +78,7 @@ sealed class MainWindow : Form
         }
 
         // ── sidebar ─────────────────────────────────────────────────────────
-        var sidebar = new Panel { Dock = DockStyle.Left, Width = 48, BackColor = Theme.WinBg };
+        var sidebar = new Panel { Dock = DockStyle.Left, Width = Theme.S(48), BackColor = Theme.WinBg };
         sidebar.Paint += (_, e) =>
         {
             using var pen = new Pen(Theme.CardBorder);
@@ -100,7 +101,7 @@ sealed class MainWindow : Form
             var btn = new NavButton
             {
                 IconPainter = navDefs[i].Icon,
-                Location = new Point(0, 8 + i * 39),
+                Location = new Point(0, Theme.S(8) + i * Theme.S(39)),
             };
             btn.Click += (_, _) => SelectPage(index);
             tips.SetToolTip(btn, navDefs[i].Tip);
@@ -171,7 +172,7 @@ sealed class MainWindow : Form
     void ShowAnchored()
     {
         var area = Screen.FromPoint(Cursor.Position).WorkingArea;
-        Location = new Point(area.Right - Width - 8, area.Bottom - Height - 8);
+        Location = new Point(area.Right - Width - Theme.S(8), area.Bottom - Height - Theme.S(8));
         Show();
         // A first Show() from a tray click doesn't reliably raise the window —
         // BringToFront alone can leave it behind the current foreground window.
@@ -229,8 +230,8 @@ sealed class MainWindow : Form
     }
 
     void PositionSaveBar() => _saveBar.Location = new Point(
-        ClientSize.Width - _saveBar.Width - 12,
-        ClientSize.Height - _saveBar.Height - 12);
+        ClientSize.Width - _saveBar.Width - Theme.S(12),
+        ClientSize.Height - _saveBar.Height - Theme.S(12));
 
     // ── update pill ───────────────────────────────────────────────────────────
 
@@ -282,7 +283,7 @@ sealed class MainWindow : Form
         var banner = new Panel
         {
             Dock = DockStyle.Top,
-            Height = 36,
+            Height = Theme.S(36),
             BackColor = Theme.Dark ? Color.FromArgb(74, 59, 18) : Color.FromArgb(255, 244, 199),
             Visible = false,
         };
@@ -291,7 +292,7 @@ sealed class MainWindow : Form
             Text = L.T.PausedBanner,
             AutoSize = true,
             ForeColor = Theme.Dark ? Color.FromArgb(240, 216, 137) : Color.FromArgb(102, 77, 3),
-            Location = new Point(14, 10),
+            Location = new Point(Theme.S(14), Theme.S(10)),
         };
         var resume = new Button
         {
@@ -305,7 +306,7 @@ sealed class MainWindow : Form
         banner.Controls.Add(label);
         banner.Controls.Add(resume);
         banner.Resize += (_, _) => resume.Location = new Point(
-            banner.ClientSize.Width - resume.Width - 12,
+            banner.ClientSize.Width - resume.Width - Theme.S(12),
             (banner.ClientSize.Height - resume.Height) / 2);
         return banner;
     }

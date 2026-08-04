@@ -24,7 +24,7 @@ sealed class SettingsPage : Panel
         var title = new Label
         {
             Text = L.T.SettingsTitle, Font = Theme.Title, ForeColor = Theme.Fg,
-            AutoSize = true, Location = new Point(16, 12)
+            AutoSize = true, Location = new Point(Theme.S(16), Theme.S(12))
         };
         Controls.Add(title);
 
@@ -44,7 +44,7 @@ sealed class SettingsPage : Panel
         _theme = new ComboBox
         {
             DropDownStyle = ComboBoxStyle.DropDownList,
-            Width = 100,
+            Width = Theme.S(100),
         };
         _theme.Items.AddRange([L.T.ThemeSystem, L.T.ThemeLight, L.T.ThemeDark]);
         int themeIdx = Array.IndexOf(ThemeValues, config.General.Theme?.ToLowerInvariant());
@@ -55,14 +55,14 @@ sealed class SettingsPage : Panel
         _language = new ComboBox
         {
             DropDownStyle = ComboBoxStyle.DropDownList,
-            Width = 100,
+            Width = Theme.S(100),
         };
         _language.Items.AddRange([L.T.LangSystem, "English", "Deutsch"]);
         int langIdx = Array.IndexOf(LangValues, config.General.Language?.ToLowerInvariant());
         _language.SelectedIndex = langIdx >= 0 ? langIdx : 0;
         _language.SelectedIndexChanged += (_, _) => markDirty();
 
-        var card1 = new SettingsCard { Location = new Point(16, 42) };
+        var card1 = new SettingsCard { Location = new Point(Theme.S(16), Theme.S(42)) };
         card1.AddRow(L.T.SetInterval, L.T.SetIntervalSub, _interval);
         card1.AddRow(L.T.SetTheme, L.T.SetRestartSub, _theme);
         card1.AddRow(L.T.SetLanguage, L.T.SetRestartSub, _language);
@@ -70,13 +70,13 @@ sealed class SettingsPage : Panel
         card1.AddRow(L.T.SetDebug, L.T.SetDebugSub, _debug);
         Controls.Add(card1);
 
-        var card2 = new SettingsCard { Location = new Point(16, card1.Bottom + 10) };
+        var card2 = new SettingsCard { Location = new Point(Theme.S(16), card1.Bottom + Theme.S(10)) };
         card2.AddRow(L.T.SetUpdates, L.T.SetUpdatesSub, _updateCheck);
         Controls.Add(card2);
 
         foreach (var card in new[] { card1, card2 })
             card.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-        Resize += (_, _) => { card1.Width = Width - 32; card2.Width = Width - 32; };
+        Resize += (_, _) => { card1.Width = Width - Theme.S(32); card2.Width = Width - Theme.S(32); };
 
         // schtasks.exe can take 1-2 s — read the autostart state off the UI thread.
         Task.Run(AutoStart.IsEnabled).ContinueWith(t =>
@@ -132,24 +132,24 @@ sealed class SettingsPage : Panel
 // vertically centered on the right, thin separators between rows.
 sealed class SettingsCard : CardPanel
 {
-    const int RowH = 48;
+    static readonly int RowH = Theme.S(48);
     int _rows;
 
     public void AddRow(string title, string subtitle, Control control)
     {
-        int top = 6 + _rows * RowH;
+        int top = Theme.S(6) + _rows * RowH;
         var titleLbl = new Label
         {
             Text = title, ForeColor = Theme.Fg, AutoSize = true,
-            Location = new Point(14, top + 8)
+            Location = new Point(Theme.S(14), top + Theme.S(8))
         };
         var subLbl = new Label
         {
             Text = subtitle, ForeColor = Theme.Fg3, Font = Theme.Tiny, AutoSize = true,
-            Location = new Point(14, top + 26)
+            Location = new Point(Theme.S(14), top + Theme.S(26))
         };
         control.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-        control.Location = new Point(Width - control.Width - 14, top + (RowH - control.Height) / 2);
+        control.Location = new Point(Width - control.Width - Theme.S(14), top + (RowH - control.Height) / 2);
         Controls.Add(titleLbl);
         Controls.Add(subLbl);
         Controls.Add(control);
@@ -159,13 +159,13 @@ sealed class SettingsCard : CardPanel
             var sep = new Panel
             {
                 Height = 1, BackColor = Theme.CardBorder,
-                Bounds = new Rectangle(14, top, Width - 28, 1),
+                Bounds = new Rectangle(Theme.S(14), top, Width - Theme.S(28), 1),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
             };
             Controls.Add(sep);
         }
 
         _rows++;
-        Height = 12 + _rows * RowH;
+        Height = Theme.S(12) + _rows * RowH;
     }
 }

@@ -35,7 +35,7 @@ sealed class NavButton : Control
         // Almost the full rail width — the accent marker sits at the rail's left
         // edge, so it must be inside this control's client area to be visible.
         // One pixel stays free on the right for the rail's separator line.
-        Size = new Size(47, 36);
+        Size = new Size(Theme.S(48) - 1, Theme.S(36));
         Cursor = Cursors.Hand;
     }
 
@@ -51,43 +51,47 @@ sealed class NavButton : Control
         if (_active || _hover)
         {
             using var bg = new SolidBrush(_active ? Theme.AccentSoft : Theme.Hover);
-            using var path = Theme.RoundedRect(new RectangleF(5.5f, 0.5f, Width - 10, Height - 1), 5);
+            using var path = Theme.RoundedRect(
+                new RectangleF(Theme.SF(5.5f), 0.5f, Width - Theme.SF(10f), Height - 1), Theme.SF(5));
             g.FillPath(bg, path);
         }
         if (_active)
         {
             using var accent = new SolidBrush(Theme.Accent);
-            using var path = Theme.RoundedRect(new RectangleF(0, 8, 3, Height - 16), 1.5f);
+            using var path = Theme.RoundedRect(
+                new RectangleF(0, Theme.S(8), Theme.SF(3), Height - Theme.S(16)), Theme.SF(1.5f));
             g.FillPath(accent, path);
         }
 
         var iconColor = _active || _hover ? Theme.Fg : Theme.Fg2;
-        var box = new RectangleF((Width - 16) / 2f, (Height - 16) / 2f, 16, 16);
+        float icon = Theme.SF(16);
+        var box = new RectangleF((Width - icon) / 2f, (Height - icon) / 2f, icon, icon);
         IconPainter(g, box, iconColor);
 
         if (_badge)
         {
             // Ring in the rail color so the dot stays readable on hover/active fills.
             using var dot  = new SolidBrush(Theme.Accent);
-            using var ring = new Pen(Parent?.BackColor ?? Theme.WinBg, 1.5f);
-            var r = new RectangleF(box.Right - 3.5f, box.Top - 3.5f, 7, 7);
+            using var ring = new Pen(Parent?.BackColor ?? Theme.WinBg, Theme.SF(1.5f));
+            var r = new RectangleF(box.Right - Theme.SF(3.5f), box.Top - Theme.SF(3.5f), Theme.SF(7), Theme.SF(7));
             g.FillEllipse(dot, r);
             g.DrawEllipse(ring, r);
         }
     }
 }
 
-// The five sidebar glyphs — GDI+ line art on a 16x16 box, mirroring the mockup SVGs.
+// The five sidebar glyphs — GDI+ line art mirroring the mockup SVGs. All
+// geometry is in the mockup's 16px design units, multiplied by u so the icons
+// scale with the box (u = 1 at 100% DPI).
 static class NavIcons
 {
-    static Pen MakePen(Color c) => new(c, 1.4f)
+    static Pen MakePen(Color c, float u) => new(c, 1.4f * u)
         { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
 
     public static void Dashboard(Graphics g, RectangleF b, Color c)
     {
-        using var pen = MakePen(c);
-        // Same geometry as the mockup SVG: 5.4px squares at 1.5/9.1 on a 16px box.
         float u = b.Width / 16f, s = 5.4f * u;
+        using var pen = MakePen(c, u);
         foreach (var (x, y) in new[] { (1.5f, 1.5f), (9.1f, 1.5f), (1.5f, 9.1f), (9.1f, 9.1f) })
         {
             using var p = Theme.RoundedRect(new RectangleF(b.X + x * u, b.Y + y * u, s, s), u);
@@ -97,51 +101,55 @@ static class NavIcons
 
     public static void Outputs(Graphics g, RectangleF b, Color c)
     {
-        using var pen = MakePen(c);
+        float u = b.Width / 16f;
+        using var pen = MakePen(c, u);
         float cx = b.X + b.Width / 2, cy = b.Y + b.Height * 0.56f;
-        g.DrawEllipse(pen, cx - 1.6f, cy - 1.6f, 3.2f, 3.2f);
-        g.DrawLine(pen, cx, cy + 1.8f, cx, b.Bottom);
-        g.DrawArc(pen, cx - 4.6f, cy - 4.4f, 9.2f, 9.2f, 215, 110);   // inner arc
-        g.DrawArc(pen, cx - 7.4f, cy - 7.4f, 14.8f, 14.8f, 220, 100); // outer arc
+        g.DrawEllipse(pen, cx - 1.6f * u, cy - 1.6f * u, 3.2f * u, 3.2f * u);
+        g.DrawLine(pen, cx, cy + 1.8f * u, cx, b.Bottom);
+        g.DrawArc(pen, cx - 4.6f * u, cy - 4.4f * u, 9.2f * u, 9.2f * u, 215, 110);   // inner arc
+        g.DrawArc(pen, cx - 7.4f * u, cy - 7.4f * u, 14.8f * u, 14.8f * u, 220, 100); // outer arc
     }
 
     public static void Sensors(Graphics g, RectangleF b, Color c)
     {
-        using var pen = MakePen(c);
-        var chip = new RectangleF(b.X + 3, b.Y + 3, b.Width - 6, b.Height - 6);
-        using (var p = Theme.RoundedRect(chip, 1.5f)) g.DrawPath(pen, p);
-        g.DrawRectangle(pen, b.X + 6.2f, b.Y + 6.2f, b.Width - 12.4f, b.Height - 12.4f);
+        float u = b.Width / 16f;
+        using var pen = MakePen(c, u);
+        var chip = new RectangleF(b.X + 3 * u, b.Y + 3 * u, b.Width - 6 * u, b.Height - 6 * u);
+        using (var p = Theme.RoundedRect(chip, 1.5f * u)) g.DrawPath(pen, p);
+        g.DrawRectangle(pen, b.X + 6.2f * u, b.Y + 6.2f * u, b.Width - 12.4f * u, b.Height - 12.4f * u);
         foreach (var t in new[] { 0.32f, 0.5f, 0.68f })
         {
             float v = b.X + b.Width * t, h = b.Y + b.Height * t;
-            g.DrawLine(pen, v, b.Y, v, b.Y + 2.2f);                    // top pins
-            g.DrawLine(pen, v, b.Bottom - 2.2f, v, b.Bottom);          // bottom pins
-            g.DrawLine(pen, b.X, h, b.X + 2.2f, h);                    // left pins
-            g.DrawLine(pen, b.Right - 2.2f, h, b.Right, h);            // right pins
+            g.DrawLine(pen, v, b.Y, v, b.Y + 2.2f * u);                    // top pins
+            g.DrawLine(pen, v, b.Bottom - 2.2f * u, v, b.Bottom);          // bottom pins
+            g.DrawLine(pen, b.X, h, b.X + 2.2f * u, h);                    // left pins
+            g.DrawLine(pen, b.Right - 2.2f * u, h, b.Right, h);            // right pins
         }
     }
 
     public static void Settings(Graphics g, RectangleF b, Color c)
     {
-        using var pen = MakePen(c);
+        float u = b.Width / 16f;
+        using var pen = MakePen(c, u);
         float y1 = b.Y + b.Height * 0.3f, y2 = b.Y + b.Height * 0.7f;
         g.DrawLine(pen, b.X, y1, b.Right, y1);
         g.DrawLine(pen, b.X, y2, b.Right, y2);
         using var knobBg = new SolidBrush(Theme.WinBg);
-        var k1 = new RectangleF(b.X + b.Width * 0.58f - 2.2f, y1 - 2.2f, 4.4f, 4.4f);
-        var k2 = new RectangleF(b.X + b.Width * 0.30f - 2.2f, y2 - 2.2f, 4.4f, 4.4f);
+        var k1 = new RectangleF(b.X + b.Width * 0.58f - 2.2f * u, y1 - 2.2f * u, 4.4f * u, 4.4f * u);
+        var k2 = new RectangleF(b.X + b.Width * 0.30f - 2.2f * u, y2 - 2.2f * u, 4.4f * u, 4.4f * u);
         g.FillEllipse(knobBg, k1); g.DrawEllipse(pen, k1);
         g.FillEllipse(knobBg, k2); g.DrawEllipse(pen, k2);
     }
 
     public static void About(Graphics g, RectangleF b, Color c)
     {
-        using var pen = MakePen(c);
-        g.DrawEllipse(pen, b.X + 1, b.Y + 1, b.Width - 2, b.Height - 2);
+        float u = b.Width / 16f;
+        using var pen = MakePen(c, u);
+        g.DrawEllipse(pen, b.X + u, b.Y + u, b.Width - 2 * u, b.Height - 2 * u);
         float cx = b.X + b.Width / 2;
         g.DrawLine(pen, cx, b.Y + b.Height * 0.45f, cx, b.Y + b.Height * 0.7f);
         using var dot = new SolidBrush(c);
-        g.FillEllipse(dot, cx - 1f, b.Y + b.Height * 0.26f, 2f, 2f);
+        g.FillEllipse(dot, cx - u, b.Y + b.Height * 0.26f, 2f * u, 2f * u);
     }
 
     // The app's signal-bars logo, used on the About page.
@@ -182,7 +190,7 @@ sealed class ToggleSwitch : Control
     {
         SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint
                | ControlStyles.UserPaint, true);
-        Size = new Size(38, 19);
+        Size = new Size(Theme.S(38), Theme.S(19));
         Cursor = Cursors.Hand;
     }
 
@@ -209,10 +217,11 @@ sealed class ToggleSwitch : Control
             g.DrawPath(border, path);
         }
 
-        float knob = Height - 6;
-        float x = _checked ? Width - knob - 3 : 3;
+        float margin = Theme.SF(3);
+        float knob = Height - 2 * margin;
+        float x = _checked ? Width - knob - margin : margin;
         using var knobBrush = new SolidBrush(_checked ? Color.White : Theme.Fg2);
-        g.FillEllipse(knobBrush, x, 3, knob, knob);
+        g.FillEllipse(knobBrush, x, margin, knob, knob);
     }
 }
 
@@ -233,7 +242,7 @@ class CardPanel : Panel
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.Clear(Parent?.BackColor ?? Theme.WinBg);
         var r = new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
-        using var path = Theme.RoundedRect(r, 7);
+        using var path = Theme.RoundedRect(r, Theme.SF(7));
         using var bg = new SolidBrush(Theme.CardBg);
         using var border = new Pen(Theme.CardBorder);
         g.FillPath(bg, path);
@@ -246,7 +255,7 @@ class CardPanel : Panel
 // rendering washes the label out against card backgrounds.
 sealed class FlatCheck : Control
 {
-    const int BoxSize = 15, Gap = 8;
+    static readonly int BoxSize = Theme.S(15), Gap = Theme.S(8);
     bool _checked, _hover;
 
     public event EventHandler? CheckedChanged;
@@ -264,12 +273,12 @@ sealed class FlatCheck : Control
                | ControlStyles.UserPaint, true);
         Cursor = Cursors.Hand;
         Font = Theme.Base;
-        Height = 22;
+        Height = Theme.S(22);
     }
 
     protected override void OnTextChanged(EventArgs e)
     {
-        Width = BoxSize + Gap + TextRenderer.MeasureText(Text, Font).Width + 4;
+        Width = BoxSize + Gap + TextRenderer.MeasureText(Text, Font).Width + Theme.S(4);
         Invalidate();
         base.OnTextChanged(e);
     }
@@ -285,25 +294,25 @@ sealed class FlatCheck : Control
         g.Clear(Parent?.BackColor ?? Theme.CardBg);
 
         var box = new RectangleF(0.5f, (Height - BoxSize) / 2f + 0.5f, BoxSize - 1, BoxSize - 1);
-        using var path = Theme.RoundedRect(box, 3);
+        using var path = Theme.RoundedRect(box, Theme.SF(3));
         if (_checked)
         {
             using var fill = new SolidBrush(Theme.Accent);
             g.FillPath(fill, path);
-            using var check = new Pen(Theme.AccentFg, 1.8f)
+            using var check = new Pen(Theme.AccentFg, Theme.SF(1.8f))
                 { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
             float bx = box.X, by = box.Y;
             g.DrawLines(check,
             [
-                new PointF(bx + 3.2f, by + 7.2f),
-                new PointF(bx + 6.0f, by + 10f),
-                new PointF(bx + 10.8f, by + 4.2f),
+                new PointF(bx + Theme.SF(3.2f), by + Theme.SF(7.2f)),
+                new PointF(bx + Theme.SF(6.0f), by + Theme.SF(10f)),
+                new PointF(bx + Theme.SF(10.8f), by + Theme.SF(4.2f)),
             ]);
         }
         else
         {
             using var fill = new SolidBrush(Theme.InputBg);
-            using var border = new Pen(_hover ? Theme.Fg3 : Theme.InputBorder, 1.2f);
+            using var border = new Pen(_hover ? Theme.Fg3 : Theme.InputBorder, Theme.SF(1.2f));
             g.FillPath(fill, path);
             g.DrawPath(border, path);
         }
@@ -336,7 +345,7 @@ sealed class InputBox : Control
         Box.GotFocus  += (_, _) => Invalidate();
         Box.LostFocus += (_, _) => Invalidate();
         Controls.Add(Box);
-        Size = new Size(70, 28);
+        Size = new Size(Theme.S(70), Theme.S(28));
         Cursor = Cursors.IBeam;
         Click += (_, _) => Box.Focus();
     }
@@ -344,7 +353,7 @@ sealed class InputBox : Control
     protected override void OnLayout(LayoutEventArgs levent)
     {
         base.OnLayout(levent);
-        Box?.SetBounds(8, (Height - Box.Height) / 2 + 1, Width - 16, Box.Height);
+        Box?.SetBounds(Theme.S(8), (Height - Box.Height) / 2 + 1, Width - Theme.S(16), Box.Height);
     }
 
     protected override void OnPaint(PaintEventArgs e)
@@ -353,14 +362,14 @@ sealed class InputBox : Control
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.Clear(Parent?.BackColor ?? Theme.CardBg);
         var r = new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
-        using var path = Theme.RoundedRect(r, 4);
+        using var path = Theme.RoundedRect(r, Theme.SF(4));
         using var bg = new SolidBrush(Theme.InputBg);
         using var border = new Pen(Theme.InputBorder);
         g.FillPath(bg, path);
         g.DrawPath(border, path);
         // 2px bottom edge, accent while the field has focus (mockup style)
-        using var bottom = new Pen(Box.Focused ? Theme.Accent : Theme.InputBorder, 2f);
-        g.DrawLine(bottom, 4, Height - 1.5f, Width - 4, Height - 1.5f);
+        using var bottom = new Pen(Box.Focused ? Theme.Accent : Theme.InputBorder, Theme.SF(2f));
+        g.DrawLine(bottom, Theme.S(4), Height - Theme.SF(1.5f), Width - Theme.S(4), Height - Theme.SF(1.5f));
     }
 }
 
@@ -382,7 +391,9 @@ sealed class SaveBar : CardPanel
         Button = new PillButton
         {
             Text = L.T.Save,   // "Speichern" needs more room than "Save"
-            Size = new Size(Math.Max(64, TextRenderer.MeasureText(L.T.Save, Theme.SemiBold).Width + 24), 26),
+            Size = new Size(
+                Math.Max(Theme.S(64), TextRenderer.MeasureText(L.T.Save, Theme.SemiBold).Width + Theme.S(24)),
+                Theme.S(26)),
         };
         Controls.Add(Msg);
         Controls.Add(Button);
@@ -394,16 +405,16 @@ sealed class SaveBar : CardPanel
     protected override void OnLayout(LayoutEventArgs levent)
     {
         base.OnLayout(levent);
-        const int h = 42;
-        int x = 14;
+        int h = Theme.S(42);
+        int x = Theme.S(14);
         Msg.Location = new Point(x, (h - Msg.Height) / 2);
-        x += Msg.Width + 12;
+        x += Msg.Width + Theme.S(12);
         if (Button.Visible)
         {
             Button.Location = new Point(x, (h - Button.Height) / 2);
             x += Button.Width;
         }
-        Size = new Size(x + 8, h);
+        Size = new Size(x + Theme.S(8), h);
     }
 }
 
@@ -432,7 +443,7 @@ sealed class PillButton : Control
         g.Clear(Parent?.BackColor ?? Theme.CardBg);
 
         var r = new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
-        using var path = Theme.RoundedRect(r, 5);
+        using var path = Theme.RoundedRect(r, Theme.SF(5));
         var bg = Theme.Accent;
         if (_hover) bg = Theme.Mix(bg, Theme.Dark ? Color.White : Color.Black, 0.08f);
         using var fill = new SolidBrush(bg);

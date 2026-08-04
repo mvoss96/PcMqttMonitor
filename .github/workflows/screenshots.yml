@@ -10,6 +10,11 @@ on:
         description: "Commit the en/dark set to docs/ (updates the README images)"
         type: boolean
         default: false
+      scale:
+        description: "Render scale (2 = high-res images, downscaled crisply by the README's fixed img width)"
+        type: choice
+        options: ["1", "2"]
+        default: "2"
 
 permissions:
   contents: write
@@ -31,15 +36,16 @@ jobs:
         run: |
           foreach ($combo in @(("en","dark"), ("de","dark"), ("en","light"), ("de","light"))) {
             $dir = "shots/$($combo[0])-$($combo[1])"
-            Start-Process publish/PcMqttMonitor.exe -ArgumentList '--screenshots',$dir,'--lang',$combo[0],'--theme',$combo[1] -Wait
+            Start-Process publish/PcMqttMonitor.exe -ArgumentList '--screenshots',$dir,'--lang',$combo[0],'--theme',$combo[1],'--scale','${{ inputs.scale }}' -Wait
           }
 
       - name: Apply rounded-corner mask
         run: |
           Add-Type -AssemblyName System.Drawing
+          $scale = [int]'${{ inputs.scale }}'
           foreach ($file in Get-ChildItem shots -Recurse -Filter *.png) {
             $src = [System.Drawing.Image]::FromFile($file.FullName)
-            $crop = 1; $radius = 8
+            $crop = 1 * $scale; $radius = 8 * $scale
             $w = $src.Width - 2*$crop; $h = $src.Height - 2*$crop
             $out = New-Object System.Drawing.Bitmap($w, $h, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
             $g = [System.Drawing.Graphics]::FromImage($out)

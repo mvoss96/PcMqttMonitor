@@ -10,9 +10,9 @@ sealed class SensorsPage : Panel
     readonly AppConfig _config;
     readonly CardPanel _card;
 
-    const int Col0 = 16, Col1 = 190, RowStep = 24;
+    static readonly int Col0 = Theme.S(16), Col1 = Theme.S(190), RowStep = Theme.S(24);
 
-    int _y = 10;
+    int _y = Theme.S(10);
     bool _col1;   // next checkbox goes into the second column
 
     public SensorsPage(AppConfig config, Action markDirty)
@@ -23,13 +23,13 @@ sealed class SensorsPage : Panel
         var title = new Label
         {
             Text = L.T.SensorsTitle, Font = Theme.Title, ForeColor = Theme.Fg,
-            AutoSize = true, Location = new Point(16, 12)
+            AutoSize = true, Location = new Point(Theme.S(16), Theme.S(12))
         };
         Controls.Add(title);
 
         _card = new CardPanel
         {
-            Location = new Point(16, 42),
+            Location = new Point(Theme.S(16), Theme.S(42)),
             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
         };
         Controls.Add(_card);
@@ -66,12 +66,12 @@ sealed class SensorsPage : Panel
         Add(markDirty, L.T.SensorUptime, s.Uptime,          (c, v) => c.Uptime = v);
 
         if (_col1) _y += RowStep;
-        _card.Height = _y + 10;
+        _card.Height = _y + Theme.S(10);
     }
 
     protected override void OnResize(EventArgs eventargs)
     {
-        _card.Width = Width - 32;
+        _card.Width = Width - Theme.S(32);
         base.OnResize(eventargs);
     }
 
@@ -80,22 +80,22 @@ sealed class SensorsPage : Panel
         if (_col1) { _y += RowStep; _col1 = false; }
         var header = new Label
         {
-            Text = name, Font = new Font("Segoe UI Semibold", 8f), ForeColor = Theme.Fg,
-            AutoSize = true, Location = new Point(Col0, _y + 8)
+            Text = name, Font = Theme.GroupHead, ForeColor = Theme.Fg,
+            AutoSize = true, Location = new Point(Col0, _y + Theme.S(8))
         };
         var rule = new Panel
         {
             Height = 1, BackColor = Theme.CardBorder,
-            Bounds = new Rectangle(Col0 + 40, _y + 16, _card.Width - Col0 - 56, 1),
+            Bounds = new Rectangle(Col0 + Theme.S(40), _y + Theme.S(16), _card.Width - Col0 - Theme.S(56), 1),
             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
         };
         _card.Controls.Add(header);
         _card.Controls.Add(rule);
         // the rule starts after the actual text width once the label measured itself
-        rule.Left = header.Right + 8;
+        rule.Left = header.Right + Theme.S(8);
         rule.Width = 0;   // set on first card resize below
-        _card.Resize += (_, _) => { rule.Left = header.Right + 8; rule.Width = _card.Width - rule.Left - 16; };
-        _y += 28;
+        _card.Resize += (_, _) => { rule.Left = header.Right + Theme.S(8); rule.Width = _card.Width - rule.Left - Theme.S(16); };
+        _y += Theme.S(28);
     }
 
     void Add(Action markDirty, string label, bool value, Action<SensorConfig, bool> setter)

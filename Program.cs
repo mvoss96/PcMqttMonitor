@@ -15,6 +15,15 @@ class Program
     [STAThread]
     static void Main(string[] args)
     {
+        // System-DPI-aware: crisp rendering at the login-time DPI instead of the
+        // blurry bitmap upscaling a DPI-unaware process gets. SystemAware (not
+        // PerMonitorV2) on purpose — one fixed scale factor for the whole run
+        // keeps the owner-drawn layout code simple (see Theme.Scale); moving the
+        // window to a monitor with a different DPI falls back to GDI stretching.
+        // Must be the FIRST Application call: even subscribing ThreadException
+        // spins up the WinForms thread context, after which the mode is locked.
+        Application.SetHighDpiMode(HighDpiMode.SystemAware);
+
         // Pass --console to see log output in the terminal that launched the app.
         // Without it no console is allocated (WinExe) so output is silenced.
         bool consoleAttached = args.Contains("--console");
