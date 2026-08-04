@@ -98,13 +98,25 @@ static class DemoMode
     static float Wave(int t, float baseV, float amp, float period) =>
         baseV + amp * MathF.Sin(t / period) + (t * 31 % 7) - 3;
 
+    // The sparklines must LOOK alive: plain low-amplitude waves render as flat
+    // lines on the 0–100 scale. CPU gets load bursts, the GPU a "game
+    // launched" ramp in the second half, RAM a slow climb.
+    static int CpuLoad(int t) =>
+        Math.Clamp((int)(Wave(t, 34, 14, 4.5f) + (t is > 14 and < 22 ? 38 : 0) + (t is > 44 and < 50 ? 26 : 0)), 3, 98);
+
+    static int GpuLoad(int t) =>
+        Math.Clamp(t < 30 ? (int)Wave(t, 8, 5, 6f) : (int)Wave(t, 64, 12, 5f), 2, 99);
+
+    static int RamLoad(int t) =>
+        Math.Clamp((int)(46 + t * 0.35f + Wave(t, 0, 4, 7f)), 5, 95);
+
     static MetricsSnapshot Snapshot(int t) => new()
     {
         Host = "GAMING-PC",
         Cpu = new CpuMetrics
         {
             Name = "AMD Ryzen 7 9800X3D",
-            Load = Math.Clamp((int)Wave(t, 38, 18, 5.5f), 2, 100),
+            Load = CpuLoad(t),
             TempC = Math.Clamp(Wave(t, 64, 4, 8f), 35, 95),
             PackagePowerW = Math.Clamp(Wave(t, 62, 14, 6f), 15, 170),
             CoreVoltageV = 1.284f,
@@ -112,17 +124,17 @@ static class DemoMode
         Gpu = new GpuMetrics
         {
             Name = "NVIDIA GeForce RTX 5070",
-            Load = Math.Clamp((int)Wave(t, 9, 6, 7f), 0, 100),
-            TempC = Math.Clamp(Wave(t, 49, 3, 9f), 30, 90),
-            BoardPowerW = Math.Clamp(Wave(t, 46, 8, 5f), 10, 250),
-            FanRpm = 0,
-            MemoryUsedMb = 2980,
+            Load = GpuLoad(t),
+            TempC = Math.Clamp(t < 30 ? Wave(t, 46, 2, 9f) : Wave(t, 61, 3, 9f), 30, 90),
+            BoardPowerW = Math.Clamp(t < 30 ? Wave(t, 42, 6, 5f) : Wave(t, 168, 14, 5f), 10, 250),
+            FanRpm = t < 30 ? 0 : 1450,
+            MemoryUsedMb = t < 30 ? 2980 : 8460,
             MemoryTotalMb = 12227,
         },
         Ram = new RamMetrics
         {
-            Load = Math.Clamp((int)Wave(t, 61, 5, 10f), 5, 100),
-            UsedGb = 19.8f,
+            Load = RamLoad(t),
+            UsedGb = RamLoad(t) * 31.9f / 100f,
             TotalGb = 31.9f,
         },
         Motherboard = new MotherboardMetrics { Name = "ASUS TUF GAMING B650-PLUS" },
