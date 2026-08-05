@@ -96,8 +96,10 @@ pc/myhost/gpu/load            5
 pc/myhost/gpu/temp            38
 pc/myhost/gpu/vram_used       1234
 pc/myhost/ram/load            42.1
-pc/myhost/drives/0/name       C:
-pc/myhost/drives/0/percent    61.2
+pc/myhost/drives/c/name       System (C:)        (one subtree per drive, keyed by letter)
+pc/myhost/drives/c/percent    61.2
+pc/myhost/fans/fan_2/rpm      861                (one subtree per enabled fan channel)
+pc/myhost/fans/fan_2/pwm      46.3
 pc/myhost/net/0/name          Ethernet           (one subtree per active physical adapter)
 pc/myhost/net/0/up            12.3               (KiB/s)
 pc/myhost/net/0/down          345.6

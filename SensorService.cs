@@ -476,6 +476,7 @@ sealed class SensorService : IDisposable
                 : $"{drive.VolumeLabel} ({driveLetter})";
             results.Add(new StorageMetrics
             {
+                Id          = driveLetter.TrimEnd(':').ToLowerInvariant(),
                 Name        = name,
                 UsedGb      = usedGb,
                 FreeGb      = freeGb,

@@ -173,13 +173,14 @@ sealed class MqttSink : IMetricsSink
                 value.Value.ToString(def.Format, CultureInfo.InvariantCulture)));
         }
 
-        // Drives: dynamic count and a string payload — deliberately not in the table.
+        // Drives: dynamic count and a string payload — deliberately not in the
+        // table. Keyed by drive letter, not index: plugging or removing a drive
+        // must never shift another drive's topics.
         if (m.Drives != null)
         {
-            for (int i = 0; i < m.Drives.Count; i++)
+            foreach (var d in m.Drives)
             {
-                var d = m.Drives[i];
-                var prefix = $"{baseTopic}/drives/{i}";
+                var prefix = $"{baseTopic}/drives/{d.Id}";
                 if (!string.IsNullOrEmpty(d.Name)) messages.Add(($"{prefix}/name", d.Name));
                 AddFloat(messages, $"{prefix}/used",  d.UsedGb);
                 AddFloat(messages, $"{prefix}/free",  d.FreeGb);

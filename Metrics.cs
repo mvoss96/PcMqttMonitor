@@ -134,6 +134,10 @@ sealed class MotherboardMetrics
 
 sealed class StorageMetrics
 {
+    // Drive letter as stable id ("c") — MQTT topics and HA unique_ids key on
+    // this instead of the list index, so adding/removing a drive never shifts
+    // another drive's identity.
+    public string Id { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public float? UsedGb { get; set; }
     public float? FreeGb { get; set; }

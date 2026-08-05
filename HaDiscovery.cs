@@ -135,16 +135,17 @@ static class HaDiscovery
                 Sensor(def.Id, def.Name, def.SubTopic, def.Unit, def.DeviceClass);
 
         // Drives: dynamic count — mirrors MqttSink's drives special case.
+        // Letter-keyed like the topics, so entity identity survives drives
+        // being added or removed.
         if (m.Drives != null)
         {
-            for (int i = 0; i < m.Drives.Count; i++)
+            foreach (var d in m.Drives)
             {
-                var d = m.Drives[i];
-                var p = $"drives/{i}";
-                if (d.UsedGb      != null) Sensor($"drive_{i}_used",    $"{d.Name} Used",    $"{p}/used",    "GB", "data_size");
-                if (d.FreeGb      != null) Sensor($"drive_{i}_free",    $"{d.Name} Free",    $"{p}/free",    "GB", "data_size");
-                if (d.TotalGb     != null) Sensor($"drive_{i}_total",   $"{d.Name} Total",   $"{p}/total",   "GB", "data_size");
-                if (d.UsedPercent != null) Sensor($"drive_{i}_percent", $"{d.Name} Used %",  $"{p}/percent", "%",  null);
+                var p = $"drives/{d.Id}";
+                if (d.UsedGb      != null) Sensor($"drive_{d.Id}_used",    $"{d.Name} Used",    $"{p}/used",    "GB", "data_size");
+                if (d.FreeGb      != null) Sensor($"drive_{d.Id}_free",    $"{d.Name} Free",    $"{p}/free",    "GB", "data_size");
+                if (d.TotalGb     != null) Sensor($"drive_{d.Id}_total",   $"{d.Name} Total",   $"{p}/total",   "GB", "data_size");
+                if (d.UsedPercent != null) Sensor($"drive_{d.Id}_percent", $"{d.Name} Used %",  $"{p}/percent", "%",  null);
             }
         }
 
