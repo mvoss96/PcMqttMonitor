@@ -248,38 +248,85 @@ sealed class DashboardView : Control
     // Card title, optionally with muted hardware info right-aligned on the
     // same line (CPU/GPU model, RAM type) — ellipsized with a hover tooltip
     // when the card is too narrow for the full string.
-    // infoShort: fallback used only when the full info doesn't fit (the GPU
-    // name without its vendor prefix). The hover tooltip always carries the
-    // full string once anything was shortened or ellipsized.
-    void DrawHead(Graphics g, Rectangle card, string name, string? info = null, string? infoShort = null)
+    void DrawHead(Graphics g, Rectangle card, string name, string? info = null)
+        => DrawHead(g, card, name, string.IsNullOrEmpty(info) ? [] : [info]);
+
+    // Card title with muted info right-aligned on the same line. stages holds
+    // the info in progressively shorter forms (see NameStages) — the first one
+    // that fits is drawn; if even the shortest overflows it gets an ellipsis.
+    // The hover tooltip carries the full string once anything was shortened.
+    void DrawHead(Graphics g, Rectangle card, string name, IReadOnlyList<string> stages)
     {
         TextRenderer.DrawText(g, name, Theme.SemiBold,
             new Point(card.X + CardPadX, card.Y + CardPadY), Theme.Fg);
-        if (string.IsNullOrEmpty(info)) return;
+        if (stages.Count == 0 || stages[0].Length == 0) return;
 
         int titleW = TextRenderer.MeasureText(name, Theme.SemiBold).Width;
         int x = card.X + CardPadX + titleW + Theme.S(6);
         int w = card.Right - CardPadX - x;
         if (w <= 0) return;
-        string text = info;
-        if (infoShort != null && TextRenderer.MeasureText(info, Theme.Small).Width > w)
-            text = infoShort;
+        string full = stages[0], text = full;
+        foreach (var stage in stages)
+        {
+            text = stage;
+            if (TextRenderer.MeasureText(stage, Theme.Small).Width <= w) break;
+        }
         int y = card.Y + CardPadY + Theme.S(2);   // small font sits on the title's baseline
         TextRenderer.DrawText(g, text, Theme.Small, new Rectangle(x, y, w, DetailH), Theme.Fg3,
             TextFormatFlags.Right | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
-        if (text != info || TextRenderer.MeasureText(text, Theme.Small).Width > w)
-            _tipZones.Add((new Rectangle(x, y, w, DetailH), info));
+        if (text != full || TextRenderer.MeasureText(text, Theme.Small).Width > w)
+            _tipZones.Add((new Rectangle(x, y, w, DetailH), full));
     }
 
-    // Fallback for cards too narrow for full marketing names — drops the
-    // redundant vendor prefix ("NVIDIA GeForce RTX 4070 Ti SUPER" →
-    // "RTX 4070 Ti SUPER"). Only used when the full name doesn't fit;
-    // MQTT and the hover tooltip always keep the full name.
-    static string ShortGpuName(string name) =>
-        name.StartsWith("NVIDIA GeForce ", StringComparison.OrdinalIgnoreCase) ? name["NVIDIA GeForce ".Length..]
-      : name.StartsWith("AMD Radeon ",     StringComparison.OrdinalIgnoreCase) ? name["AMD ".Length..]
-      : name.StartsWith("Intel Arc ",      StringComparison.OrdinalIgnoreCase) ? name["Intel ".Length..]
-      : name;
+    // Junk that never carries information: (R)/(TM), the CPUID brand-string
+    // suffixes "6-Core Processor" / "CPU @ 3.70GHz", and iGPU tails like
+    // "w/ Radeon 890M".
+    static readonly System.Text.RegularExpressions.Regex NameJunkRx =
+        new(@"\((R|TM|C)\)|\s\d+-Core Processor|\sCPU\s*@\s*[\d.]+\s*GHz|\sw/.*$",
+            System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+    // Redundant generation prefix: "12th Gen Intel Core i7-12700K" — the model
+    // number already encodes the generation.
+    static readonly System.Text.RegularExpressions.Regex NameGenRx =
+        new(@"^\d+(st|nd|rd|th) Gen ",
+            System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+    // The brand word between vendor and model — covers the consumer lines of
+    // all three vendors (GeForce/Radeon/Arc/Quadro, Core [Ultra], Ryzen with
+    // AI/Threadripper/tier variants). Anything unknown stays untouched.
+    static readonly System.Text.RegularExpressions.Regex NameBrandRx =
+        new(@"\b(GeForce|Radeon|Arc|Quadro|Core|Ryzen( AI)?( Threadripper)?( [3579])?) ",
+            System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    // Progressive shortening stages for CPU/GPU marketing names, used only as
+    // far as needed. First the junk-free full name, then generation prefix,
+    // brand word and finally the vendor are dropped (Marcus' order — the
+    // vendor stays visible longest):
+    //   "NVIDIA GeForce RTX 5070"            → "NVIDIA RTX 5070" → "RTX 5070"
+    //   "AMD Ryzen 7 9800X3D"                → "AMD 9800X3D"     → "9800X3D"
+    //   "12th Gen Intel(R) Core(TM) i7-12700K"
+    //     → "12th Gen Intel Core i7-12700K" → "Intel Core i7-12700K"
+    //     → "Intel i7-12700K" → "i7-12700K"
+    // MQTT always carries the raw name, the hover tooltip the cleaned one.
+    static List<string> NameStages(string name)
+    {
+        string s = NameJunkRx.Replace(name, "").Trim();
+        while (s.Contains("  ")) s = s.Replace("  ", " ");
+        var stages = new List<string>();
+        Add(stages, s);
+        Add(stages, s = NameGenRx.Replace(s, ""));
+        Add(stages, s = NameBrandRx.Replace(s, "", 1));
+        foreach (var vendor in new[] { "NVIDIA ", "AMD ", "Intel " })
+        {
+            if (s.StartsWith(vendor, StringComparison.OrdinalIgnoreCase)) { Add(stages, s[vendor.Length..]); break; }
+        }
+        return stages;
+
+        static void Add(List<string> l, string v)
+        {
+            if (v.Length > 0 && (l.Count == 0 || v != l[^1])) l.Add(v);
+        }
+    }
 
     void DrawBar(Graphics g, int x, int y, int w, int pct)
     {
@@ -401,7 +448,7 @@ sealed class DashboardView : Control
     {
         var c = _m!.Cpu!;
         DrawCardBg(g, card);
-        DrawHead(g, card, L.T.CardCpu, c.Name);
+        DrawHead(g, card, L.T.CardCpu, NameStages(c.Name));
         int y = card.Y + CardPadY + HeadH;
         DrawBigPercent(g, card, ref y, c.Load);
         // Whole watts — the decimal adds width, not information.
@@ -417,7 +464,7 @@ sealed class DashboardView : Control
     {
         var gpu = _m!.Gpu!;
         DrawCardBg(g, card);
-        DrawHead(g, card, L.T.CardGpu, gpu.Name, ShortGpuName(gpu.Name));
+        DrawHead(g, card, L.T.CardGpu, NameStages(gpu.Name));
         int y = card.Y + CardPadY + HeadH;
         DrawBigPercent(g, card, ref y, gpu.Load);
         // Per the approved compact design the fan speed is dropped here —
