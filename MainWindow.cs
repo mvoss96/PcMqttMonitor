@@ -45,9 +45,9 @@ sealed class MainWindow : Form
         var version = UpdateChecker.CurrentVersion;
         Text = $"PC MQTT Monitor  v{version.ToString(3)}";
         Icon = TrayApp.CreateIcon();
-        // 560 wide so typical GPU model names fit next to the card title
-        // without truncation (was 500 before the head-info line existed).
-        Size = new Size(Theme.S(560), Theme.S(700));
+        // 500x700 per the approved mockup — hardware names next to the card
+        // titles rely on the staged shortening in DashboardView.NameStages.
+        Size = new Size(Theme.S(500), Theme.S(700));
         FormBorderStyle = FormBorderStyle.FixedSingle;   // fixed window per the mockup
         AutoScaleMode = AutoScaleMode.None;   // all DPI scaling is explicit via Theme.S
         MaximizeBox = false;
