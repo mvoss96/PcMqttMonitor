@@ -248,7 +248,10 @@ sealed class DashboardView : Control
     // Card title, optionally with muted hardware info right-aligned on the
     // same line (CPU/GPU model, RAM type) — ellipsized with a hover tooltip
     // when the card is too narrow for the full string.
-    void DrawHead(Graphics g, Rectangle card, string name, string? info = null, string? tip = null)
+    // infoShort: fallback used only when the full info doesn't fit (the GPU
+    // name without its vendor prefix). The hover tooltip always carries the
+    // full string once anything was shortened or ellipsized.
+    void DrawHead(Graphics g, Rectangle card, string name, string? info = null, string? infoShort = null)
     {
         TextRenderer.DrawText(g, name, Theme.SemiBold,
             new Point(card.X + CardPadX, card.Y + CardPadY), Theme.Fg);
@@ -258,18 +261,20 @@ sealed class DashboardView : Control
         int x = card.X + CardPadX + titleW + Theme.S(6);
         int w = card.Right - CardPadX - x;
         if (w <= 0) return;
+        string text = info;
+        if (infoShort != null && TextRenderer.MeasureText(info, Theme.Small).Width > w)
+            text = infoShort;
         int y = card.Y + CardPadY + Theme.S(2);   // small font sits on the title's baseline
-        TextRenderer.DrawText(g, info, Theme.Small, new Rectangle(x, y, w, DetailH), Theme.Fg3,
+        TextRenderer.DrawText(g, text, Theme.Small, new Rectangle(x, y, w, DetailH), Theme.Fg3,
             TextFormatFlags.Right | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
-        // Hover shows the untrimmed string when the display one is shortened
-        // (vendor prefix dropped) or doesn't fit.
-        if (tip != null || TextRenderer.MeasureText(info, Theme.Small).Width > w)
-            _tipZones.Add((new Rectangle(x, y, w, DetailH), tip ?? info));
+        if (text != info || TextRenderer.MeasureText(text, Theme.Small).Width > w)
+            _tipZones.Add((new Rectangle(x, y, w, DetailH), info));
     }
 
-    // The card is too narrow for full marketing names — drop the redundant
-    // vendor prefix for display ("NVIDIA GeForce RTX 5070" → "RTX 5070").
-    // MQTT and the hover tooltip keep the full name.
+    // Fallback for cards too narrow for full marketing names — drops the
+    // redundant vendor prefix ("NVIDIA GeForce RTX 4070 Ti SUPER" →
+    // "RTX 4070 Ti SUPER"). Only used when the full name doesn't fit;
+    // MQTT and the hover tooltip always keep the full name.
     static string ShortGpuName(string name) =>
         name.StartsWith("NVIDIA GeForce ", StringComparison.OrdinalIgnoreCase) ? name["NVIDIA GeForce ".Length..]
       : name.StartsWith("AMD Radeon ",     StringComparison.OrdinalIgnoreCase) ? name["AMD ".Length..]
@@ -412,8 +417,7 @@ sealed class DashboardView : Control
     {
         var gpu = _m!.Gpu!;
         DrawCardBg(g, card);
-        DrawHead(g, card, L.T.CardGpu, ShortGpuName(gpu.Name),
-            tip: ShortGpuName(gpu.Name) != gpu.Name ? gpu.Name : null);
+        DrawHead(g, card, L.T.CardGpu, gpu.Name, ShortGpuName(gpu.Name));
         int y = card.Y + CardPadY + HeadH;
         DrawBigPercent(g, card, ref y, gpu.Load);
         // Per the approved compact design the fan speed is dropped here —
