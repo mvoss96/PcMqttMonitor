@@ -22,7 +22,8 @@ static class HaDiscovery
     public static string Fingerprint(MetricsSnapshot m) =>
         string.Join(",", MetricTable.All.Where(d => d.Get(m) != null).Select(d => d.Id))
         + "|" + string.Join(",", m.Drives?.Select(d => d.Name) ?? [])
-        + "|" + string.Join(",", m.Network?.Select(a => a.Name) ?? []);
+        + "|" + string.Join(",", m.Network?.Select(a => a.Name) ?? [])
+        + "|" + string.Join(",", m.Fans?.Select(f => f.Id) ?? []);
 
     public static Task PublishConfigAsync(
         IMqttClient client, string topicRoot, string host, MetricsSnapshot metrics,
@@ -144,6 +145,18 @@ static class HaDiscovery
                 if (d.FreeGb      != null) Sensor($"drive_{i}_free",    $"{d.Name} Free",    $"{p}/free",    "GB", "data_size");
                 if (d.TotalGb     != null) Sensor($"drive_{i}_total",   $"{d.Name} Total",   $"{p}/total",   "GB", "data_size");
                 if (d.UsedPercent != null) Sensor($"drive_{i}_percent", $"{d.Name} Used %",  $"{p}/percent", "%",  null);
+            }
+        }
+
+        // Fans: one RPM (and PWM) entity per spinning fan, keyed by the stable
+        // sensor-derived id — mirrors MqttSink's fans subtree.
+        if (m.Fans != null)
+        {
+            foreach (var f in m.Fans)
+            {
+                var p = $"fans/{f.Id}";
+                if (f.Rpm != null) Sensor($"fan_{f.Id}_rpm", $"{f.Name} Speed", $"{p}/rpm", "RPM", null);
+                if (f.Pwm != null) Sensor($"fan_{f.Id}_pwm", $"{f.Name} PWM",   $"{p}/pwm", "%",   null);
             }
         }
 

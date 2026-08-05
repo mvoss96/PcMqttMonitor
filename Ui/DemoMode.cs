@@ -37,6 +37,18 @@ static class DemoMode
             System.Globalization.CultureInfo.InvariantCulture, out var s) && s is >= 1f and <= 4f ? s : 1f;
         Theme.Init(scale);
 
+        // Fan channels normally come from hardware detection — seed the list so
+        // the Sensors page shows its fan checkboxes in the screenshots.
+        SensorService.SeedDetectedFans(
+        [
+            new SensorService.DetectedFan("fan_1", "Fan #1", 1042),
+            new SensorService.DetectedFan("fan_2", "Fan #2", 688),
+            new SensorService.DetectedFan("fan_3", "Fan #3", 0),
+            new SensorService.DetectedFan("fan_4", "Fan #4", 0),
+            new SensorService.DetectedFan("gpu_fan_1", "GPU Fan 1", 0),
+            new SensorService.DetectedFan("gpu_fan_2", "GPU Fan 2", 0),
+        ]);
+
         var config = DemoConfig();
         var window = new MainWindow(configPath, config);
         window.SetConnectionStatus(true, $"{config.Mqtt.Host}:{config.Mqtt.Port}");
@@ -151,6 +163,14 @@ static class DemoMode
             Username = "homeassistant", Password = "demo1234",
             TopicRoot = "pc", HaDiscoveryEnabled = true,
         },
+        Sensors = new SensorConfig
+        {
+            FanChannels = new()
+            {
+                ["fan_1"] = true, ["fan_2"] = true, ["fan_3"] = false, ["fan_4"] = false,
+                ["gpu_fan_1"] = true, ["gpu_fan_2"] = true,
+            },
+        },
     };
 
     // Deterministic pseudo-noise — reproducible screenshots, no Random.
@@ -186,7 +206,6 @@ static class DemoMode
             Load = GpuLoad(t),
             TempC = Math.Clamp(t < 30 ? Wave(t, 46, 2, 9f) : Wave(t, 61, 3, 9f), 30, 90),
             BoardPowerW = Math.Clamp(t < 30 ? Wave(t, 42, 6, 5f) : Wave(t, 168, 14, 5f), 10, 250),
-            FanRpm = t < 30 ? 0 : 1450,
             MemoryUsedMb = t < 30 ? 2980 : 8460,
             MemoryTotalMb = 12227,
         },
@@ -212,6 +231,13 @@ static class DemoMode
                 Name = "Ethernet", UploadKbps = 212.4f, DownloadKbps = 1843.9f,
                 IpAddress = "192.168.1.42", Mac = "a4:5e:60:d2:4b:1c",
             },
+        ],
+        Fans =
+        [
+            new FanMetrics { Id = "fan_1", Name = "Fan #1", Rpm = 1042, Pwm = 42 },
+            new FanMetrics { Id = "fan_2", Name = "Fan #2", Rpm = 688, Pwm = 34 },
+            new FanMetrics { Id = "gpu_fan_1", Name = "GPU Fan 1", Rpm = t < 30 ? 0 : 1450, Pwm = t < 30 ? 0 : 55 },
+            new FanMetrics { Id = "gpu_fan_2", Name = "GPU Fan 2", Rpm = t < 30 ? 0 : 1430, Pwm = t < 30 ? 0 : 55 },
         ],
         System = new SystemMetrics
         {

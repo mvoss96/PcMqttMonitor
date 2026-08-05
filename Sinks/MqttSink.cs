@@ -189,6 +189,19 @@ sealed class MqttSink : IMetricsSink
             }
         }
 
+        // Fans: one subtree per spinning fan, keyed by the stable sensor-derived
+        // id ("fans/fan_2/rpm") — indices would shift when a fan stops.
+        if (m.Fans != null)
+        {
+            foreach (var f in m.Fans)
+            {
+                var prefix = $"{baseTopic}/fans/{f.Id}";
+                if (!string.IsNullOrEmpty(f.Name)) messages.Add(($"{prefix}/name", f.Name));
+                AddFloat(messages, $"{prefix}/rpm", f.Rpm);
+                AddFloat(messages, $"{prefix}/pwm", f.Pwm);
+            }
+        }
+
         // Network: one subtree per active physical adapter — same dynamic-count
         // reasoning as drives. IP/MAC go out retained on purpose (Marcus' call).
         if (m.Network != null)

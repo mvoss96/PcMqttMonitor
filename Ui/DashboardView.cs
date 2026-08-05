@@ -194,6 +194,7 @@ sealed class DashboardView : Control
         if (_m.Gpu != null)            cards.Add((LoadCardHeight, DrawGpuCard));
         if (_m.Ram != null)            cards.Add((LoadCardHeight, DrawRamCard));
         if (_m.Drives is { Count: > 0 }) cards.Add((DrivesHeight(_m.Drives.Count), DrawDrivesCard));
+        if (_m.Fans is { Count: > 0 }) cards.Add((FansHeight(_m.Fans.Count), DrawFansCard));
         if (_m.Network is { Count: > 0 }) cards.Add((NetworkHeight(_m.Network.Count), DrawNetworkCard));
         if (_m.System != null)         cards.Add((SystemHeight, DrawSystemCard));
 
@@ -232,6 +233,9 @@ sealed class DashboardView : Control
     // Per adapter: header (name + IP) 17, rates line 16; 9px between blocks.
     static int NetworkHeight(int adapters) =>
         CardPadY * 2 + HeadH + adapters * Theme.S(33) + (adapters - 1) * Theme.S(9);
+
+    static int FansHeight(int fans) =>
+        CardPadY * 2 + HeadH + fans * RowH;
 
     static int SystemHeight =>
         CardPadY * 2 + HeadH + 4 * RowH;
@@ -571,6 +575,28 @@ sealed class DashboardView : Control
             TextRenderer.DrawText(g, rates, Theme.Small, new Rectangle(x, y, w, rateLineH), Theme.Fg2,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
             y += rateLineH + Theme.S(9);
+        }
+    }
+
+    // One row per spinning fan: board name left, "861 RPM · 46 %" right.
+    // Stopped/unconnected fans are already filtered out in SensorService.
+    void DrawFansCard(Graphics g, Rectangle card)
+    {
+        DrawCardBg(g, card);
+        DrawHead(g, card, L.T.CardFans);
+        int x = card.X + CardPadX, w = card.Width - CardPadX * 2;
+        int y = card.Y + CardPadY + HeadH;
+        foreach (var f in _m!.Fans!)
+        {
+            TextRenderer.DrawText(g, f.Name, Theme.Base, new Rectangle(x, y, w / 2, RowH), Theme.Fg,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+            var parts = new List<string>();
+            if (f.Rpm != null) parts.Add($"{FmtNum(f.Rpm, "0")} RPM");
+            if (f.Pwm != null) parts.Add($"{FmtNum(f.Pwm, "0")} %");
+            TextRenderer.DrawText(g, parts.Count > 0 ? string.Join(" · ", parts) : "—", Theme.Small,
+                new Rectangle(x + w / 2, y, w - w / 2, RowH), Theme.Fg2,
+                TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+            y += RowH;
         }
     }
 

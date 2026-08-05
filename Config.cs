@@ -118,11 +118,15 @@ sealed class SensorConfig
     public bool CpuPackagePower { get; set; } = true;
     public bool CpuCoreVoltage { get; set; } = true;
     public bool GpuBoardPower { get; set; } = true;
-    public bool GpuFanSpeed { get; set; } = true;
     public bool GpuMemoryLoad { get; set; } = true;
     public bool GpuMemoryUsed { get; set; } = true;
     public bool GpuMemoryTotal { get; set; } = true;
     public bool MotherboardName { get; set; } = true;
+    // Per-channel fan selection, keyed by the stable sensor-derived id
+    // ("fan_2", "gpu_fan_1"). Channels detected at startup that are missing
+    // here get a default: enabled when the fan was spinning. Enabled channels
+    // are always published, even at 0 RPM (GPU zero-RPM mode stays visible).
+    public Dictionary<string, bool> FanChannels { get; set; } = new();
     public bool Drives { get; set; } = true;
     public bool Uptime { get; set; } = true;
     public bool NetworkUpload { get; set; } = true;

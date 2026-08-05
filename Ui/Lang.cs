@@ -67,6 +67,7 @@ sealed class Lang
     public string CardRam     { get; init; } = "RAM";
     public string CardDrives  { get; init; } = "Drives";
     public string CardNetwork { get; init; } = "Network";
+    public string CardFans    { get; init; } = "Fans";
     public string CardSystem  { get; init; } = "System";
     public string DriveFree   { get; init; } = "free";   // "170 GB free"
     public string RowUptime   { get; init; } = "Uptime";
@@ -101,7 +102,6 @@ sealed class Lang
     public string SensorPkgPower   { get; init; } = "Package Power";
     public string SensorCoreVolt   { get; init; } = "Core Voltage";
     public string SensorBoardPower { get; init; } = "Board Power";
-    public string SensorFanSpeed   { get; init; } = "Fan Speed";
     public string SensorMemLoad    { get; init; } = "VRAM Load";
     public string SensorMemUsed    { get; init; } = "VRAM Used";
     public string SensorMemTotal   { get; init; } = "VRAM Total";
@@ -183,6 +183,7 @@ sealed class Lang
 
         CardDrives  = "Laufwerke",
         CardNetwork = "Netzwerk",
+        CardFans    = "Lüfter",
         DriveFree   = "frei",
         RowUptime   = "Laufzeit",
         RowBoard    = "Board",
@@ -208,7 +209,6 @@ sealed class Lang
         SensorPkgPower   = "Package-Leistung",
         SensorCoreVolt   = "Kernspannung",
         SensorBoardPower = "Board-Leistung",
-        SensorFanSpeed   = "Lüfterdrehzahl",
         SensorMemLoad    = "VRAM-Auslastung",
         SensorMemUsed    = "VRAM belegt",
         SensorMemTotal   = "VRAM gesamt",

@@ -54,6 +54,41 @@ sealed class SensorService : IDisposable
         _memory = _computer.Hardware.FirstOrDefault(h => h.HardwareType == HardwareType.Memory);
         _motherboard = _computer.Hardware.FirstOrDefault(h => h.HardwareType == HardwareType.Motherboard);
         ReadRamModuleInfo();
+        DetectFanChannels();
+    }
+
+    // All fan channels the hardware exposes (spinning or not) — the Sensors
+    // page lists them as checkboxes. Read once at Open; static so the UI can
+    // reach it without holding a SensorService reference (there is only ever
+    // one instance; demo mode seeds it directly).
+    public sealed record DetectedFan(string Id, string Name, float Rpm);
+    public static IReadOnlyList<DetectedFan> DetectedFans { get; private set; } = [];
+    public static void SeedDetectedFans(IReadOnlyList<DetectedFan> fans) => DetectedFans = fans;
+
+    void DetectFanChannels()
+    {
+        var found = new List<DetectedFan>();
+
+        void Scan(IHardware? hw)
+        {
+            if (hw == null) return;
+            hw.Update();
+            foreach (var s in hw.Sensors.Where(s => s.SensorType == SensorType.Fan))
+                found.Add(new DetectedFan(FanId(s.Name), s.Name, s.Value ?? 0));
+            foreach (var sub in hw.SubHardware)
+                Scan(sub);
+        }
+
+        Scan(_motherboard);   // fans live on the SuperIO sub-hardware
+        Scan(_gpu);
+        DetectedFans = found;
+
+        // Default for channels the config has never seen: enabled when the fan
+        // is spinning right now. Persisted with the next UI save.
+        foreach (var fan in found)
+            _config.FanChannels.TryAdd(fan.Id, fan.Rpm > 0);
+
+        Log($"Fan channels: {string.Join(", ", found.Select(f => $"{f.Name}={f.Rpm:0}rpm"))}");
     }
 
     // DDR generation and configured transfer rate ("DDR5-6000") from WMI —
@@ -124,8 +159,6 @@ sealed class SensorService : IDisposable
         var rawGpuBoardPower = FindSensorValue(_gpu, SensorType.Power, "GPU Board Power")
             ?? FindSensorValue(_gpu, SensorType.Power, "GPU Package")
             ?? FindFirstSensorValue(_gpu, SensorType.Power);
-        var rawGpuFan = FindSensorValue(_gpu, SensorType.Fan, "GPU Fan 1")
-            ?? FindFirstSensorValue(_gpu, SensorType.Fan);
         // No fallback here: FindFirstSensorValue(Load) would return "GPU Core" load,
         // which is not the memory load.
         var rawGpuMemLoad = FindSensorValue(_gpu, SensorType.Load, "GPU Memory");
@@ -142,7 +175,6 @@ sealed class SensorService : IDisposable
         var cpuPackagePower = _config.CpuPackagePower ? rawCpuPackagePower : null;
         var cpuCoreVoltage = _config.CpuCoreVoltage ? rawCpuCoreVoltage : null;
         var gpuBoardPower = _config.GpuBoardPower ? rawGpuBoardPower : null;
-        var gpuFan = _config.GpuFanSpeed ? rawGpuFan : null;
         var gpuMemLoad = _config.GpuMemoryLoad ? RoundPercentToInt(rawGpuMemLoad) : null;
         var gpuMemUsed = _config.GpuMemoryUsed ? rawGpuMemUsed : null;
         var gpuMemTotal = _config.GpuMemoryTotal ? rawGpuMemTotal : null;
@@ -162,6 +194,8 @@ sealed class SensorService : IDisposable
                 if (!_config.NetworkDownload) a.DownloadKbps = null;
             }
 
+        var fans = CollectFanMetrics();
+
         var uptimeSec = _config.Uptime ? (int?)(Environment.TickCount64 / 1000) : null;
 
         // The one-line console summary is only ever seen with --console — skip
@@ -173,7 +207,7 @@ sealed class SensorService : IDisposable
             if (cpuSummary != null)
                 summaryParts.Add(cpuSummary);
 
-            var gpuSummary = BuildGpuSummary(gpuName, gpuLoad, gpuTemp, gpuBoardPower, gpuFan, gpuMemLoad, gpuMemUsed, gpuMemTotal);
+            var gpuSummary = BuildGpuSummary(gpuName, gpuLoad, gpuTemp, gpuBoardPower, gpuMemLoad, gpuMemUsed, gpuMemTotal);
             if (gpuSummary != null)
                 summaryParts.Add(gpuSummary);
 
@@ -197,17 +231,64 @@ sealed class SensorService : IDisposable
             TimestampUtc = DateTime.UtcNow,
             Host = Environment.MachineName,
             Cpu = BuildCpuMetrics(cpuName, cpuLoad, cpuTemp, cpuPackagePower, cpuCoreVoltage),
-            Gpu = BuildGpuMetrics(gpuName, gpuLoad, gpuTemp, gpuBoardPower, gpuFan, gpuMemLoad, gpuMemUsed, gpuMemTotal),
+            Gpu = BuildGpuMetrics(gpuName, gpuLoad, gpuTemp, gpuBoardPower, gpuMemLoad, gpuMemUsed, gpuMemTotal),
             Ram = BuildRamMetrics(ramLoad, ramUsed, ramTotal),
             Motherboard = BuildMotherboardMetrics(motherboardName),
             Drives = driveMetrics.Count > 0 ? driveMetrics : null,
             Network = adapters is { Count: > 0 } ? adapters : null,
+            Fans = fans is { Count: > 0 } ? fans : null,
             // Always present: OS version is static and uptime merely optional.
             System = new SystemMetrics { UptimeSec = uptimeSec, OsVersion = OsVersionString }
         };
 
         var summary = summaryParts.Count > 0 ? string.Join(" || ", summaryParts) : string.Empty;
         return new SensorSnapshot(summary, metrics);
+    }
+
+    // One entry per fan channel the user has enabled on the Sensors page —
+    // including ones at 0 RPM (a GPU in zero-RPM idle stays visible instead of
+    // its HA entities appearing and disappearing). The matching Control sensor
+    // (same name) contributes the PWM duty cycle.
+    List<FanMetrics> CollectFanMetrics()
+    {
+        var result = new List<FanMetrics>();
+
+        void AddFans(IHardware? hw)
+        {
+            if (hw == null) return;
+            foreach (var sensor in hw.Sensors.Where(s => s.SensorType == SensorType.Fan))
+            {
+                var id = FanId(sensor.Name);
+                if (!_config.FanChannels.GetValueOrDefault(id)) continue;
+                var pwm = hw.Sensors.FirstOrDefault(s =>
+                    s.SensorType == SensorType.Control && s.Name == sensor.Name)?.Value;
+                result.Add(new FanMetrics
+                {
+                    Id = id,
+                    Name = sensor.Name,
+                    Rpm = sensor.Value ?? 0,
+                    Pwm = pwm,
+                });
+            }
+            foreach (var sub in hw.SubHardware)
+                AddFans(sub);
+        }
+
+        AddFans(_motherboard);   // fans live on the SuperIO sub-hardware
+        AddFans(_gpu);
+        return result;
+    }
+
+    // "Fan #2" → "fan_2", "GPU Fan 1" → "gpu_fan_1" — topic-safe and stable.
+    static string FanId(string name)
+    {
+        var sb = new System.Text.StringBuilder(name.Length);
+        foreach (var c in name.ToLowerInvariant())
+        {
+            if (char.IsAsciiLetterOrDigit(c)) sb.Append(c);
+            else if (sb.Length > 0 && sb[^1] != '_') sb.Append('_');
+        }
+        return sb.ToString().TrimEnd('_');
     }
 
     // One entry per active physical adapter. "Physical" heuristic: type is
@@ -433,7 +514,6 @@ sealed class SensorService : IDisposable
         int? load,
         float? temp,
         float? boardPower,
-        float? fan,
         int? vramLoad,
         float? vramUsed,
         float? vramTotal)
@@ -455,10 +535,6 @@ sealed class SensorService : IDisposable
             parts.Add("Pwr " + FormatWatts(boardPower));
         }
 
-        if (fan.HasValue)
-        {
-            parts.Add("Fan " + FormatRpm(fan));
-        }
 
         if (vramUsed.HasValue || vramTotal.HasValue)
         {
@@ -501,7 +577,6 @@ sealed class SensorService : IDisposable
         int? load,
         float? temp,
         float? boardPower,
-        float? fan,
         int? vramLoad,
         float? vramUsed,
         float? vramTotal)
@@ -514,7 +589,6 @@ sealed class SensorService : IDisposable
             Load = load,
             TempC = temp,
             BoardPowerW = boardPower,
-            FanRpm = fan,
             MemoryLoad = effectiveMemoryLoad,
             MemoryUsedMb = vramUsed,
             MemoryTotalMb = vramTotal
@@ -623,13 +697,6 @@ sealed class SensorService : IDisposable
     {
         return value.HasValue
             ? value.Value.ToString("0.###", CultureInfo.InvariantCulture) + "V"
-            : "n/a";
-    }
-
-    static string FormatRpm(float? value)
-    {
-        return value.HasValue
-            ? value.Value.ToString("0", CultureInfo.InvariantCulture) + " RPM"
             : "n/a";
     }
 

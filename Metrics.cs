@@ -47,7 +47,7 @@ static class MetricTable
         new("gpu_load",       "GPU Load",          "gpu/load",       "%",     null,          "0",     m => m.Gpu?.Load),
         new("gpu_temp",       "GPU Temperature",   "gpu/temp",       "°C",    "temperature", "0.#",   m => m.Gpu?.TempC),
         new("gpu_power",      "GPU Board Power",   "gpu/power",      "W",     "power",       "0.#",   m => m.Gpu?.BoardPowerW),
-        new("gpu_fan",        "GPU Fan",           "gpu/fan",        "RPM",   null,          "0.#",   m => m.Gpu?.FanRpm),
+        // GPU fans live in the per-channel fans subtree (fans/gpu_fan_1/...).
         new("gpu_vram_used",  "GPU VRAM Used",     "gpu/vram_used",  "MB",    "data_size",   "0.#",   m => m.Gpu?.MemoryUsedMb),
         new("gpu_vram_total", "GPU VRAM Total",    "gpu/vram_total", "MB",    "data_size",   "0.#",   m => m.Gpu?.MemoryTotalMb),
         new("ram_load",       "RAM Load",          "ram/load",       "%",     null,          "0",     m => m.Ram?.Load),
@@ -72,7 +72,20 @@ sealed class MetricsSnapshot
     public MotherboardMetrics? Motherboard { get; set; }
     public List<StorageMetrics>? Drives { get; set; }
     public List<NetworkAdapterMetrics>? Network { get; set; }
+    public List<FanMetrics>? Fans { get; set; }
     public SystemMetrics? System { get; set; }
+}
+
+// One entry per SPINNING fan (motherboard headers + GPU): headers without a
+// fan report 0 RPM and are filtered out, so is a GPU in zero-RPM idle mode.
+// Id is derived from the sensor name ("Fan #2" → "fan_2") — stable regardless
+// of which other fans are currently spinning, unlike a list index.
+sealed class FanMetrics
+{
+    public string Id { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;   // e.g. "Fan #2", "GPU Fan 1"
+    public float? Rpm { get; set; }
+    public float? Pwm { get; set; }   // control duty cycle in %, if reported
 }
 
 sealed class SystemMetrics
@@ -97,7 +110,6 @@ sealed class GpuMetrics
     public int? Load { get; set; }
     public float? TempC { get; set; }
     public float? BoardPowerW { get; set; }
-    public float? FanRpm { get; set; }
     public int? MemoryLoad { get; set; }
     public float? MemoryUsedMb { get; set; }
     public float? MemoryTotalMb { get; set; }
