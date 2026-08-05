@@ -29,9 +29,25 @@ static class HaDiscovery
         + "|" + string.Join(",", m.Network?.Select(a => $"{a.Name}:{a.UploadKbps != null}:{a.DownloadKbps != null}") ?? [])
         + "|" + string.Join(",", m.Fans?.Select(f => f.Id) ?? []);
 
-    public static Task PublishConfigAsync(
+    // Component id → full state topic of everything the given snapshot would
+    // advertise. MqttSink persists this to detect components that vanished
+    // between app runs (hardware swapped, drive gone, fan unchecked).
+    public static Dictionary<string, string> ComponentTopics(MetricsSnapshot m, string topicRoot, string host)
+    {
+        var baseTopic = $"{topicRoot}/{host}";
+        return BuildComponents(m, baseTopic).ToDictionary(
+            kv => kv.Key,
+            kv => (string)((Dictionary<string, object>)kv.Value)["state_topic"]);
+    }
+
+    // removedComponentIds: components advertised in an earlier run that no
+    // longer exist. Per the discovery spec they are removed by publishing them
+    // once with an empty config (just the platform key), followed by a config
+    // that omits them entirely.
+    public static async Task PublishConfigAsync(
         IMqttClient client, string topicRoot, string host, MetricsSnapshot metrics,
         string version, string brokerHost, int brokerPort,
+        IReadOnlyCollection<string> removedComponentIds,
         CancellationToken cancellationToken)
     {
         var baseTopic = $"{topicRoot}/{host}";
@@ -49,7 +65,9 @@ static class HaDiscovery
         if (PrimaryMac(brokerHost, brokerPort) is { } mac)
             dev["cns"] = new[] { new[] { "mac", mac } };
 
-        var payload = new Dictionary<string, object>
+        var cmps = BuildComponents(metrics, baseTopic);
+
+        Dictionary<string, object> Payload() => new()
         {
             ["dev"] = dev,
             ["o"] = new Dictionary<string, object>
@@ -60,11 +78,22 @@ static class HaDiscovery
             // Shared by all components: entities flip to "unavailable" when the
             // availability topic goes "offline" (shutdown, crash via LWT, pause).
             ["availability_topic"] = MqttSink.AvailabilityTopic(topicRoot, host),
-            ["cmps"] = BuildComponents(metrics, baseTopic),
+            ["cmps"] = cmps,
         };
 
-        return PublishRetainedAsync(client, ConfigTopic(host),
-            JsonSerializer.Serialize(payload), cancellationToken);
+        var tombstones = removedComponentIds.Where(id => !cmps.ContainsKey(id)).ToList();
+        if (tombstones.Count > 0)
+        {
+            foreach (var id in tombstones)
+                cmps[id] = new Dictionary<string, object> { ["p"] = "sensor" };
+            await PublishRetainedAsync(client, ConfigTopic(host),
+                JsonSerializer.Serialize(Payload()), cancellationToken);
+            foreach (var id in tombstones)
+                cmps.Remove(id);
+        }
+
+        await PublishRetainedAsync(client, ConfigTopic(host),
+            JsonSerializer.Serialize(Payload()), cancellationToken);
     }
 
     // MAC of the NIC that carries the broker connection, "aa:bb:cc:dd:ee:ff"

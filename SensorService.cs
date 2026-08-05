@@ -460,12 +460,16 @@ sealed class SensorService : IDisposable
 
     // Reads drive space directly from the OS — no LHM storage backend needed.
     // This avoids the DiskInfoToolkit NullReferenceException that fires on device-change events.
-    static List<StorageMetrics> CollectDriveMetrics()
+    List<StorageMetrics> CollectDriveMetrics()
     {
         var results = new List<StorageMetrics>();
         foreach (var drive in DriveInfo.GetDrives())
         {
             if (!drive.IsReady) continue;
+            // USB sticks and optical media come and go — publishing them would
+            // churn HA entities on every plug cycle. Fixed disks and virtual
+            // drives (Google Drive reports Fixed) stay.
+            if (drive.DriveType is DriveType.Removable or DriveType.CDRom) continue;
             var totalGb    = (float)(drive.TotalSize          / 1024d / 1024d / 1024d);
             var freeGb     = (float)(drive.AvailableFreeSpace / 1024d / 1024d / 1024d);
             var usedGb     = totalGb - freeGb;
@@ -478,6 +482,7 @@ sealed class SensorService : IDisposable
             {
                 Id          = driveLetter.TrimEnd(':').ToLowerInvariant(),
                 Name        = name,
+                Type        = GetDriveType(driveLetter),
                 UsedGb      = usedGb,
                 FreeGb      = freeGb,
                 TotalGb     = totalGb,
@@ -485,6 +490,43 @@ sealed class SensorService : IDisposable
             });
         }
         return results;
+    }
+
+    // "SSD" / "HDD" / "USB" per drive letter, resolved once and cached — the
+    // WMI chain (logical disk → partition → physical disk) is not free.
+    // Virtual drives (Google Drive) have no partition association → null.
+    readonly Dictionary<string, string?> _driveTypeCache = new();
+
+    string? GetDriveType(string driveLetter)
+    {
+        if (_driveTypeCache.TryGetValue(driveLetter, out var cached)) return cached;
+        string? type = null;
+        try
+        {
+            using var partitions = new System.Management.ManagementObjectSearcher(
+                $"ASSOCIATORS OF {{Win32_LogicalDisk.DeviceID='{driveLetter}'}} WHERE AssocClass=Win32_LogicalDiskToPartition");
+            foreach (var partition in partitions.Get())
+            {
+                using var disks = new System.Management.ManagementObjectSearcher(
+                    $"ASSOCIATORS OF {{Win32_DiskPartition.DeviceID='{partition["DeviceID"]}'}} WHERE AssocClass=Win32_DiskDriveToDiskPartition");
+                foreach (var disk in disks.Get())
+                {
+                    if (disk["InterfaceType"] as string == "USB") { type = "USB"; break; }
+                    // Spinning vs solid state lives in the storage namespace:
+                    // MSFT_PhysicalDisk.MediaType 3 = HDD, 4 = SSD.
+                    using var physical = new System.Management.ManagementObjectSearcher(
+                        @"root\Microsoft\Windows\Storage",
+                        $"SELECT MediaType FROM MSFT_PhysicalDisk WHERE DeviceId='{disk["Index"]}'");
+                    foreach (var p in physical.Get())
+                        type = Convert.ToInt32(p["MediaType"] ?? 0) switch { 3 => "HDD", 4 => "SSD", _ => null };
+                    break;
+                }
+                break;
+            }
+        }
+        catch { /* WMI unavailable — type stays unknown */ }
+        _driveTypeCache[driveLetter] = type;
+        return type;
     }
 
     static string? BuildRamSummary(int? load, float? used, float? total)

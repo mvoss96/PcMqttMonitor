@@ -220,9 +220,9 @@ static class DemoMode
         Motherboard = new MotherboardMetrics { Name = "ASUS TUF GAMING B650-PLUS" },
         Drives =
         [
-            new StorageMetrics { Id = "c", Name = "System (C:)", UsedGb = 781.4f, FreeGb = 170.0f, TotalGb = 951.4f, UsedPercent = 82 },
-            new StorageMetrics { Id = "d", Name = "Games (D:)",  UsedGb = 934.6f, FreeGb = 1046.2f, TotalGb = 1980.8f, UsedPercent = 47 },
-            new StorageMetrics { Id = "g", Name = "Data (G:)",   UsedGb = 240.5f, FreeGb = 161.5f, TotalGb = 402.0f, UsedPercent = 60 },
+            new StorageMetrics { Id = "c", Name = "System (C:)", Type = "SSD", UsedGb = 781.4f, FreeGb = 170.0f, TotalGb = 951.4f, UsedPercent = 82 },
+            new StorageMetrics { Id = "d", Name = "Games (D:)",  Type = "SSD", UsedGb = 934.6f, FreeGb = 1046.2f, TotalGb = 1980.8f, UsedPercent = 47 },
+            new StorageMetrics { Id = "g", Name = "Data (G:)",   Type = "HDD", UsedGb = 240.5f, FreeGb = 161.5f, TotalGb = 402.0f, UsedPercent = 60 },
         ],
         Network =
         [

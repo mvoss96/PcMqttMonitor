@@ -529,8 +529,10 @@ sealed class DashboardView : Control
                 new Rectangle(x + letterW, y, w - letterW, lineH), Theme.Fg2,
                 TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
             // The compact card drops volume names and GB — hovering the row
-            // reveals them ("System (C:) · 245.1 / 389.4 GB · 61 %").
+            // reveals them ("System (C:) · SSD · 245.1 / 389.4 GB · 61 %").
             var details = new List<string> { d.Name.TrimEnd('\\') };
+            if (d.Type != null)
+                details.Add(d.Type);
             if (d.UsedGb != null && d.TotalGb != null)
                 details.Add($"{FmtNum(d.UsedGb)} / {FmtNum(d.TotalGb)} GB");
             if (d.UsedPercent != null)

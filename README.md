@@ -97,6 +97,7 @@ pc/myhost/gpu/temp            38
 pc/myhost/gpu/vram_used       1234
 pc/myhost/ram/load            42.1
 pc/myhost/drives/c/name       System (C:)        (one subtree per drive, keyed by letter)
+pc/myhost/drives/c/type       SSD                (SSD / HDD / USB, omitted if unknown)
 pc/myhost/drives/c/percent    61.2
 pc/myhost/fans/fan_2/rpm      861                (one subtree per enabled fan channel)
 pc/myhost/fans/fan_2/pwm      46.3

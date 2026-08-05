@@ -139,6 +139,9 @@ sealed class StorageMetrics
     // another drive's identity.
     public string Id { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
+    // "SSD", "HDD" or "USB" — null when undeterminable (e.g. virtual drives
+    // like Google Drive). JSON + drives/<id>/type topic, not advertised to HA.
+    public string? Type { get; set; }
     public float? UsedGb { get; set; }
     public float? FreeGb { get; set; }
     public float? TotalGb { get; set; }
