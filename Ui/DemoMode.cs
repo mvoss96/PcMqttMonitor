@@ -76,7 +76,7 @@ static class DemoMode
             {
                 window.DemoSelectPage(p);
                 await Task.Delay(500);   // paint + native combos + About check settle
-                Capture(window.Handle, Path.Combine(dir, pages[p] + ".png"));
+                Capture(window, Path.Combine(dir, pages[p] + ".png"));
             }
             Application.Exit();
         };
@@ -90,29 +90,16 @@ static class DemoMode
     [DllImport("user32.dll")]
     static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int w, int h, uint flags);
 
-    [DllImport("user32.dll")]
-    static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
-    [StructLayout(LayoutKind.Sequential)]
-    struct RECT { public int Left, Top, Right, Bottom; }
-
-    // PW_RENDERFULLCONTENT: DWM-composed content, works even if the window is
-    // partially covered or larger than the screen (a --scale 2 window exceeds
-    // the CI runner's 1080p display; screen capture would clip it).
-    [DllImport("user32.dll")]
-    static extern bool PrintWindow(IntPtr hwnd, IntPtr hdc, uint flags);
-
-    // Borderless window — GetWindowRect is exactly the visible area, no
-    // invisible Win11 frame insets to compensate.
-    static void Capture(IntPtr hwnd, string path)
+    // DrawToBitmap (WM_PRINT), NOT PrintWindow/CopyFromScreen: both capture the
+    // DWM surface, which is only screen-sized — a --scale window larger than
+    // the display (the CI runner's is 1024x768) came back with the overflow
+    // area black. WM_PRINT renders straight into our bitmap, independent of
+    // screen size and composition. Borderless window, so the form IS the
+    // visible area — no frame insets to compensate.
+    static void Capture(Form window, string path)
     {
-        GetWindowRect(hwnd, out var r);
-        using var bmp = new Bitmap(r.Right - r.Left, r.Bottom - r.Top, PixelFormat.Format32bppArgb);
-        using (var g = Graphics.FromImage(bmp))
-        {
-            var hdc = g.GetHdc();
-            PrintWindow(hwnd, hdc, 2 /* PW_RENDERFULLCONTENT */);
-            g.ReleaseHdc(hdc);
-        }
+        using var bmp = new Bitmap(window.Width, window.Height, PixelFormat.Format32bppArgb);
+        window.DrawToBitmap(bmp, new Rectangle(Point.Empty, window.Size));
         bmp.Save(path, ImageFormat.Png);
     }
 
