@@ -19,10 +19,14 @@ static class HaDiscovery
     // (sensor toggled, drive plugged/removed), the config must be republished.
     // Drive NAMES are included: swapping a drive keeps the component ids
     // (index-based) but changes the entity names.
+    // Network entries carry whether their rates are present: the first cycle
+    // after startup has no rates yet (they need a previous byte count), so the
+    // first discovery goes out without the rate entities — the fingerprint must
+    // change once they appear, or they would never be advertised.
     public static string Fingerprint(MetricsSnapshot m) =>
         string.Join(",", MetricTable.All.Where(d => d.Get(m) != null).Select(d => d.Id))
         + "|" + string.Join(",", m.Drives?.Select(d => d.Name) ?? [])
-        + "|" + string.Join(",", m.Network?.Select(a => a.Name) ?? [])
+        + "|" + string.Join(",", m.Network?.Select(a => $"{a.Name}:{a.UploadKbps != null}:{a.DownloadKbps != null}") ?? [])
         + "|" + string.Join(",", m.Fans?.Select(f => f.Id) ?? []);
 
     public static Task PublishConfigAsync(
