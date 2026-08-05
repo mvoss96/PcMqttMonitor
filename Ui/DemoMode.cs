@@ -41,12 +41,12 @@ static class DemoMode
         // the Sensors page shows its fan checkboxes in the screenshots.
         SensorService.SeedDetectedFans(
         [
-            new SensorService.DetectedFan("fan_1", "Fan #1", 1042),
-            new SensorService.DetectedFan("fan_2", "Fan #2", 688),
-            new SensorService.DetectedFan("fan_3", "Fan #3", 0),
-            new SensorService.DetectedFan("fan_4", "Fan #4", 0),
-            new SensorService.DetectedFan("gpu_fan_1", "GPU Fan 1", 0),
-            new SensorService.DetectedFan("gpu_fan_2", "GPU Fan 2", 0),
+            new SensorService.DetectedFan("fan_1", "Fan #1", 1042, false),
+            new SensorService.DetectedFan("fan_2", "Fan #2", 688, false),
+            new SensorService.DetectedFan("fan_3", "Fan #3", 0, false),
+            new SensorService.DetectedFan("fan_4", "Fan #4", 0, false),
+            new SensorService.DetectedFan("gpu_fan_1", "GPU Fan 1", 0, true),
+            new SensorService.DetectedFan("gpu_fan_2", "GPU Fan 2", 0, true),
         ]);
 
         var config = DemoConfig();

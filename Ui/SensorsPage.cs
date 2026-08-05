@@ -9,6 +9,7 @@ using System.Windows.Forms;
 sealed class SensorsPage : Panel
 {
     readonly List<(FlatCheck Box, Action<SensorConfig, bool> Setter)> _boxes = new();
+    readonly Dictionary<string, FlatCheck> _fanBoxes = new();
     readonly AppConfig _config;
     readonly Action _markDirty;
     CardPanel _card = null!;
@@ -87,17 +88,19 @@ sealed class SensorsPage : Panel
         Add(L.T.SensorUpload,   s.NetworkUpload,   (c, v) => c.NetworkUpload = v);
         Add(L.T.SensorDownload, s.NetworkDownload, (c, v) => c.NetworkDownload = v);
 
-        // One checkbox per detected channel: "Fan #2 · 861 RPM". Enabled fans
-        // are published even at 0 RPM (GPU zero-RPM mode stays visible).
+        // One checkbox per detected channel: "Fan #2 · 861 RPM" (RPM kept live
+        // via RefreshFanRpm). Enabled fans are published even at 0 RPM (GPU
+        // zero-RPM mode stays visible).
         var fans = SensorService.DetectedFans;
         _fansListed = fans.Count > 0;
+        _fanBoxes.Clear();
         if (_fansListed)
         {
             Group(L.T.CardFans);
             foreach (var fan in fans)
             {
                 var id = fan.Id;
-                Add($"{fan.Name} · {fan.Rpm:0} RPM",
+                _fanBoxes[id] = Add(FanLabel(fan),
                     _config.Sensors.FanChannels.GetValueOrDefault(id),
                     (c, v) => c.FanChannels[id] = v);
             }
@@ -141,7 +144,7 @@ sealed class SensorsPage : Panel
         _y += Theme.S(28);
     }
 
-    void Add(string label, bool value, Action<SensorConfig, bool> setter)
+    FlatCheck Add(string label, bool value, Action<SensorConfig, bool> setter)
     {
         var box = new FlatCheck
         {
@@ -154,6 +157,19 @@ sealed class SensorsPage : Panel
         _boxes.Add((box, setter));
         if (_col1) _y += RowStep;
         _col1 = !_col1;
+        return box;
+    }
+
+    static string FanLabel(SensorService.DetectedFan fan) => $"{fan.Name} · {fan.Rpm:0} RPM";
+
+    // Called from MainWindow on every snapshot while this page is visible —
+    // keeps the RPM in the checkbox labels live. Setting an unchanged Text is
+    // a no-op, so idle fans cost nothing.
+    public void RefreshFanRpm()
+    {
+        foreach (var fan in SensorService.DetectedFans)
+            if (_fanBoxes.TryGetValue(fan.Id, out var box))
+                box.Text = FanLabel(fan);
     }
 
     public void Apply()

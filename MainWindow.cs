@@ -32,9 +32,11 @@ sealed class MainWindow : Form
     // Update notification: title-bar text suffix + accent badge on the About
     // nav icon — no extra chrome inside the window (see SetUpdateAvailable).
 
-    // True while the window is shown AND the dashboard page is active. Read from
-    // the publish thread, so it must be a plain volatile flag, not control state.
+    // True while the window is shown AND the respective page is active. Read
+    // from the publish thread, so they must be plain volatile flags, not
+    // control state.
     volatile bool _dashboardActive;
+    volatile bool _sensorsActive;
     MetricsSnapshot? _lastMetrics;
 
     public MainWindow(string configPath, AppConfig config)
@@ -251,12 +253,19 @@ sealed class MainWindow : Form
     public void SetLatestMetrics(MetricsSnapshot m)
     {
         _lastMetrics = m;
-        if (!IsHandleCreated || !_dashboardActive) return;
-        BeginInvoke(() =>
-        {
-            try { _dashboard.SetMetrics(m); }
-            catch (Exception ex) { AppLog.Write($"[UI] dashboard refresh failed: {ex}"); }
-        });
+        if (!IsHandleCreated) return;
+        if (_dashboardActive)
+            BeginInvoke(() =>
+            {
+                try { _dashboard.SetMetrics(m); }
+                catch (Exception ex) { AppLog.Write($"[UI] dashboard refresh failed: {ex}"); }
+            });
+        else if (_sensorsActive)
+            BeginInvoke(() =>
+            {
+                try { _sensors.RefreshFanRpm(); }
+                catch (Exception ex) { AppLog.Write($"[UI] fan rpm refresh failed: {ex}"); }
+            });
     }
 
     // Called from TrayApp (any thread) — feeds the dashboard's startup
@@ -278,7 +287,11 @@ sealed class MainWindow : Form
     // Called by TrayApp's central pause switch. UI thread only.
     public void SetPauseState(bool paused) => _pauseBanner.Visible = paused;
 
-    void UpdateDashboardActive() => _dashboardActive = Visible && _pages[0].Visible;
+    void UpdateDashboardActive()
+    {
+        _dashboardActive = Visible && _pages[0].Visible;
+        _sensorsActive   = Visible && _pages[2].Visible;
+    }
 
     Panel MakePauseBanner()
     {

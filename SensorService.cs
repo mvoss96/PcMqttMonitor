@@ -58,10 +58,11 @@ sealed class SensorService : IDisposable
     }
 
     // All fan channels the hardware exposes (spinning or not) — the Sensors
-    // page lists them as checkboxes. Read once at Open; static so the UI can
-    // reach it without holding a SensorService reference (there is only ever
-    // one instance; demo mode seeds it directly).
-    public sealed record DetectedFan(string Id, string Name, float Rpm);
+    // page lists them as checkboxes. Detected once at Open, RPM values are
+    // refreshed on every snapshot so the page shows live readings. Static so
+    // the UI can reach it without holding a SensorService reference (there is
+    // only ever one instance; demo mode seeds it directly).
+    public sealed record DetectedFan(string Id, string Name, float Rpm, bool IsGpu);
     public static IReadOnlyList<DetectedFan> DetectedFans { get; private set; } = [];
     public static void SeedDetectedFans(IReadOnlyList<DetectedFan> fans) => DetectedFans = fans;
 
@@ -69,24 +70,25 @@ sealed class SensorService : IDisposable
     {
         var found = new List<DetectedFan>();
 
-        void Scan(IHardware? hw)
+        void Scan(IHardware? hw, bool gpu)
         {
             if (hw == null) return;
             hw.Update();
             foreach (var s in hw.Sensors.Where(s => s.SensorType == SensorType.Fan))
-                found.Add(new DetectedFan(FanId(s.Name), s.Name, s.Value ?? 0));
+                found.Add(new DetectedFan(FanId(s.Name), s.Name, s.Value ?? 0, gpu));
             foreach (var sub in hw.SubHardware)
-                Scan(sub);
+                Scan(sub, gpu);
         }
 
-        Scan(_motherboard);   // fans live on the SuperIO sub-hardware
-        Scan(_gpu);
+        Scan(_motherboard, gpu: false);   // fans live on the SuperIO sub-hardware
+        Scan(_gpu, gpu: true);
         DetectedFans = found;
 
-        // Default for channels the config has never seen: enabled when the fan
-        // is spinning right now. Persisted with the next UI save.
+        // Default for channels the config has never seen (persisted with the
+        // next UI save): enabled when the fan is spinning — and always for GPU
+        // fans, whose zero-RPM idle would otherwise hide them at boot.
         foreach (var fan in found)
-            _config.FanChannels.TryAdd(fan.Id, fan.Rpm > 0);
+            _config.FanChannels.TryAdd(fan.Id, fan.Rpm > 0 || fan.IsGpu);
 
         Log($"Fan channels: {string.Join(", ", found.Select(f => $"{f.Name}={f.Rpm:0}rpm"))}");
     }
@@ -248,17 +250,20 @@ sealed class SensorService : IDisposable
     // One entry per fan channel the user has enabled on the Sensors page —
     // including ones at 0 RPM (a GPU in zero-RPM idle stays visible instead of
     // its HA entities appearing and disappearing). The matching Control sensor
-    // (same name) contributes the PWM duty cycle.
+    // (same name) contributes the PWM duty cycle. Also refreshes DetectedFans
+    // with the current readings so the Sensors page checkboxes stay live.
     List<FanMetrics> CollectFanMetrics()
     {
         var result = new List<FanMetrics>();
+        var detected = new List<DetectedFan>();
 
-        void AddFans(IHardware? hw)
+        void AddFans(IHardware? hw, bool gpu)
         {
             if (hw == null) return;
             foreach (var sensor in hw.Sensors.Where(s => s.SensorType == SensorType.Fan))
             {
                 var id = FanId(sensor.Name);
+                detected.Add(new DetectedFan(id, sensor.Name, sensor.Value ?? 0, gpu));
                 if (!_config.FanChannels.GetValueOrDefault(id)) continue;
                 var pwm = hw.Sensors.FirstOrDefault(s =>
                     s.SensorType == SensorType.Control && s.Name == sensor.Name)?.Value;
@@ -271,11 +276,12 @@ sealed class SensorService : IDisposable
                 });
             }
             foreach (var sub in hw.SubHardware)
-                AddFans(sub);
+                AddFans(sub, gpu);
         }
 
-        AddFans(_motherboard);   // fans live on the SuperIO sub-hardware
-        AddFans(_gpu);
+        AddFans(_motherboard, gpu: false);   // fans live on the SuperIO sub-hardware
+        AddFans(_gpu, gpu: true);
+        DetectedFans = detected;
         return result;
     }
 
