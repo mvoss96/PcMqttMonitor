@@ -108,6 +108,11 @@ sealed class RamMetrics
     public int? Load { get; set; }
     public float? UsedGb { get; set; }
     public float? TotalGb { get; set; }
+    // Static module info from WMI, read once at startup: "DDR5" and the
+    // configured transfer rate (the "6000" in DDR5-6000). JSON-only, like the
+    // CPU/GPU names — no scalar subtopic.
+    public string? Type { get; set; }
+    public int? SpeedMtps { get; set; }
 }
 
 sealed class MotherboardMetrics

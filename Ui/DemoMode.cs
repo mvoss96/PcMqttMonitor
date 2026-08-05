@@ -59,7 +59,7 @@ static class DemoMode
         // that: MaximumSize makes the form report the large size as its max
         // track size, and raw SetWindowPos (in Shown, below) bypasses the
         // managed clamp.
-        var size = new Size(Theme.S(500), Theme.S(700));
+        var size = new Size(Theme.S(560), Theme.S(700));
         window.MinimumSize = size;
         window.MaximumSize = size;
 
@@ -208,6 +208,8 @@ static class DemoMode
             Load = RamLoad(t),
             UsedGb = RamLoad(t) * 31.9f / 100f,
             TotalGb = 31.9f,
+            Type = "DDR5",
+            SpeedMtps = 6000,
         },
         Motherboard = new MotherboardMetrics { Name = "ASUS TUF GAMING B650-PLUS" },
         Drives =

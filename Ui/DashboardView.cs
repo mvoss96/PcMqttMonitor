@@ -245,9 +245,36 @@ sealed class DashboardView : Control
         g.DrawPath(border, path);
     }
 
-    static void DrawHead(Graphics g, Rectangle card, string name)
-        => TextRenderer.DrawText(g, name, Theme.SemiBold,
+    // Card title, optionally with muted hardware info right-aligned on the
+    // same line (CPU/GPU model, RAM type) — ellipsized with a hover tooltip
+    // when the card is too narrow for the full string.
+    void DrawHead(Graphics g, Rectangle card, string name, string? info = null, string? tip = null)
+    {
+        TextRenderer.DrawText(g, name, Theme.SemiBold,
             new Point(card.X + CardPadX, card.Y + CardPadY), Theme.Fg);
+        if (string.IsNullOrEmpty(info)) return;
+
+        int titleW = TextRenderer.MeasureText(name, Theme.SemiBold).Width;
+        int x = card.X + CardPadX + titleW + Theme.S(6);
+        int w = card.Right - CardPadX - x;
+        if (w <= 0) return;
+        int y = card.Y + CardPadY + Theme.S(2);   // small font sits on the title's baseline
+        TextRenderer.DrawText(g, info, Theme.Small, new Rectangle(x, y, w, DetailH), Theme.Fg3,
+            TextFormatFlags.Right | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
+        // Hover shows the untrimmed string when the display one is shortened
+        // (vendor prefix dropped) or doesn't fit.
+        if (tip != null || TextRenderer.MeasureText(info, Theme.Small).Width > w)
+            _tipZones.Add((new Rectangle(x, y, w, DetailH), tip ?? info));
+    }
+
+    // The card is too narrow for full marketing names — drop the redundant
+    // vendor prefix for display ("NVIDIA GeForce RTX 5070" → "RTX 5070").
+    // MQTT and the hover tooltip keep the full name.
+    static string ShortGpuName(string name) =>
+        name.StartsWith("NVIDIA GeForce ", StringComparison.OrdinalIgnoreCase) ? name["NVIDIA GeForce ".Length..]
+      : name.StartsWith("AMD Radeon ",     StringComparison.OrdinalIgnoreCase) ? name["AMD ".Length..]
+      : name.StartsWith("Intel Arc ",      StringComparison.OrdinalIgnoreCase) ? name["Intel ".Length..]
+      : name;
 
     void DrawBar(Graphics g, int x, int y, int w, int pct)
     {
@@ -369,7 +396,7 @@ sealed class DashboardView : Control
     {
         var c = _m!.Cpu!;
         DrawCardBg(g, card);
-        DrawHead(g, card, L.T.CardCpu);
+        DrawHead(g, card, L.T.CardCpu, c.Name);
         int y = card.Y + CardPadY + HeadH;
         DrawBigPercent(g, card, ref y, c.Load);
         // Whole watts — the decimal adds width, not information.
@@ -385,7 +412,8 @@ sealed class DashboardView : Control
     {
         var gpu = _m!.Gpu!;
         DrawCardBg(g, card);
-        DrawHead(g, card, L.T.CardGpu);
+        DrawHead(g, card, L.T.CardGpu, ShortGpuName(gpu.Name),
+            tip: ShortGpuName(gpu.Name) != gpu.Name ? gpu.Name : null);
         int y = card.Y + CardPadY + HeadH;
         DrawBigPercent(g, card, ref y, gpu.Load);
         // Per the approved compact design the fan speed is dropped here —
@@ -407,7 +435,10 @@ sealed class DashboardView : Control
     {
         var ram = _m!.Ram!;
         DrawCardBg(g, card);
-        DrawHead(g, card, L.T.CardRam);
+        // "DDR5-6000", or whichever half is known.
+        string? ramInfo = ram.Type != null && ram.SpeedMtps != null ? $"{ram.Type}-{ram.SpeedMtps}"
+            : ram.Type ?? (ram.SpeedMtps != null ? $"{ram.SpeedMtps} MT/s" : null);
+        DrawHead(g, card, L.T.CardRam, ramInfo);
         int y = card.Y + CardPadY + HeadH;
         DrawBigPercent(g, card, ref y, ram.Load);
         string? usage = ram.UsedGb != null || ram.TotalGb != null

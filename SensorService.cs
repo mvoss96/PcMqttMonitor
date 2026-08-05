@@ -17,6 +17,10 @@ sealed class SensorService : IDisposable
     IHardware? _memory;
     IHardware? _motherboard;
 
+    // Static RAM module info (WMI), read once in Open.
+    string? _ramType;
+    int? _ramSpeedMtps;
+
     // Per-adapter byte counters from the previous cycle, keyed by adapter id.
     readonly Dictionary<string, (long Sent, long Received, DateTime Time)> _nicLast = new();
 
@@ -49,6 +53,46 @@ sealed class SensorService : IDisposable
             .FirstOrDefault();
         _memory = _computer.Hardware.FirstOrDefault(h => h.HardwareType == HardwareType.Memory);
         _motherboard = _computer.Hardware.FirstOrDefault(h => h.HardwareType == HardwareType.Motherboard);
+        ReadRamModuleInfo();
+    }
+
+    // DDR generation and configured transfer rate ("DDR5-6000") from WMI —
+    // LHM has no module info. Static hardware data, so reading it once at
+    // startup is enough; failures just leave the fields null.
+    void ReadRamModuleInfo()
+    {
+        try
+        {
+            using var searcher = new System.Management.ManagementObjectSearcher(
+                "SELECT SMBIOSMemoryType, ConfiguredClockSpeed, Speed FROM Win32_PhysicalMemory");
+            foreach (var module in searcher.Get())
+            {
+                // SMBIOS memory type (SMBIOS spec 7.18.2) — only the DDR
+                // generations matter here.
+                _ramType ??= Convert.ToInt32(module["SMBIOSMemoryType"] ?? 0) switch
+                {
+                    20 => "DDR",
+                    21 => "DDR2",
+                    24 => "DDR3",
+                    26 => "DDR4",
+                    30 => "LPDDR4",
+                    34 => "DDR5",
+                    35 => "LPDDR5",
+                    _  => null,
+                };
+                // ConfiguredClockSpeed is the actual running rate (XMP/EXPO),
+                // Speed the rated one — both in MT/s despite the WMI naming.
+                var speed = Convert.ToInt32(module["ConfiguredClockSpeed"] ?? 0);
+                if (speed == 0) speed = Convert.ToInt32(module["Speed"] ?? 0);
+                if (speed > 0 && _ramSpeedMtps == null) _ramSpeedMtps = speed;
+                if (_ramType != null && _ramSpeedMtps != null) break;
+            }
+            Log($"RAM modules: {_ramType ?? "?"}-{_ramSpeedMtps?.ToString() ?? "?"}");
+        }
+        catch (Exception ex)
+        {
+            Log($"RAM module info unavailable: {ex.Message}");
+        }
     }
 
     public SensorSnapshot ReadSnapshot()
@@ -477,7 +521,7 @@ sealed class SensorService : IDisposable
         };
     }
 
-    static RamMetrics? BuildRamMetrics(int? load, float? used, float? total)
+    RamMetrics? BuildRamMetrics(int? load, float? used, float? total)
     {
         if (!load.HasValue && !used.HasValue && !total.HasValue)
         {
@@ -488,7 +532,9 @@ sealed class SensorService : IDisposable
         {
             Load = load,
             UsedGb = used,
-            TotalGb = total
+            TotalGb = total,
+            Type = _ramType,
+            SpeedMtps = _ramSpeedMtps
         };
     }
 
