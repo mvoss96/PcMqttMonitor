@@ -66,6 +66,10 @@ sealed class SensorService : IDisposable
     public static IReadOnlyList<DetectedFan> DetectedFans { get; private set; } = [];
     public static void SeedDetectedFans(IReadOnlyList<DetectedFan> fans) => DetectedFans = fans;
 
+    // True when Open found fan channels the config had never seen (defaults
+    // were just assigned) — the caller persists the config once in response.
+    public bool NewFanChannelsDetected { get; private set; }
+
     void DetectFanChannels()
     {
         var found = new List<DetectedFan>();
@@ -84,11 +88,15 @@ sealed class SensorService : IDisposable
         Scan(_gpu, gpu: true);
         DetectedFans = found;
 
-        // Default for channels the config has never seen (persisted with the
-        // next UI save): enabled when the fan is spinning — and always for GPU
-        // fans, whose zero-RPM idle would otherwise hide them at boot.
+        // Default for channels the config has never seen: enabled when the fan
+        // is spinning — and always for GPU fans, whose zero-RPM idle would
+        // otherwise hide them at boot. NewFanChannelsDetected makes the caller
+        // persist the config right away, so the defaults are decided exactly
+        // once (first start) instead of re-rolled from whatever happens to
+        // spin at every boot.
         foreach (var fan in found)
-            _config.FanChannels.TryAdd(fan.Id, fan.Rpm > 0 || fan.IsGpu);
+            if (_config.FanChannels.TryAdd(fan.Id, fan.Rpm > 0 || fan.IsGpu))
+                NewFanChannelsDetected = true;
 
         Log($"Fan channels: {string.Join(", ", found.Select(f => $"{f.Name}={f.Rpm:0}rpm"))}");
     }

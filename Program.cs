@@ -112,7 +112,7 @@ class Program
         // Run the sensor + publish loop on a background thread so the UI stays responsive.
         var publishTask = Task.Run(async () =>
         {
-            try { await RunPublishLoopAsync(config, tray, consoleAttached, shutdown.Token); }
+            try { await RunPublishLoopAsync(config, configPath, tray, consoleAttached, shutdown.Token); }
             catch (Exception ex) { Log($"[fatal] Background task crashed: {ex}"); }
         });
 
@@ -160,7 +160,7 @@ class Program
         return sinks;
     }
 
-    static async Task RunPublishLoopAsync(AppConfig config, TrayApp tray, bool consoleAttached, CancellationToken cancellationToken)
+    static async Task RunPublishLoopAsync(AppConfig config, string configPath, TrayApp tray, bool consoleAttached, CancellationToken cancellationToken)
     {
         Log("Background task started.");
 
@@ -183,6 +183,15 @@ class Program
             buildSummary: consoleAttached);
         sensors.Open();
         Log("Sensors ready.");
+
+        // Newly detected fan channels got their enabled-default assigned in
+        // Open — persist it right away so the choice is made exactly once
+        // (first start), not re-rolled from whatever spins at every boot.
+        if (sensors.NewFanChannelsDetected)
+        {
+            try { ConfigLoader.Save(configPath, config); Log("Fan channel defaults saved to config."); }
+            catch (Exception ex) { Log($"[error] saving fan channel defaults: {ex.Message}"); }
+        }
 
         void AnnounceSinks(List<IMetricsSink> active)
         {
