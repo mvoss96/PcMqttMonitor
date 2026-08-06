@@ -194,17 +194,18 @@ static class HaDiscovery
             }
         }
 
-        // Network: rate entities per adapter. IP/MAC are published as topics but
-        // not advertised — string values don't fit the measurement state_class.
+        // Network: rate entities per adapter, keyed by the stable sanitized
+        // adapter name — mirrors MqttSink's net subtree. IP/MAC are published
+        // as topics but not advertised — string values don't fit the
+        // measurement state_class.
         if (m.Network != null)
         {
-            for (int i = 0; i < m.Network.Count; i++)
+            foreach (var a in m.Network)
             {
-                var a = m.Network[i];
-                var p = $"net/{i}";
+                var p = $"net/{a.Id}";
                 // Values are bytes/1024 per second — that is KiB/s in HA's data_rate units.
-                if (a.UploadKbps   != null) Sensor($"net_{i}_up",   $"{a.Name} Upload",   $"{p}/up",   "KiB/s", "data_rate");
-                if (a.DownloadKbps != null) Sensor($"net_{i}_down", $"{a.Name} Download", $"{p}/down", "KiB/s", "data_rate");
+                if (a.UploadKbps   != null) Sensor($"net_{a.Id}_up",   $"{a.Name} Upload",   $"{p}/up",   "KiB/s", "data_rate");
+                if (a.DownloadKbps != null) Sensor($"net_{a.Id}_down", $"{a.Name} Download", $"{p}/down", "KiB/s", "data_rate");
             }
         }
 

@@ -15,7 +15,7 @@ sealed class SerialSink : IMetricsSink
 
     public SerialSink(SerialConfig config, Action<string> log)
     {
-        _config = config;
+        _config = config.Clone();
         _log = log;
     }
 

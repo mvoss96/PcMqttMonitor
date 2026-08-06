@@ -152,6 +152,10 @@ sealed class StorageMetrics
 // gateway — virtual adapters like VMware/WSL/Bluetooth are filtered out).
 sealed class NetworkAdapterMetrics
 {
+    // Sanitized connection name as stable id ("Ethernet 2" → "ethernet_2") —
+    // MQTT topics and HA unique_ids key on this instead of the list index, so
+    // an adapter going down never shifts another adapter's identity.
+    public string Id { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;   // e.g. "Ethernet", "WLAN"
     public float? UploadKbps { get; set; }
     public float? DownloadKbps { get; set; }

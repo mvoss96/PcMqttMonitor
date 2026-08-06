@@ -44,13 +44,13 @@ sealed class MqttSink : IMetricsSink
     public MqttSink(MqttConfig config, Action<string> log,
         Action<string> setStatus, Action<bool, string> setConnectionStatus)
     {
-        _config = config;
+        _config = config.Clone();   // see MqttConfig: dispose must use the old settings
         _log = log;
         _setStatus = setStatus;
         _setConnectionStatus = setConnectionStatus;
 
         _client = _factory.CreateMqttClient();
-        _options = BuildOptions(_factory, config);
+        _options = BuildOptions(_factory, _config);
     }
 
     static MqttClientOptions BuildOptions(MqttClientFactory factory, MqttConfig config)
@@ -189,7 +189,7 @@ sealed class MqttSink : IMetricsSink
     {
         try
         {
-            File.WriteAllText(AdvertisedCacheFile,
+            ConfigLoader.WriteAtomic(AdvertisedCacheFile,
                 JsonSerializer.Serialize(current, new JsonSerializerOptions { WriteIndented = true }));
         }
         catch (Exception ex) { _log($"[error] discovery cache save: {ex.Message}"); }
@@ -266,13 +266,14 @@ sealed class MqttSink : IMetricsSink
         }
 
         // Network: one subtree per active physical adapter — same dynamic-count
-        // reasoning as drives. IP/MAC go out retained on purpose (Marcus' call).
+        // reasoning as drives. Keyed by the sanitized adapter name, not index:
+        // an adapter going down must never shift another adapter's topics.
+        // IP/MAC go out retained on purpose (Marcus' call).
         if (m.Network != null)
         {
-            for (int i = 0; i < m.Network.Count; i++)
+            foreach (var a in m.Network)
             {
-                var a = m.Network[i];
-                var prefix = $"{baseTopic}/net/{i}";
+                var prefix = $"{baseTopic}/net/{a.Id}";
                 if (!string.IsNullOrEmpty(a.Name)) messages.Add(($"{prefix}/name", a.Name));
                 AddFloat(messages, $"{prefix}/up",   a.UploadKbps);
                 AddFloat(messages, $"{prefix}/down", a.DownloadKbps);

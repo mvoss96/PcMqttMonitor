@@ -79,7 +79,7 @@ sealed class SensorService : IDisposable
             if (hw == null) return;
             hw.Update();
             foreach (var s in hw.Sensors.Where(s => s.SensorType == SensorType.Fan))
-                found.Add(new DetectedFan(FanId(s.Name), s.Name, s.Value ?? 0, gpu));
+                found.Add(new DetectedFan(TopicId(s.Name), s.Name, s.Value ?? 0, gpu));
             foreach (var sub in hw.SubHardware)
                 Scan(sub, gpu);
         }
@@ -270,7 +270,7 @@ sealed class SensorService : IDisposable
             if (hw == null) return;
             foreach (var sensor in hw.Sensors.Where(s => s.SensorType == SensorType.Fan))
             {
-                var id = FanId(sensor.Name);
+                var id = TopicId(sensor.Name);
                 detected.Add(new DetectedFan(id, sensor.Name, sensor.Value ?? 0, gpu));
                 if (!_config.FanChannels.GetValueOrDefault(id)) continue;
                 var pwm = hw.Sensors.FirstOrDefault(s =>
@@ -293,8 +293,8 @@ sealed class SensorService : IDisposable
         return result;
     }
 
-    // "Fan #2" → "fan_2", "GPU Fan 1" → "gpu_fan_1" — topic-safe and stable.
-    static string FanId(string name)
+    // "Fan #2" → "fan_2", "Ethernet 2" → "ethernet_2" — topic-safe and stable.
+    static string TopicId(string name)
     {
         var sb = new System.Text.StringBuilder(name.Length);
         foreach (var c in name.ToLowerInvariant())
@@ -324,6 +324,7 @@ sealed class SensorService : IDisposable
 
             var adapter = new NetworkAdapterMetrics
             {
+                Id = TopicId(ni.Name),
                 Name = ni.Name,
                 IpAddress = props.UnicastAddresses
                     .FirstOrDefault(u => u.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)

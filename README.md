@@ -101,11 +101,11 @@ pc/myhost/drives/c/type       SSD                (SSD / HDD / USB, omitted if un
 pc/myhost/drives/c/percent    61.2
 pc/myhost/fans/fan_2/rpm      861                (one subtree per enabled fan channel)
 pc/myhost/fans/fan_2/pwm      46.3
-pc/myhost/net/0/name          Ethernet           (one subtree per active physical adapter)
-pc/myhost/net/0/up            12.3               (KiB/s)
-pc/myhost/net/0/down          345.6
-pc/myhost/net/0/ip            192.168.1.23
-pc/myhost/net/0/mac           a4:bb:6d:3f:12:9c
+pc/myhost/net/ethernet/name   Ethernet           (one subtree per active physical adapter,
+pc/myhost/net/ethernet/up     12.3                keyed by the sanitized adapter name; KiB/s)
+pc/myhost/net/ethernet/down   345.6
+pc/myhost/net/ethernet/ip     192.168.1.23
+pc/myhost/net/ethernet/mac    a4:bb:6d:3f:12:9c
 pc/myhost/system/uptime       86400              (seconds)
 ...
 ```
@@ -138,6 +138,8 @@ s = socket.create_connection(("myhost", 5556))
 for line in s.makefile():
     print(json.loads(line)["Cpu"]["TempC"])
 ```
+
+The TCP server listens on **all interfaces without authentication** — anyone who can reach the port can read the metrics (including IP and MAC addresses). Only enable it on networks you trust.
 
 UDP is fire-and-forget; TCP clients that stop reading are dropped after a short write timeout so they can never stall publishing. The serial sink reopens the port automatically when the device is re-plugged — on a microcontroller, just read lines and `deserializeJson` each one (at 115200 baud a ~800-byte snapshot takes ~70 ms, fine for 1-second intervals).
 

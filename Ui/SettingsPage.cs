@@ -113,7 +113,20 @@ sealed class SettingsPage : Panel
         {
             var enable = _autoStart.Checked;
             _autoStartInitial = enable;
-            Task.Run(() => AutoStart.Apply(enable));   // schtasks is slow — off the UI thread
+            // schtasks is slow — off the UI thread. On failure revert the
+            // toggle (silently, SetChecked fires no dirty event) so the UI
+            // never claims an autostart state that was not registered.
+            Task.Run(() => AutoStart.Apply(enable)).ContinueWith(t =>
+            {
+                if (!t.IsFaulted && t.Result) return;
+                AppLog.Write($"[error] autostart {(enable ? "register" : "remove")} failed (schtasks)");
+                if (IsDisposed) return;
+                BeginInvoke(() =>
+                {
+                    _autoStartInitial = !enable;
+                    _autoStart.SetChecked(!enable);
+                });
+            });
         }
 
         var theme = ThemeValues[_theme.SelectedIndex];

@@ -228,6 +228,7 @@ static class DemoMode
         [
             new NetworkAdapterMetrics
             {
+                Id = "ethernet",
                 Name = "Ethernet", UploadKbps = 212.4f, DownloadKbps = 1843.9f,
                 IpAddress = "192.168.1.42", Mac = "a4:5e:60:d2:4b:1c",
             },

@@ -26,8 +26,10 @@ static class AutoStart
         return proc?.ExitCode == 0;
     }
 
-    // Takes 1-2 s (schtasks.exe) — call off the UI thread.
-    public static void Apply(bool enable)
+    // Takes 1-2 s (schtasks.exe) — call off the UI thread. Returns false when
+    // schtasks reports failure so the UI can revert the toggle instead of
+    // showing an autostart state that was never registered.
+    public static bool Apply(bool enable)
     {
         string args;
         if (enable)
@@ -53,5 +55,6 @@ static class AutoStart
             UseShellExecute = false,
         });
         proc?.WaitForExit();
+        return proc?.ExitCode == 0;
     }
 }

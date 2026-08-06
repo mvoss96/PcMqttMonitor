@@ -9,7 +9,7 @@ sealed class UdpSink : IMetricsSink
 
     public string Name => "UDP";
 
-    public UdpSink(UdpConfig config) => _config = config;
+    public UdpSink(UdpConfig config) => _config = config.Clone();
 
     public async Task PublishAsync(MetricsSnapshot metrics, CancellationToken ct)
         => await _client.SendAsync(MetricsJson.SerializeToUtf8Bytes(metrics), _config.Host, _config.Port, ct);

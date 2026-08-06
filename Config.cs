@@ -38,8 +38,18 @@ static class ConfigLoader
 
     // The one place that writes config.json — the UI must not serialize itself.
     public static void Save(string path, AppConfig config)
-        => File.WriteAllText(path,
+        => WriteAtomic(path,
             JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
+
+    // Crash-safe file write: write a temp file, then swap it in (atomic on
+    // NTFS). A power loss or crash mid-write must never leave a truncated
+    // config.json — Load would silently fall back to defaults.
+    public static void WriteAtomic(string path, string content)
+    {
+        var tmp = path + ".tmp";
+        File.WriteAllText(tmp, content);
+        File.Move(tmp, path, overwrite: true);
+    }
 }
 
 sealed class AppConfig
@@ -66,6 +76,10 @@ sealed class GeneralConfig
     public bool UpdateCheckEnabled { get; set; } = true;
 }
 
+// Each sink CLONES its config section at construction: on Save the UI writes
+// the new values into the live config BEFORE the old sinks are disposed, and a
+// sink shutting down must still act under the settings it was started with —
+// e.g. publish its MQTT "offline" under the old topic root, not the new one.
 sealed class MqttConfig
 {
     // The sink is only created when Enabled AND Host is set.
@@ -80,6 +94,8 @@ sealed class MqttConfig
     // Opt-in: publish a Home Assistant device-discovery config so all sensors
     // appear in HA automatically. Off by default — enabled via the Settings tab.
     public bool HaDiscoveryEnabled { get; set; } = false;
+
+    public MqttConfig Clone() => (MqttConfig)MemberwiseClone();
 }
 
 // Sends each snapshot as one JSON datagram to Host:Port.
@@ -88,6 +104,8 @@ sealed class UdpConfig
     public bool Enabled { get; set; } = false;
     public string Host { get; set; } = string.Empty;
     public int Port { get; set; } = 5555;
+
+    public UdpConfig Clone() => (UdpConfig)MemberwiseClone();
 }
 
 // Listens on ListenPort and streams line-delimited JSON to every connected client.
@@ -103,6 +121,8 @@ sealed class SerialConfig
     public bool Enabled { get; set; } = false;
     public string Port { get; set; } = string.Empty;   // e.g. "COM3"
     public int Baud { get; set; } = 115200;
+
+    public SerialConfig Clone() => (SerialConfig)MemberwiseClone();
 }
 
 // Feature flags that enable/disable specific metrics.
