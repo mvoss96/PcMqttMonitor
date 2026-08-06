@@ -28,7 +28,7 @@ Do not publish directly into the install directory — writing to Program Files 
 
 ## Releasing on GitHub
 
-Repo: `mvoss96/PcMqttMonitor`. CI (`.github/workflows/build.yml`) builds exe + installer on every push/PR. To release: bump the version in both files (see above), commit, then
+Repo: `mvoss96/PcMqttMonitor`. CI (`.github/workflows/build.yml`) builds exe + installer on every push/PR. To release: bump the version in both files (see above), **add a `## vx.y.z` section to `CHANGELOG.md`** (user-facing wording — it becomes the GitHub release notes; the release workflow fails without it), commit, then
 
 ```powershell
 git tag v1.x.y && git push origin main --tags
