@@ -47,9 +47,18 @@ jobs:
       - name: Compile installer
         run: '& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer.iss'
 
-      - name: Create GitHub release
+      - name: Create or complete the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $installer = (Get-Item installer-output/*.exe).FullName
-          gh release create $env:GITHUB_REF_NAME $installer --title "PC MQTT Monitor $env:GITHUB_REF_NAME" --notes-file release-notes.md
+          $title = "PC MQTT Monitor $env:GITHUB_REF_NAME"
+          gh release view $env:GITHUB_REF_NAME *> $null
+          if ($LASTEXITCODE -eq 0) {
+            # Tag came from a web-UI release: attach the installer and replace
+            # the typed text — CHANGELOG.md is the source of truth.
+            gh release upload $env:GITHUB_REF_NAME $installer --clobber
+            gh release edit $env:GITHUB_REF_NAME --title $title --notes-file release-notes.md
+          } else {
+            gh release create $env:GITHUB_REF_NAME $installer --verify-tag --title $title --notes-file release-notes.md
+          }
