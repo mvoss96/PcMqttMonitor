@@ -3,6 +3,11 @@
 User-facing changes per release. The release workflow publishes the matching
 section as the GitHub release notes — every tagged version needs a section here.
 
+## v2.9.1 — 2026-09-04
+
+- The app now asks Windows to restart it after hardware-driver crashes that
+  bypass .NET crash handlers, including NVIDIA driver restarts during updates.
+
 ## v2.9.0 — 2026-08-06
 
 - **Network topics are now keyed by adapter name** (`net/ethernet_2/…` instead
