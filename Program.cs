@@ -41,22 +41,15 @@ class Program
                 MessageBoxButtons.OK, MessageBoxIcon.Error);
         };
 
-        // Crashes on LibreHardwareMonitor background threads (storage device-change events,
-        // GPU driver updates, …) cannot be caught with try/catch — they arrive here.
-        // For known hardware/driver crashes: log, wait briefly, then restart automatically.
-        // For everything else: show a dialog with the crash log path.
+        // Managed crashes reach this handler and are logged before Windows
+        // restarts the process. Native driver faults may bypass this handler.
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
         {
             var msg = e.ExceptionObject.ToString() ?? "";
             WriteCrashLog(msg);
 
             if (IsHardwareDriverCrash(msg))
-            {
-                Log("Hardware/driver crash detected — restarting in 10 s...");
-                Task.Delay(10_000).Wait();
-                Application.Restart();
                 return;
-            }
 
             MessageBox.Show(
                 $"{msg}\n\n{L.T.CrashDetails}\n{CrashLogPath}",
@@ -76,6 +69,8 @@ class Program
         // Hidden dev mode: render demo screenshots and exit (CI workflow).
         if (DemoMode.TryRun(args, configPath))
             return;
+
+        ApplicationRestart.RegisterForCrashes();
 
         // Language before any UI is built; changing it restarts the app.
         L.Init(config.General.Language);
@@ -363,9 +358,8 @@ class Program
         AppLog.Write($"[crash] {message.Split('\n')[0]}"); // first line only — full detail in crash.log
     }
 
-    // Hardware/driver crashes originate on LibreHardwareMonitor's own threads and
-    // cannot be caught with try/catch in our code. Restarting is the right response:
-    // the driver is usually ready again within seconds (update finished, device re-enumerated).
+    // Suppress the fatal-error dialog for known driver crashes. Windows restarts
+    // the registered process after the runtime terminates it.
     static bool IsHardwareDriverCrash(string msg) =>
         msg.Contains("DiskInfoToolkit")                              ||  // storage at boot
         msg.Contains("StorageManager")                               ||  // storage device change
