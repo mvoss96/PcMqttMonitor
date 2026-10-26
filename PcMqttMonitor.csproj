@@ -12,8 +12,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Remove="tools\**" />
-    <None Remove="tools\**" />
+    <Compile Remove="tools\**;tests\**" />
+    <None Remove="tools\**;tests\**" />
+    <!-- The test project calls internal classes (sinks, input rules) directly. -->
+    <InternalsVisibleTo Include="PcMqttMonitor.Tests" />
   </ItemGroup>
 
   <ItemGroup>

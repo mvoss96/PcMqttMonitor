@@ -15,8 +15,25 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      # Input rules, sink status reports (UDP/TCP/serial against loopback and
+      # missing ports) and the dashboard name shortening. A failure fails the PR.
+      - name: Run tests
+        run: dotnet test tests/PcMqttMonitor.Tests -c Release
+
       - name: Publish self-contained exe
         run: dotnet publish PcMqttMonitor.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
+
+      # Pages plus the --scenarios states (invalid input, save footer, sink
+      # status, pause notice), so UI changes can be looked at in the PR
+      # without a local build. Not compared automatically.
+      - name: Render UI scenarios
+        run: Start-Process publish/PcMqttMonitor.exe -ArgumentList '--screenshots','scenarios','--lang','en','--theme','dark','--scenarios' -Wait
+
+      - name: Upload UI scenarios
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-scenarios
+          path: scenarios/*.png
 
       # Inno Setup 6 is preinstalled on the windows-latest runner image.
       - name: Compile installer

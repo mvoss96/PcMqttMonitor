@@ -87,7 +87,7 @@ sealed class UdpSink : IMetricsSink
         {
             var target = Dns.GetHostAddresses(_config.Host)
                 .FirstOrDefault(a => a.AddressFamily == AddressFamily.InterNetwork);
-            if (target == null || !InLocalSubnet(target)) return Unknown;
+            if (target == null || IPAddress.IsLoopback(target) || !InLocalSubnet(target)) return Unknown;
             var mac = new byte[6];
             int len = mac.Length;
             uint dest = BitConverter.ToUInt32(target.GetAddressBytes(), 0);

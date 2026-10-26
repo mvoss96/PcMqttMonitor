@@ -56,7 +56,7 @@ sealed class SinkStatus(string sink, Action<string> log, Action<string, StatusKi
 
     // One set of texts for all sinks. MQTTnet 5 reports a rejected CONNECT
     // only in the message text, which contains the result code name.
-    static string Describe(Exception ex, string target)
+    internal static string Describe(Exception ex, string target)
     {
         if (ex is OperationCanceledException)   // MqttSink's connect timeout
             return string.Format(L.T.OutUnreachable, target);

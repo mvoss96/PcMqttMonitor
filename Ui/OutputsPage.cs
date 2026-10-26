@@ -246,7 +246,7 @@ sealed class OutputsPage : Panel
     // - Contains ':': must be an IPv6 address.
     // - Otherwise a host name: dot-separated parts of letters, digits and
     //   inner hyphens (RFC 1123). Whether it resolves shows up on connecting.
-    static bool ValidHost(string text)
+    internal static bool ValidHost(string text)
     {
         var host = text.Trim();
         if (host.Length == 0)
@@ -263,8 +263,8 @@ sealed class OutputsPage : Panel
             && p[0] != '-' && p[^1] != '-');
     }
 
-    static bool ValidPort(string text) => int.TryParse(text.Trim(), out var p) && p is >= 1 and <= 65535;
-    static bool ValidBaud(string text) => int.TryParse(text.Trim(), out var b) && b >= 1;
+    internal static bool ValidPort(string text) => int.TryParse(text.Trim(), out var p) && p is >= 1 and <= 65535;
+    internal static bool ValidBaud(string text) => int.TryParse(text.Trim(), out var b) && b >= 1;
 
     void RefreshStatus()
     {
