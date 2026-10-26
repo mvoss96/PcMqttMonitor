@@ -66,8 +66,8 @@ sealed class MqttSink : IMetricsSink
             .WithTcpServer(config.Host, config.Port)
             .WithCredentials(config.Username, config.Password)
             .WithClientId($"pcmqtt-{HostInfo.Id}")
-            // With the default, a connect to an unreachable host blocks for about
-            // 21 s and stalls the whole publish loop while the broker is down.
+            // Bounds the MQTT handshake and acks; the TCP connect itself is
+            // bounded in PublishAsync.
             .WithTimeout(TimeSpan.FromSeconds(5))
             // LWT: if the connection dies without a clean disconnect (crash, power
             // loss), the broker publishes "offline" on our behalf once the
@@ -95,7 +95,13 @@ sealed class MqttSink : IMetricsSink
                 if (!_connectFailureLogged)
                     _log($"Connecting to {_config.Host}:{_config.Port}...");
                 _setStatus(string.Format(L.T.StatusConnectingTo, $"{_config.Host}:{_config.Port}"));
-                await _client.ConnectAsync(_options, ct);
+                // WithTimeout alone does not bound the TCP connect (still ~21 s to
+                // an unreachable host), so cancel the attempt after 5 s here.
+                using (var connectCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
+                {
+                    connectCts.CancelAfter(TimeSpan.FromSeconds(5));
+                    await _client.ConnectAsync(_options, connectCts.Token);
+                }
                 _log("MQTT connected.");
                 _setConnectionStatus(true, $"{_config.Host}:{_config.Port}");
                 _retryDelay = TimeSpan.Zero;
