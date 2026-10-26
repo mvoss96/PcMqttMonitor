@@ -186,19 +186,22 @@ sealed class MainWindow : Form
 
     // ── dirty / save ──────────────────────────────────────────────────────────
 
-    // Called on every edit. The bar shows only while some page differs from
-    // the saved config, so changing a value and changing it back hides it.
+    bool HasInvalidInput => _outputs.HasInvalidInput || _settings.HasInvalidInput;
+
+    // Called on every edit. The bar shows while some page differs from the
+    // saved config or holds invalid input — an invalid value would otherwise
+    // compare equal to the saved one and the bar would silently disappear.
     void UpdateSaveBar()
     {
-        _dirty = _outputs.HasChanges || _sensors.HasChanges || _settings.HasChanges;
+        bool invalid = HasInvalidInput;
+        _dirty = invalid || _outputs.HasChanges || _sensors.HasChanges || _settings.HasChanges;
         if (!_dirty)
         {
             if (!_savedFlash.Enabled) _saveBar.Visible = false;
             return;
         }
         _savedFlash.Stop();
-        // Invalid input disables Save; the red field on the Outputs page shows which one.
-        bool invalid = _outputs.HasInvalidInput;
+        // Invalid input disables Save; the red field shows which one.
         _saveBar.Msg.Text = invalid ? L.T.SaveInvalidInput : L.T.UnsavedChanges;
         _saveBar.Msg.ForeColor = invalid ? Theme.Crit : Theme.Fg2;
         _saveBar.Button.Enabled = !invalid;
@@ -217,7 +220,7 @@ sealed class MainWindow : Form
 
     void Save()
     {
-        if (_outputs.HasInvalidInput)
+        if (HasInvalidInput)
             return;
 
         // Output settings need a sink rebuild; general/sensor settings apply

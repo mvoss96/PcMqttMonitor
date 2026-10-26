@@ -28,8 +28,9 @@ sealed class SettingsPage : Panel
         };
         Controls.Add(title);
 
-        // Plain text field (no spinner arrows) — validated and clamped on Save.
-        _interval = new InputBox();
+        // Plain text field (no spinner arrows); red while the text is not a
+        // number of seconds in range, and Save is blocked.
+        _interval = new InputBox { Rule = t => TryParseInterval(t, out var s) && s is >= MinInterval and <= MaxInterval };
         _interval.Box.TextAlign = HorizontalAlignment.Center;
         _interval.Box.Text = FormatInterval(config.General.PublishIntervalSeconds);
         _interval.Box.TextChanged += (_, _) => markDirty();
@@ -105,13 +106,20 @@ sealed class SettingsPage : Panel
     // "1,0 s" in German, "1.0 s" in English.
     static string FormatInterval(double seconds) => seconds.ToString("0.0", L.Culture) + " s";
 
-    // Interval as Apply would store it. Accepts "1.5", "1,5" and a trailing
-    // "s"; keeps the current value on garbage input.
+    const double MinInterval = 0.5, MaxInterval = 3600;
+
+    // Accepts "1.5", "1,5" and a trailing "s".
+    static bool TryParseInterval(string text, out double seconds) =>
+        double.TryParse(text.Trim().TrimEnd('s', 'S').Trim().Replace(',', '.'),
+            NumberStyles.Float, CultureInfo.InvariantCulture, out seconds);
+
+    // Interval as Apply would store it; the current value while the text is invalid.
     double IntervalValue() =>
-        double.TryParse(_interval.Box.Text.Trim().TrimEnd('s', 'S').Trim().Replace(',', '.'),
-            NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds)
-            ? Math.Clamp(seconds, 0.5, 3600)
+        TryParseInterval(_interval.Box.Text, out var seconds)
+            ? Math.Clamp(seconds, MinInterval, MaxInterval)
             : _config.General.PublishIntervalSeconds;
+
+    public bool HasInvalidInput => _interval.Invalid;
 
     // True when the controls differ from the saved config.
     public bool HasChanges =>

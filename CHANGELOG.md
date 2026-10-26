@@ -16,6 +16,10 @@ section as the GitHub release notes — every tagged version needs a section her
   fails. Previously these cards showed green as soon as they were enabled.
 - UDP send errors are logged once instead of every second, and the TCP
   output retries listening every cycle when its port is taken.
+- Ports, baud rate and the publish interval are checked while typing:
+  an invalid value (e.g. port `9871111111` or interval `1.0 6`) turns the
+  field red and blocks saving. Previously it was silently replaced by the
+  old value and the save bar disappeared.
 - Fixed: after saving once, the Discard and Save buttons of the save bar
   could be hidden behind the "Unsaved changes" text on the next edit.
 - The README screenshots are regenerated automatically for every release.

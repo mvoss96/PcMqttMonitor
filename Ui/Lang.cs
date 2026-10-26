@@ -102,6 +102,8 @@ sealed class Lang
     public string OutNotActive    { get; init; } = "Not active yet — save to start";
     public string OutConnectedCount { get; init; } = "{0} connected";
     public string OutInvalidIp    { get; init; } = "Invalid IP address";
+    public string OutInvalidPort  { get; init; } = "Invalid port (1–65535)";
+    public string OutInvalidBaud  { get; init; } = "Invalid baud rate";
     public string SaveInvalidInput { get; init; } = "Invalid input";
     public string OutSendingTo    { get; init; } = "Sending to {0}:{1}";
     public string OutListeningOn  { get; init; } = "Listening on {0}";
@@ -223,6 +225,8 @@ sealed class Lang
         OutNotActive    = "Noch nicht aktiv — speichern zum Starten",
         OutConnectedCount = "{0} verbunden",
         OutInvalidIp    = "Ungültige IP-Adresse",
+        OutInvalidPort  = "Ungültiger Port (1–65535)",
+        OutInvalidBaud  = "Ungültige Baudrate",
         SaveInvalidInput = "Ungültige Eingabe",
         OutSendingTo    = "Sendet an {0}:{1}",
         OutListeningOn  = "Lauscht auf Port {0}",

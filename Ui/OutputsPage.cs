@@ -26,6 +26,9 @@ sealed class OutputsPage : Panel
     // Last state each running sink reported, keyed by sink name ("MQTT", …).
     readonly Dictionary<string, (StatusKind Kind, string Text)> _reported = new();
 
+    // Checked fields: the card status shows Problem while the field is invalid.
+    readonly (OutputCard Card, TextBox Box, string Problem)[] _checks;
+
     // manual scrolling (slim overlay rail, no native scrollbar)
     readonly Label _title;
     ScrollRail? _rail;
@@ -79,9 +82,20 @@ sealed class OutputsPage : Panel
         _serialBaud = _serialCard.AddPortRow(L.T.FieldBaudRate, config.Serial.Baud);
         _serialCard.Toggle.SetChecked(config.Serial.Enabled);
 
-        // Live IP check while typing.
-        _host.TextChanged    += (_, _) => RefreshStatus();
-        _udpHost.TextChanged += (_, _) => RefreshStatus();
+        // Input rules, checked live while typing.
+        InputBox.Of(_host).Rule = InputBox.Of(_udpHost).Rule = ValidHost;
+        InputBox.Of(_port).Rule = InputBox.Of(_udpPort).Rule = InputBox.Of(_tcpPort).Rule = ValidPort;
+        InputBox.Of(_serialBaud).Rule = ValidBaud;
+        _checks =
+        [
+            (_mqttCard, _host, L.T.OutInvalidIp),   (_mqttCard, _port, L.T.OutInvalidPort),
+            (_udpCard, _udpHost, L.T.OutInvalidIp), (_udpCard, _udpPort, L.T.OutInvalidPort),
+            (_tcpCard, _tcpPort, L.T.OutInvalidPort),
+            (_serialCard, _serialBaud, L.T.OutInvalidBaud),
+        ];
+        foreach (var check in _checks)
+            check.Box.TextChanged += (_, _) => RefreshStatus();
+        _serialPort.TextChanged += (_, _) => RefreshStatus();
 
         foreach (var card in new[] { _mqttCard, _udpCard, _tcpCard, _serialCard })
         {
@@ -212,40 +226,44 @@ sealed class OutputsPage : Panel
         RefreshStatus();
     }
 
-    // True when an enabled card holds a host that cannot be valid; MainWindow
+    // True while any checked field is invalid, enabled card or not; MainWindow
     // refuses to save in that case.
-    public bool HasInvalidInput =>
-        (_mqttCard.Toggle.Checked && IsInvalidIp(_host.Text)) ||
-        (_udpCard.Toggle.Checked && IsInvalidIp(_udpHost.Text));
+    public bool HasInvalidInput => _checks.Any(c => InputBox.Of(c.Box).Invalid);
 
     // Text made only of digits and dots is meant as an IPv4 address and must
     // be a complete, valid one ("192.168.2.411" is rejected). Anything else
-    // is a host name, which can only be checked by connecting.
-    static bool IsInvalidIp(string text)
+    // is a host name, which can only be checked by connecting. Empty is
+    // allowed here; the card shows "set a host" for it.
+    static bool ValidHost(string text)
     {
         var host = text.Trim();
         if (host.Length == 0 || !host.All(c => char.IsAsciiDigit(c) || c == '.'))
-            return false;
-        return host.Split('.').Length != 4 || !System.Net.IPAddress.TryParse(host, out _);
+            return true;
+        return host.Split('.').Length == 4 && System.Net.IPAddress.TryParse(host, out _);
     }
+
+    static bool ValidPort(string text) => int.TryParse(text.Trim(), out var p) && p is >= 1 and <= 65535;
+    static bool ValidBaud(string text) => int.TryParse(text.Trim(), out var b) && b >= 1;
 
     void RefreshStatus()
     {
-        // Each TextBox sits inside an InputBox that draws its border.
-        ((InputBox)_host.Parent!).Invalid    = IsInvalidIp(_host.Text);
-        ((InputBox)_udpHost.Parent!).Invalid = IsInvalidIp(_udpHost.Text);
-
-        ShowStatus(_mqttCard, "MQTT", HostProblem(_host));
-        ShowStatus(_udpCard, "UDP", HostProblem(_udpHost));
-        ShowStatus(_tcpCard, "TCP", null);
-        ShowStatus(_serialCard, "Serial",
-            string.IsNullOrWhiteSpace(_serialPort.Text) ? (L.T.OutNoComPort, StatusKind.Off) : null);
+        ShowStatus(_mqttCard, "MQTT", Missing(_host, L.T.OutNoHost) ?? Problem(_mqttCard));
+        ShowStatus(_udpCard, "UDP", Missing(_udpHost, L.T.OutNoHost) ?? Problem(_udpCard));
+        ShowStatus(_tcpCard, "TCP", Problem(_tcpCard));
+        ShowStatus(_serialCard, "Serial", Missing(_serialPort, L.T.OutNoComPort) ?? Problem(_serialCard));
     }
 
-    static (string, StatusKind)? HostProblem(TextBox host) =>
-        string.IsNullOrWhiteSpace(host.Text) ? (L.T.OutNoHost, StatusKind.Off)
-        : IsInvalidIp(host.Text) ? (L.T.OutInvalidIp, StatusKind.Error)
-        : null;
+    static (string, StatusKind)? Missing(TextBox box, string text) =>
+        string.IsNullOrWhiteSpace(box.Text) ? (text, StatusKind.Off) : null;
+
+    // The first invalid field of the card, if any.
+    (string, StatusKind)? Problem(OutputCard card)
+    {
+        foreach (var c in _checks)
+            if (c.Card == card && InputBox.Of(c.Box).Invalid)
+                return (c.Problem, StatusKind.Error);
+        return null;
+    }
 
     // One rule for every card: switched off, then a problem in the fields,
     // then whatever the running sink reported. A sink that is not running

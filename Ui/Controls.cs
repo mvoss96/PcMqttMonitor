@@ -266,13 +266,28 @@ sealed class InputBox : Control
 {
     public readonly TextBox Box;
 
-    // Red border and bottom edge for a value that cannot be saved.
+    // Optional input rule. While the text breaks it the field is Invalid:
+    // red border and bottom edge, and the pages refuse to save.
+    Func<string, bool>? _rule;
     bool _invalid;
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
-    public bool Invalid
+    public Func<string, bool>? Rule
     {
-        get => _invalid;
-        set { if (_invalid != value) { _invalid = value; Invalidate(); } }
+        get => _rule;
+        set { _rule = value; Check(); }
+    }
+
+    public bool Invalid => _invalid;
+
+    // The InputBox around a TextBox handed out by the pages' Add…Row helpers.
+    public static InputBox Of(TextBox box) => (InputBox)box.Parent!;
+
+    void Check()
+    {
+        bool invalid = _rule != null && !_rule(Box.Text);
+        if (invalid == _invalid) return;
+        _invalid = invalid;
+        Invalidate();
     }
 
     // Optional suggestion list: a chevron at the right edge (or F4 / Alt+Down
@@ -303,6 +318,9 @@ sealed class InputBox : Control
         };
         Box.GotFocus  += (_, _) => Invalidate();
         Box.LostFocus += (_, _) => Invalidate();
+        // Subscribed first, so Invalid is current when the pages' own
+        // TextChanged handlers (dirty tracking, status line) run.
+        Box.TextChanged += (_, _) => Check();
         Box.KeyDown += (_, e) =>
         {
             if (_suggestions != null && (e.KeyCode == Keys.F4 || (e.Alt && e.KeyCode == Keys.Down)))
