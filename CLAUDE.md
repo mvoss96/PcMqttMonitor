@@ -59,6 +59,7 @@ git tag v1.x.y && git push origin main --tags
 ## Project Structure
 
 - `Program.cs` — entry point, crash handling, publish loop (snapshot → UI → all sinks)
+- `SingleInstance.cs` — one instance per installation (named mutex keyed by the exe path, so a dev build runs beside the release); a second start shows the running window; `--restarted` waits for the previous instance
 - `TrayApp.cs` — tray icon (WinForms `NotifyIcon`; WPF has none), WPF context menu, pause/resume
 - `Ui/` — WPF UI with the .NET Fluent theme (`Application.ThemeMode`): `MainWindow.xaml`
   (icon sidebar, save footer, tray-anchored placement), one class per page

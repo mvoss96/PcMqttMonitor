@@ -17,6 +17,9 @@ section as the GitHub release notes — every tagged version needs a section her
   Settings app; the serial port is a dropdown of the ports present that also
   accepts a typed port.
 - The tray menu is a Windows 11 menu and follows light/dark mode.
+- Starting the app while it is already running opens the window of the
+  running instance instead of starting a second copy that publishes the same
+  data twice.
 
 ## v2.10.1 — 2026-10-26
 

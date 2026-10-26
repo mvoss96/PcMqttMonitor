@@ -62,6 +62,9 @@ sealed class TrayApp : IDisposable
         };
     }
 
+    // Called when a second start of the app was redirected here.
+    public void ShowWindow() => _window.ShowDashboard();
+
     static MenuItem Item(string header, Action click)
     {
         var item = new MenuItem { Header = header };

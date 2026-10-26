@@ -14,10 +14,13 @@ class Program
     public static void RequestSinksReload() => _sinksReloadRequested = true;
 
     // Start a new instance and end this one (language change). The new
-    // instance comes up while this one shuts down its sinks.
+    // instance waits until this one has shut down its sinks and released
+    // the single-instance lock.
+    const string RestartedArg = "--restarted";
+
     public static void Restart()
     {
-        try { System.Diagnostics.Process.Start(Environment.ProcessPath!); }
+        try { System.Diagnostics.Process.Start(Environment.ProcessPath!, RestartedArg); }
         catch (Exception ex) { Log($"[error] restart failed: {ex.Message}"); return; }
         Application.Current.Shutdown();
     }
@@ -84,6 +87,13 @@ class Program
         if (DemoMode.TryRun(args, app))
             return;
 
+        // One instance per installation. A second start only brings up the
+        // running instance's window. After a language-change restart the new
+        // instance waits until the old one has closed its sinks.
+        using var instance = SingleInstance.Acquire(args.Contains(RestartedArg));
+        if (instance == null)
+            return;
+
         ApplicationRestart.RegisterForCrashes();
 
         Log($"=== PC MQTT Monitor v{UpdateChecker.CurrentVersion.ToString(3)} starting ===");
@@ -95,6 +105,7 @@ class Program
 
         using var shutdown = new CancellationTokenSource();
         var tray = new TrayApp(shutdown, configPath, config);
+        instance.OnShowRequested(() => app.Dispatcher.BeginInvoke(tray.ShowWindow));
 
         Console.CancelKeyPress += (_, e) =>
         {
@@ -129,6 +140,7 @@ class Program
         // Tray was closed — cancel the loop and wait for it to finish cleanly.
         shutdown.Cancel();
         try { publishTask.Wait(); } catch { }
+        instance.Release();   // lets a restarting instance take over
     }
 
     // Builds the active sinks from config. A sink whose constructor throws
