@@ -444,6 +444,12 @@ sealed class PillButton : Control
     protected override void OnMouseEnter(EventArgs e) { _hover = true;  Invalidate(); base.OnMouseEnter(e); }
     protected override void OnMouseLeave(EventArgs e) { _hover = false; Invalidate(); base.OnMouseLeave(e); }
     protected override void OnTextChanged(EventArgs e) { Invalidate(); base.OnTextChanged(e); }
+    protected override void OnEnabledChanged(EventArgs e)
+    {
+        Cursor = Enabled ? Cursors.Hand : Cursors.Default;
+        Invalidate();
+        base.OnEnabledChanged(e);
+    }
 
     protected override void OnPaint(PaintEventArgs e)
     {
@@ -453,12 +459,13 @@ sealed class PillButton : Control
 
         var r = new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
         using var path = Theme.RoundedRect(r, Theme.SF(5));
-        var bg = Theme.Accent;
-        if (_hover) bg = Theme.Mix(bg, Theme.Dark ? Color.White : Color.Black, 0.08f);
+        // Disabled: neutral grey fill instead of the accent color.
+        var bg = Enabled ? Theme.Accent : Theme.InputBorder;
+        if (_hover && Enabled) bg = Theme.Mix(bg, Theme.Dark ? Color.White : Color.Black, 0.08f);
         using var fill = new SolidBrush(bg);
         g.FillPath(fill, path);
 
-        TextRenderer.DrawText(g, Text, Font, new Rectangle(0, 0, Width, Height), Theme.AccentFg,
+        TextRenderer.DrawText(g, Text, Font, new Rectangle(0, 0, Width, Height), Enabled ? Theme.AccentFg : Theme.Fg3,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
     }
 }

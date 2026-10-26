@@ -194,8 +194,11 @@ sealed class MainWindow : Form
         _dirty = true;
         _outputsDirty |= outputs;
         _savedFlash.Stop();
-        _saveBar.Msg.Text = L.T.UnsavedChanges;
-        _saveBar.Msg.ForeColor = Theme.Fg2;
+        // Invalid input disables Save; the red field on the Outputs page shows which one.
+        bool invalid = _outputs.HasInvalidInput;
+        _saveBar.Msg.Text = invalid ? L.T.SaveInvalidInput : L.T.UnsavedChanges;
+        _saveBar.Msg.ForeColor = invalid ? Theme.Crit : Theme.Fg2;
+        _saveBar.Button.Enabled = !invalid;
         _saveBar.Button.Visible = true;
         _saveBar.PerformLayout();
         PositionSaveBar();
@@ -204,16 +207,8 @@ sealed class MainWindow : Form
 
     void Save()
     {
-        // The Outputs card itself names the invalid field.
         if (_outputs.HasInvalidInput)
-        {
-            _savedFlash.Stop();
-            _saveBar.Msg.Text = L.T.SaveInvalidInput;
-            _saveBar.Msg.ForeColor = Theme.Crit;
-            _saveBar.PerformLayout();
-            PositionSaveBar();
             return;
-        }
 
         _outputs.Apply();
         _sensors.Apply();

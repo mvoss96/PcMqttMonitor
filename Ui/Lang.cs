@@ -96,7 +96,7 @@ sealed class Lang
     public string OutHostNotFound { get; init; } = "Host not found";
     public string OutAuthFailed   { get; init; } = "Login failed — check username and password";
     public string OutConnectFailed { get; init; } = "Connection failed: {0}";
-    public string SaveInvalidInput { get; init; } = "Invalid input in Outputs — not saved";
+    public string SaveInvalidInput { get; init; } = "Invalid input in Outputs — please correct it";
     public string OutSendingTo    { get; init; } = "Sending to {0}:{1}";
     public string OutListeningOn  { get; init; } = "Listening on {0}";
     public string OutSendingCom   { get; init; } = "Sending on {0} @ {1} baud";
@@ -211,7 +211,7 @@ sealed class Lang
         OutHostNotFound = "Host nicht gefunden",
         OutAuthFailed   = "Anmeldung fehlgeschlagen — Benutzer und Passwort prüfen",
         OutConnectFailed = "Verbindung fehlgeschlagen: {0}",
-        SaveInvalidInput = "Ungültige Eingabe in den Ausgängen — nicht gespeichert",
+        SaveInvalidInput = "Ungültige Eingabe in den Ausgängen — bitte korrigieren",
         OutSendingTo    = "Sendet an {0}:{1}",
         OutListeningOn  = "Lauscht auf Port {0}",
         OutSendingCom   = "Sendet auf {0} @ {1} Baud",
