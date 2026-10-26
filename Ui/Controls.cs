@@ -513,6 +513,8 @@ sealed class ChoiceBox : Control
     {
         SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint
                | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
+        SetStyle(ControlStyles.Selectable, true);
+        TabStop = true;
         _items = items;
         Font = Theme.Base;
         Cursor = Cursors.Hand;
@@ -536,9 +538,39 @@ sealed class ChoiceBox : Control
     protected override void OnMouseEnter(EventArgs e) { _hover = true;  Invalidate(); base.OnMouseEnter(e); }
     protected override void OnMouseLeave(EventArgs e) { _hover = false; Invalidate(); base.OnMouseLeave(e); }
 
-    protected override void OnClick(EventArgs e)
+    protected override void OnMouseDown(MouseEventArgs e) { Focus(); base.OnMouseDown(e); }
+    protected override void OnGotFocus(EventArgs e)  { Invalidate(); base.OnGotFocus(e); }
+    protected override void OnLostFocus(EventArgs e) { Invalidate(); base.OnLostFocus(e); }
+    protected override void OnClick(EventArgs e) { base.OnClick(e); OpenMenu(); }
+
+    // Up/Down reach OnKeyDown instead of moving the focus to the next control.
+    protected override bool IsInputKey(Keys keyData) =>
+        (keyData & Keys.KeyCode) is Keys.Up or Keys.Down || base.IsInputKey(keyData);
+
+    // Keyboard like a native ComboBox: Space, Enter, F4 or Alt+Down open the
+    // list; Up/Down change the selection directly.
+    protected override void OnKeyDown(KeyEventArgs e)
     {
-        base.OnClick(e);
+        if (e.KeyCode is Keys.Space or Keys.Enter or Keys.F4 || (e.Alt && e.KeyCode == Keys.Down))
+        {
+            OpenMenu();
+            e.Handled = true;
+        }
+        else if (e.KeyCode == Keys.Up)
+        {
+            SelectedIndex = Math.Max(0, _selected - 1);
+            e.Handled = true;
+        }
+        else if (e.KeyCode == Keys.Down)
+        {
+            SelectedIndex = Math.Min(_items.Length - 1, _selected + 1);
+            e.Handled = true;
+        }
+        base.OnKeyDown(e);
+    }
+
+    void OpenMenu()
+    {
         var menu = new ContextMenuStrip();
         MenuStyle.Apply(menu);
         menu.MinimumSize = new Size(Width, 0);
@@ -551,6 +583,7 @@ sealed class ChoiceBox : Control
         }
         menu.Closed += (_, _) => BeginInvoke(menu.Dispose);
         menu.Show(this, new Point(0, Height + Theme.S(2)));
+        menu.Items[_selected].Select();   // arrow keys and Enter start at the current choice
     }
 
     protected override void OnPaint(PaintEventArgs e)
@@ -564,6 +597,15 @@ sealed class ChoiceBox : Control
         using var border = new Pen(Theme.InputBorder);
         g.FillPath(bg, path);
         g.DrawPath(border, path);
+        if (Focused)
+        {
+            // Keyboard focus: 2px accent bottom edge, like a focused InputBox.
+            var clip = g.Clip;
+            g.SetClip(path);
+            using var accent = new SolidBrush(Theme.Accent);
+            g.FillRectangle(accent, 0, Height - Theme.SF(2), Width, Theme.SF(2));
+            g.Clip = clip;
+        }
 
         int chevronW = Theme.S(32);
         TextRenderer.DrawText(g, _items[_selected], Font,
