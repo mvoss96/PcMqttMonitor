@@ -8,8 +8,7 @@ class Program
 
     // Set by the UI after saving changed output settings: the publish loop
     // disposes all sinks and rebuilds them from the (shared, already mutated)
-    // config on its next cycle. This is what replaces the old
-    // Application.Restart() behind "Test & Apply".
+    // config on its next cycle, without an app restart.
     static volatile bool _sinksReloadRequested;
     public static void RequestSinksReload() => _sinksReloadRequested = true;
 

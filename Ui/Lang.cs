@@ -89,7 +89,6 @@ sealed class Lang
     public string OutDisabled     { get; init; } = "Disabled";
     public string OutNoHost       { get; init; } = "Not configured — set a host";
     public string OutNoComPort    { get; init; } = "Not configured — set a port (e.g. COM3)";
-    public string NoSuggestions   { get; init; } = "Nothing found";
     // Sink status texts; {0} is the host, "COM9" or "Port 5556".
     public string OutNotFound     { get; init; } = "{0} not found";
     public string OutInUse        { get; init; } = "{0} is in use by another program";
@@ -214,7 +213,6 @@ sealed class Lang
         OutDisabled     = "Deaktiviert",
         OutNoHost       = "Nicht konfiguriert — Host angeben",
         OutNoComPort    = "Nicht konfiguriert — Port angeben (z. B. COM3)",
-        NoSuggestions   = "Nichts gefunden",
         OutNotFound     = "{0} nicht gefunden",
         OutInUse        = "{0} wird von einem anderen Programm benutzt",
         OutUnreachable  = "{0} nicht erreichbar",
