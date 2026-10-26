@@ -9,9 +9,13 @@ section as the GitHub release notes — every tagged version needs a section her
   a Windows 11 text field with a dropdown of the COM ports present right
   now (click the arrow, or press F4 / Alt+Down). A port that is not plugged
   in can still be typed.
-- The Serial card shows whether the port is actually usable: "COM9 not
-  found" or "in use by another program" in red, instead of "Sending on COM9"
-  for a port that does not exist.
+- Every card on the Outputs page shows what the output is actually doing,
+  not just what is configured: Serial "COM9 not found" or "in use by another
+  program", TCP "Port 5556 is in use by another program" or the number of
+  connected clients, UDP "host not found" or "not reachable", in red when it
+  fails. Previously these cards showed green as soon as they were enabled.
+- UDP send errors are logged once instead of every second, and the TCP
+  output retries listening every cycle when its port is taken.
 - Fixed: after saving once, the Discard and Save buttons of the save bar
   could be hidden behind the "Unsaved changes" text on the next edit.
 - The README screenshots are regenerated automatically for every release.

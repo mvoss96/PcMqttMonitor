@@ -138,32 +138,32 @@ class Program
     }
 
     // Builds the active sinks from config. A sink whose constructor throws
-    // (bad MQTT options, TCP port taken) is logged and skipped — the others run.
+    // (e.g. bad MQTT options) is logged and skipped — the others run.
     static List<IMetricsSink> CreateSinks(AppConfig config, TrayApp tray)
     {
         var sinks = new List<IMetricsSink>();
 
         if (config.Mqtt.Enabled && !string.IsNullOrWhiteSpace(config.Mqtt.Host))
         {
-            try { sinks.Add(new MqttSink(config.Mqtt, Log, tray.SetStatus, tray.SetConnectionStatus)); }
+            try { sinks.Add(new MqttSink(config.Mqtt, Log, tray.SetStatus, tray.SetSinkStatus)); }
             catch (Exception ex) { Log($"[error] Invalid MQTT config: {ex.Message}"); }
         }
 
         if (config.Udp.Enabled && !string.IsNullOrWhiteSpace(config.Udp.Host))
         {
-            try { sinks.Add(new UdpSink(config.Udp)); }
+            try { sinks.Add(new UdpSink(config.Udp, Log, tray.SetSinkStatus)); }
             catch (Exception ex) { Log($"[error] UDP sink: {ex.Message}"); }
         }
 
         if (config.Tcp.Enabled)
         {
-            try { sinks.Add(new TcpSink(config.Tcp, Log)); }
+            try { sinks.Add(new TcpSink(config.Tcp, Log, tray.SetSinkStatus)); }
             catch (Exception ex) { Log($"[error] TCP sink: {ex.Message}"); }
         }
 
         if (config.Serial.Enabled && !string.IsNullOrWhiteSpace(config.Serial.Port))
         {
-            try { sinks.Add(new SerialSink(config.Serial, Log, tray.SetSerialStatus)); }
+            try { sinks.Add(new SerialSink(config.Serial, Log, tray.SetSinkStatus)); }
             catch (Exception ex) { Log($"[error] Serial sink: {ex.Message}"); }
         }
 
@@ -303,7 +303,6 @@ class Program
         }
         finally
         {
-            tray.SetConnectionStatus(false, "");
             foreach (var sink in sinks)
             {
                 try { await sink.DisposeAsync(); } catch { }

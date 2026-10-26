@@ -51,7 +51,7 @@ static class DemoMode
 
         var config = DemoConfig();
         var window = new MainWindow(configPath, config);
-        window.SetConnectionStatus(true, $"{config.Mqtt.Host}:{config.Mqtt.Port}");
+        window.SetSinkStatus("MQTT", StatusKind.Good, string.Format(L.T.StatusConnected, $"{config.Mqtt.Host}:{config.Mqtt.Port}"));
 
         // 60 samples so the sparklines show a full, plausible minute.
         for (int t = 0; t < 60; t++)

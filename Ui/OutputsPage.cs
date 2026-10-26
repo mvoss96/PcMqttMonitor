@@ -23,15 +23,8 @@ sealed class OutputsPage : Panel
     readonly TextBox _serialPort;
     readonly TextBox _serialBaud;
 
-    // live MQTT state pushed in from the sink via MainWindow: the broker when
-    // connected, otherwise "connecting…" or the failure reason ("" = none)
-    bool _mqttConnected;
-    string _mqttDetail = "";
-
-    // live serial port state from the sink: true = open, false = failure
-    // reason in _serialDetail, null = no report yet (status from the settings)
-    bool? _serialOk;
-    string _serialDetail = "";
+    // Last state each running sink reported, keyed by sink name ("MQTT", …).
+    readonly Dictionary<string, (StatusKind Kind, string Text)> _reported = new();
 
     // manual scrolling (slim overlay rail, no native scrollbar)
     readonly Label _title;
@@ -210,19 +203,12 @@ sealed class OutputsPage : Panel
         protected override void OnMouseLeave(EventArgs e) { _hover = false; Invalidate(); base.OnMouseLeave(e); }
     }
 
-    // Called by MainWindow when the MQTT sink reports a connection change,
-    // and locally whenever a toggle flips.
-    public void SetMqttStatus(bool connected, string detail)
+    // Called by MainWindow when a sink reports a state change; null kind means
+    // the sink was disposed.
+    public void SetSinkStatus(string sink, StatusKind? kind, string text)
     {
-        _mqttConnected = connected;
-        _mqttDetail = detail;
-        RefreshStatus();
-    }
-
-    public void SetSerialStatus(bool? ok, string detail)
-    {
-        _serialOk = ok;
-        _serialDetail = detail;
+        if (kind == null) _reported.Remove(sink);
+        else _reported[sink] = (kind.Value, text);
         RefreshStatus();
     }
 
@@ -243,51 +229,37 @@ sealed class OutputsPage : Panel
         return host.Split('.').Length != 4 || !System.Net.IPAddress.TryParse(host, out _);
     }
 
-    // The sink reports "Connecting to …" through the same text channel as
-    // failure reasons; it is the one non-connected state that is not an error.
-    static bool IsConnecting(string detail) =>
-        detail.StartsWith(L.T.StatusConnectingTo[..L.T.StatusConnectingTo.IndexOf('{')]);
-
     void RefreshStatus()
     {
         // Each TextBox sits inside an InputBox that draws its border.
         ((InputBox)_host.Parent!).Invalid    = IsInvalidIp(_host.Text);
         ((InputBox)_udpHost.Parent!).Invalid = IsInvalidIp(_udpHost.Text);
 
-        if (!_mqttCard.Toggle.Checked)
-            _mqttCard.SetStatus(L.T.OutDisabled, StatusKind.Off);
-        else if (string.IsNullOrWhiteSpace(_host.Text))
-            _mqttCard.SetStatus(L.T.OutNoHost, StatusKind.Off);
-        else if (IsInvalidIp(_host.Text))
-            _mqttCard.SetStatus(L.T.OutInvalidIp, StatusKind.Error);
-        else if (_mqttConnected)
-            _mqttCard.SetStatus(string.Format(L.T.StatusConnected, _mqttDetail), StatusKind.Good);
-        else if (IsConnecting(_mqttDetail))
-            _mqttCard.SetStatus(_mqttDetail, StatusKind.Off);
-        else
-            _mqttCard.SetStatus(_mqttDetail.Length > 0 ? _mqttDetail : L.T.OutNotConnected, StatusKind.Error);
+        ShowStatus(_mqttCard, "MQTT", HostProblem(_host));
+        ShowStatus(_udpCard, "UDP", HostProblem(_udpHost));
+        ShowStatus(_tcpCard, "TCP", null);
+        ShowStatus(_serialCard, "Serial",
+            string.IsNullOrWhiteSpace(_serialPort.Text) ? (L.T.OutNoComPort, StatusKind.Off) : null);
+    }
 
-        if (!_udpCard.Toggle.Checked)
-            _udpCard.SetStatus(L.T.OutDisabled, StatusKind.Off);
-        else if (string.IsNullOrWhiteSpace(_udpHost.Text))
-            _udpCard.SetStatus(L.T.OutNoHost, StatusKind.Off);
-        else if (IsInvalidIp(_udpHost.Text))
-            _udpCard.SetStatus(L.T.OutInvalidIp, StatusKind.Error);
-        else
-            _udpCard.SetStatus(string.Format(L.T.OutSendingTo, _udpHost.Text, _udpPort.Text), StatusKind.Good);
+    static (string, StatusKind)? HostProblem(TextBox host) =>
+        string.IsNullOrWhiteSpace(host.Text) ? (L.T.OutNoHost, StatusKind.Off)
+        : IsInvalidIp(host.Text) ? (L.T.OutInvalidIp, StatusKind.Error)
+        : null;
 
-        _tcpCard.SetStatus(_tcpCard.Toggle.Checked
-            ? string.Format(L.T.OutListeningOn, _tcpPort.Text) : L.T.OutDisabled,
-            _tcpCard.Toggle.Checked ? StatusKind.Good : StatusKind.Off);
-
-        if (!_serialCard.Toggle.Checked)
-            _serialCard.SetStatus(L.T.OutDisabled, StatusKind.Off);
-        else if (string.IsNullOrWhiteSpace(_serialPort.Text))
-            _serialCard.SetStatus(L.T.OutNoComPort, StatusKind.Off);
-        else if (_serialOk == false)
-            _serialCard.SetStatus(_serialDetail, StatusKind.Error);
+    // One rule for every card: switched off, then a problem in the fields,
+    // then whatever the running sink reported. A sink that is not running
+    // yet (enabled but not saved) has not reported anything.
+    void ShowStatus(OutputCard card, string sink, (string Text, StatusKind Kind)? problem)
+    {
+        if (!card.Toggle.Checked)
+            card.SetStatus(L.T.OutDisabled, StatusKind.Off);
+        else if (problem is { } p)
+            card.SetStatus(p.Text, p.Kind);
+        else if (_reported.TryGetValue(sink, out var r))
+            card.SetStatus(r.Text, r.Kind);
         else
-            _serialCard.SetStatus(string.Format(L.T.OutSendingCom, ExtractComPort(_serialPort.Text), _serialBaud.Text), StatusKind.Good);
+            card.SetStatus(L.T.OutNotActive, StatusKind.Off);
     }
 
     // Write the edited values back into the shared config. Called on Save.
@@ -430,7 +402,6 @@ sealed class OutputsPage : Panel
     }
 }
 
-enum StatusKind { Off, Good, Error }
 
 // A collapsible sink card: fixed header (chevron, name, status dot + text,
 // enable switch), body rows added by the page. Clicking the header toggles.

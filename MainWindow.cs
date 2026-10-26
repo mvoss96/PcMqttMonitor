@@ -287,19 +287,12 @@ sealed class MainWindow : Form
         BeginInvoke(() => _dashboard.SetPlaceholder(status));
     }
 
-    // Called from the MQTT sink (any thread) — feeds the Outputs page status line.
-    public void SetConnectionStatus(bool connected, string detail)
-    {
-        if (!IsHandleCreated) return;
-        BeginInvoke(() => _outputs.SetMqttStatus(connected, detail));
-    }
-
-    // Called from the serial sink (any thread) — feeds the Serial card status.
-    // The sink also reports on dispose, which can happen while the app shuts down.
-    public void SetSerialStatus(bool? ok, string detail)
+    // Called from the sinks (any thread) — feeds the status line of their card.
+    // Sinks also report when disposed, which can happen while the app shuts down.
+    public void SetSinkStatus(string sink, StatusKind? kind, string text)
     {
         if (!IsHandleCreated || IsDisposed) return;
-        try { BeginInvoke(() => _outputs.SetSerialStatus(ok, detail)); }
+        try { BeginInvoke(() => _outputs.SetSinkStatus(sink, kind, text)); }
         catch (InvalidOperationException) { }   // window handle already destroyed
     }
 

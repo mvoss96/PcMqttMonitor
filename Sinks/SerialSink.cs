@@ -2,30 +2,26 @@ using System.IO.Ports;
 
 // Writes each snapshot as one JSON line to a serial port (e.g. an ESP32 status
 // display). The port is opened lazily and reopened after errors — an unplugged
-// adapter is retried every cycle but logged only on state changes, so app.log
-// stays quiet while nothing is connected.
+// adapter is retried every cycle but logged only once, so app.log stays quiet
+// while nothing is connected.
 sealed class SerialSink : IMetricsSink
 {
     readonly SerialConfig _config;
     readonly Action<string> _log;
-    // Outputs card status: (true, "") while the port is open, (false, reason)
-    // when it cannot be used, (null, "") once the sink is gone.
-    readonly Action<bool?, string> _setStatus;
+    readonly SinkStatus _status;
     SerialPort? _port;
-    bool _openFailureLogged;
-    string? _lastStatus;
 
     public string Name => "Serial";
 
-    public SerialSink(SerialConfig config, Action<string> log, Action<bool?, string> setStatus)
+    public SerialSink(SerialConfig config, Action<string> log, Action<string, StatusKind?, string> report)
     {
         _config = config.Clone();
         _log = log;
-        _setStatus = setStatus;
+        _status = new SinkStatus(Name, log, report);
     }
 
     // Never throws: open/write failures are part of normal operation here
-    // (device unplugged) and handled with the reopen state machine above.
+    // (device unplugged) and handled by the lazy reopen above.
     public Task PublishAsync(MetricsSnapshot metrics, CancellationToken ct)
     {
         if (_port == null)
@@ -35,18 +31,12 @@ sealed class SerialSink : IMetricsSink
                 var port = new SerialPort(_config.Port, _config.Baud) { WriteTimeout = 2000 };
                 port.Open();
                 _port = port;
-                _openFailureLogged = false;
                 _log($"Serial port {_config.Port} opened @ {_config.Baud} baud.");
-                Report(true, "");
+                _status.Ok(string.Format(L.T.OutSendingCom, _config.Port, _config.Baud));
             }
             catch (Exception ex)
             {
-                if (!_openFailureLogged)
-                {
-                    _log($"[error] Serial open {_config.Port}: {ex.Message} — retrying quietly.");
-                    _openFailureLogged = true;
-                }
-                Report(false, FailureText(ex));
+                _status.Fail(ex, _config.Port, "open");
                 return Task.CompletedTask;
             }
         }
@@ -60,38 +50,17 @@ sealed class SerialSink : IMetricsSink
         catch (Exception ex)
         {
             // Unplugged mid-run — close and fall back to the lazy reopen path.
-            _log($"[error] Serial write {_config.Port}: {ex.Message} — port closed, will reopen.");
             try { _port.Dispose(); } catch { }
             _port = null;
-            _openFailureLogged = true;   // the very next reopen attempt fails silently
-            Report(false, FailureText(ex));
+            _status.Fail(ex, _config.Port, "write");
         }
         return Task.CompletedTask;
     }
 
-    // Passes the state on only when it changes; this runs every publish cycle.
-    void Report(bool ok, string text)
-    {
-        var key = $"{ok}|{text}";
-        if (key == _lastStatus) return;
-        _lastStatus = key;
-        _setStatus(ok, text);
-    }
-
-    // "Access denied" means another program has the port open; the other
-    // exceptions SerialPort throws for a bad or missing port all mean "not found".
-    string FailureText(Exception ex) => ex switch
-    {
-        UnauthorizedAccessException => string.Format(L.T.OutSerialBusy, _config.Port),
-        IOException or ArgumentException or InvalidOperationException
-            => string.Format(L.T.OutSerialNotFound, _config.Port),
-        _ => string.Format(L.T.OutConnectFailed, ex.Message),
-    };
-
     public ValueTask DisposeAsync()
     {
         try { _port?.Dispose(); } catch { }
-        _setStatus(null, "");
+        _status.Clear();
         return ValueTask.CompletedTask;
     }
 }
