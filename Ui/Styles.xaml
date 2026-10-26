@@ -12,7 +12,8 @@
     </Style>
     <Style x:Key="RowSep" TargetType="Border">
         <Setter Property="Height" Value="1"/>
-        <Setter Property="Background" Value="{DynamicResource CardStrokeColorDefaultBrush}"/>
+        <Setter Property="SnapsToDevicePixels" Value="True"/>
+        <Setter Property="Background" Value="{DynamicResource DividerStrokeColorDefaultBrush}"/>
     </Style>
     <Style x:Key="PageTitle" TargetType="TextBlock">
         <Setter Property="FontSize" Value="28"/>

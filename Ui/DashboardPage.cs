@@ -96,16 +96,16 @@ sealed class DashboardPage : UserControl
         if (m.Network is { Count: > 0 }) cards.Add(NetworkCard(m.Network.Count));
         if (m.System != null) cards.Add(SystemCard());
 
-        var grid = new Grid { Margin = new Thickness(16, 16, 16, 6) };
+        var grid = new Grid { Margin = new Thickness(12, 12, 12, 2) };
         grid.ColumnDefinitions.Add(new ColumnDefinition());
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(10) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
         grid.ColumnDefinitions.Add(new ColumnDefinition());
         for (int i = 0; i < cards.Count; i++)
         {
             int row = i / 2;
             if (i % 2 == 0) grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             var card = (FrameworkElement)cards[i];
-            card.Margin = new Thickness(0, 0, 0, 10);
+            card.Margin = new Thickness(0, 0, 0, 8);
             Grid.SetRow(card, row);
             Grid.SetColumn(card, i % 2 == 0 ? 0 : 2);
             if (i % 2 == 0 && i == cards.Count - 1) Grid.SetColumnSpan(card, 3);
@@ -133,7 +133,7 @@ sealed class DashboardPage : UserControl
 
         body = new StackPanel();
         body.Children.Add(head);
-        var card = new Border { Padding = new Thickness(12, 10, 12, 10), Child = body };
+        var card = new Border { Padding = new Thickness(10, 8, 10, 8), Child = body };
         card.Style = (Style)Application.Current.FindResource("Card");
         return card;
     }

@@ -119,7 +119,7 @@ public partial class MainWindow : Window
         panel.Children.Add(text);
         var bar = new Border
         {
-            Child = panel, Padding = new Thickness(14, 8, 8, 8), Margin = new Thickness(16, 16, 16, 0),
+            Child = panel, Padding = new Thickness(14, 8, 8, 8), Margin = new Thickness(12, 12, 12, 0),
             CornerRadius = new CornerRadius(6), BorderThickness = new Thickness(1), Visibility = Visibility.Collapsed,
         };
         bar.SetResourceReference(BackgroundProperty, "SystemFillColorCautionBackgroundBrush");
@@ -199,9 +199,18 @@ public partial class MainWindow : Window
         SaveBar.Visibility = dirty ? Visibility.Visible : Visibility.Collapsed;
         SaveButton.IsEnabled = !invalid;
         SaveIcon.Text = char.ConvertFromUtf32(invalid ? Glyphs.Warning : Glyphs.Edit);
+        SaveText.Text = invalid ? L.T.SaveInvalidInput : L.T.UnsavedChanges;
+
+        // Accent-tinted with an accent top line, red for invalid input, so the
+        // bar stands out from the page above it.
+        string color = invalid ? "SystemFillColorCriticalBrush" : "AccentFillColorDefaultBrush";
+        SaveBar.SetResourceReference(Border.BorderBrushProperty, color);
+        SaveBar.Background = TryFindResource(color) is SolidColorBrush b
+            ? new SolidColorBrush(b.Color) { Opacity = 0.14 } : null;
         SaveIcon.SetResourceReference(TextBlock.ForegroundProperty,
             invalid ? "SystemFillColorCriticalBrush" : "AccentTextFillColorPrimaryBrush");
-        SaveText.Text = invalid ? L.T.SaveInvalidInput : L.T.UnsavedChanges;
+        SaveText.SetResourceReference(TextBlock.ForegroundProperty,
+            invalid ? "SystemFillColorCriticalBrush" : "TextFillColorPrimaryBrush");
     }
 
     void Save_Click(object sender, RoutedEventArgs e) => Save();

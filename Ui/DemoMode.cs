@@ -149,6 +149,14 @@ static class DemoMode
         w.SetUpdateAvailable(new Version(9, 9, 9));
         await Shot(0, "paused-update");
         w.SetPauseState(false);
+
+        // The tray path: paused while the window is hidden, then opened.
+        w.Hide();
+        w.SetPauseState(true);
+        await Task.Delay(200);
+        w.Show();
+        await Shot(0, "paused-from-tray");
+        w.SetPauseState(false);
     }
 
     // ── capture ───────────────────────────────────────────────────────────────
