@@ -405,7 +405,7 @@ sealed class OutputsPage : Panel
     // Dropdown entries like "COM9 — Silicon Labs CP210x USB to UART Bridge":
     // friendly names come from WMI (Win32_PnPEntity), matched to the raw port
     // list; ports without a PnP entry stay plain. "COM2" before "COM10".
-    static string[] AvailableComPorts()
+    internal static string[] AvailableComPorts()
     {
         var ports = System.IO.Ports.SerialPort.GetPortNames()
             .Distinct()
@@ -433,7 +433,7 @@ sealed class OutputsPage : Panel
     }
 
     // The combo shows "COM9 — <description>", the config stores only "COM9".
-    static string ExtractComPort(string text)
+    internal static string ExtractComPort(string text)
     {
         var match = System.Text.RegularExpressions.Regex.Match(
             text.Trim(), @"^COM\d+", System.Text.RegularExpressions.RegexOptions.IgnoreCase);

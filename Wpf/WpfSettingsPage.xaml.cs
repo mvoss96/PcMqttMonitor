@@ -1,13 +1,10 @@
 using System.Windows.Controls;
-using UserControl = System.Windows.Controls.UserControl;
 
 // WPF port of SettingsPage: same options and the same save/revert logic.
 // The theme applies on Save without restarting the app.
 public partial class WpfSettingsPage : UserControl
 {
     readonly AppConfig _config;
-    readonly Action<string?> _applyTheme;
-    readonly Action _saveConfig;
     readonly double[] _intervalValues;
     bool _autoStartInitial;
 
@@ -15,13 +12,11 @@ public partial class WpfSettingsPage : UserControl
     static readonly string[] ThemeValues = ["system", "light", "dark"];
     static readonly string[] LangValues  = ["system", "en", "de"];
 
-    internal WpfSettingsPage(AppConfig config, Action markDirty, Action<string?> applyTheme, Action saveConfig)
+    internal WpfSettingsPage(AppConfig config, Action markDirty)
     {
         InitializeComponent();
         DataContext = L.T;
         _config = config;
-        _applyTheme = applyTheme;
-        _saveConfig = saveConfig;
         ThemeSub.Text = L.T.SetThemeLiveSub;
 
         _intervalValues = IntervalPresets.Append(config.General.PublishIntervalSeconds)
@@ -75,8 +70,8 @@ public partial class WpfSettingsPage : UserControl
         || ThemeValues[ThemeChoice.SelectedIndex] != _config.General.Theme?.ToLowerInvariant()
         || LangValues[LanguageChoice.SelectedIndex] != _config.General.Language?.ToLowerInvariant();
 
-    // Write the controls into the config and save it. Autostart is not
-    // registered from the prototype; a language change still needs a restart.
+    // Write the controls into the config. Autostart is not registered from
+    // the prototype; a language change still needs a restart.
     public void Apply()
     {
         _config.General.PublishIntervalSeconds = IntervalValue();
@@ -85,7 +80,5 @@ public partial class WpfSettingsPage : UserControl
         _autoStartInitial = AutoStartSwitch.IsChecked == true;
         _config.General.Theme = ThemeValues[ThemeChoice.SelectedIndex];
         _config.General.Language = LangValues[LanguageChoice.SelectedIndex];
-        _saveConfig();
-        _applyTheme(_config.General.Theme);
     }
 }

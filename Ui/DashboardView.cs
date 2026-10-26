@@ -630,25 +630,25 @@ sealed class DashboardView : Control
 
     // UI numbers follow the app language ("72,6 °C" in German); MQTT/JSON
     // stays invariant — the two paths are fully separate.
-    static string FmtNum(float? v, string fmt = "0.#") =>
+    internal static string FmtNum(float? v, string fmt = "0.#") =>
         v?.ToString(fmt, L.Culture) ?? "?";
 
-    static string? Fmt(float? v, string unit, string fmt = "0.#") =>
+    internal static string? Fmt(float? v, string unit, string fmt = "0.#") =>
         v == null ? null : $"{v.Value.ToString(fmt, L.Culture)} {unit}";
 
     // "170 GB", or "1,0 TB" from 1024 GB on (the values are binary GB).
-    static string FmtSize(float gb) =>
+    internal static string FmtSize(float gb) =>
         gb >= 1024 ? $"{(gb / 1024f).ToString("0.0", L.Culture)} TB" : $"{gb.ToString("0", L.Culture)} GB";
 
-    static string FmtGb(float? mb) =>
+    internal static string FmtGb(float? mb) =>
         mb == null ? "?" : (mb.Value / 1024f).ToString("0.#", L.Culture);
 
-    static string FmtSpeed(float? kbps) =>
+    internal static string FmtSpeed(float? kbps) =>
         kbps == null ? "—"
         : kbps.Value >= 1024 ? $"{(kbps.Value / 1024f).ToString("0.##", L.Culture)} MB/s"
         : $"{kbps.Value.ToString("0.#", L.Culture)} KB/s";
 
-    static string FmtUptime(int? sec)
+    internal static string FmtUptime(int? sec)
     {
         if (sec == null) return "—";
         var t = TimeSpan.FromSeconds(sec.Value);

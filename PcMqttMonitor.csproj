@@ -17,8 +17,12 @@
     <None Remove="tools\**;tests\**" />
     <!-- The test project calls internal classes (sinks, input rules) directly. -->
     <InternalsVisibleTo Include="PcMqttMonitor.Tests" />
-    <!-- UseWPF drops System.IO from the implicit usings (clash with Shapes.Path). -->
+    <!-- UseWPF drops System.IO from the implicit usings (clash with Shapes.Path).
+         The WinForms namespaces are imported per file instead of globally,
+         so WPF files see no duplicate type names (TextBox, Color, ToolTip...). -->
     <Using Include="System.IO" />
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
   </ItemGroup>
 
   <ItemGroup>

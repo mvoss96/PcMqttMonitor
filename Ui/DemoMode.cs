@@ -252,7 +252,7 @@ static class DemoMode
     static int RamLoad(int t) =>
         Math.Clamp((int)(46 + t * 0.35f + Wave(t, 0, 4, 7f)), 5, 95);
 
-    static MetricsSnapshot Snapshot(int t) => new()
+    internal static MetricsSnapshot Snapshot(int t) => new()
     {
         Host = "GAMING-PC",
         Cpu = new CpuMetrics

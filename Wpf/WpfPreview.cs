@@ -1,12 +1,12 @@
 using System.Runtime.InteropServices;
 using System.Windows;
-using WpfApplication = System.Windows.Application;
+using System.Windows.Threading;
 
 // Dev entry point for the WPF prototype:
 //   PcMqttMonitor.exe --wpf [--lang en|de] [--theme system|light|dark] [--shot <dir>]
 // Opens the WPF window with the demo config (saved to %TEMP%, never the real
-// config.json). --shot captures the window from the screen, so the Mica
-// backdrop is included, and exits.
+// config.json) and demo metrics, one new snapshot per second. --shot captures
+// a series of states from the screen, so the Mica backdrop is included, and exits.
 static class WpfPreview
 {
     public static bool TryRun(string[] args)
@@ -24,8 +24,21 @@ static class WpfPreview
         if (Arg("--theme") is { Length: > 0 } theme) config.General.Theme = theme;
         var configPath = Path.Combine(Path.GetTempPath(), "PcMqttMonitor-wpf-config.json");
 
-        var app = new WpfApplication { ShutdownMode = ShutdownMode.OnMainWindowClose };
+        // Theme first: the shared styles build on the Fluent resources.
+        var app = new Application { ShutdownMode = ShutdownMode.OnMainWindowClose };
+        WpfMainWindow.ApplyTheme(config.General.Theme);
+        app.Resources.MergedDictionaries.Add(new ResourceDictionary
+        {
+            Source = new Uri("pack://application:,,,/PcMqttMonitor;component/Wpf/Styles.xaml"),
+        });
+
         var window = new WpfMainWindow(config, () => ConfigLoader.Save(configPath, config));
+        window.SetSinkStatus("MQTT", StatusKind.Good, string.Format(L.T.StatusConnected, $"{config.Mqtt.Host}:{config.Mqtt.Port}"));
+        int t = 0;
+        for (; t < 60; t++) window.SetLatestMetrics(DemoMode.Snapshot(t));
+        var feed = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        feed.Tick += (_, _) => window.SetLatestMetrics(DemoMode.Snapshot(t++));
+        feed.Start();
 
         string shotDir = Arg("--shot");
         if (shotDir.Length > 0)
@@ -34,12 +47,20 @@ static class WpfPreview
             window.Topmost = true;
             window.ContentRendered += async (_, _) =>
             {
-                string suffix = $"settings-{config.General.Theme}";
-                await Task.Delay(800);
-                Capture(window, Path.Combine(shotDir, $"wpf-{suffix}.png"));
-                window.DemoMarkDirty();
-                await Task.Delay(400);
-                Capture(window, Path.Combine(shotDir, $"wpf-{suffix}-dirty.png"));
+                string tag = $"{config.General.Theme}-{Arg("--lang")}";
+                async Task Shot(string name)
+                {
+                    await Task.Delay(600);
+                    Capture(window, Path.Combine(shotDir, $"wpf-{name}-{tag}.png"));
+                }
+                await Shot("dashboard");
+                window.SelectPage(1);
+                await Shot("outputs");
+                window.DemoOutputs.DemoExpandAll();
+                window.DemoOutputs.DemoSetText("udp.host", "192.168.2.411");
+                await Shot("outputs-invalid");
+                window.SelectPage(3);
+                await Shot("settings");
                 window.Close();
             };
         }
