@@ -302,19 +302,77 @@ sealed class OutputsPage : Panel
         RefreshStatus();
     }
 
-    // Valid port or the previous value — the field is normalized either way.
+    // Discard edits: refill every field from the saved config.
+    public void Revert()
+    {
+        var m = _config.Mqtt;
+        _mqttCard.Toggle.SetChecked(m.Enabled);
+        _host.Text         = m.Host;
+        _port.Text         = m.Port.ToString();
+        _username.Text     = m.Username;
+        _password.Text     = m.Password;
+        _topic.Text        = m.TopicRoot;
+        _useTls.Checked    = m.UseTls;
+        _haDiscovery.Checked = m.HaDiscoveryEnabled;
+
+        _udpCard.Toggle.SetChecked(_config.Udp.Enabled);
+        _udpHost.Text = _config.Udp.Host;
+        _udpPort.Text = _config.Udp.Port.ToString();
+
+        _tcpCard.Toggle.SetChecked(_config.Tcp.Enabled);
+        _tcpPort.Text = _config.Tcp.ListenPort.ToString();
+
+        _serialCard.Toggle.SetChecked(_config.Serial.Enabled);
+        _serialPort.Text = _config.Serial.Port;
+        _serialBaud.Text = _config.Serial.Baud.ToString();
+
+        RefreshStatus();
+    }
+
+    // True when the fields hold values that Apply would write differently
+    // into the config — same normalization as Apply.
+    public bool HasChanges
+    {
+        get
+        {
+            var m = _config.Mqtt;
+            return _mqttCard.Toggle.Checked != m.Enabled
+                || _host.Text.Trim() != m.Host
+                || PortOr(_port, m.Port) != m.Port
+                || _username.Text != m.Username
+                || _password.Text != m.Password
+                || _topic.Text.Trim() != m.TopicRoot
+                || _useTls.Checked != m.UseTls
+                || _haDiscovery.Checked != m.HaDiscoveryEnabled
+                || _udpCard.Toggle.Checked != _config.Udp.Enabled
+                || _udpHost.Text.Trim() != _config.Udp.Host
+                || PortOr(_udpPort, _config.Udp.Port) != _config.Udp.Port
+                || _tcpCard.Toggle.Checked != _config.Tcp.Enabled
+                || PortOr(_tcpPort, _config.Tcp.ListenPort) != _config.Tcp.ListenPort
+                || _serialCard.Toggle.Checked != _config.Serial.Enabled
+                || ExtractComPort(_serialPort.Text) != _config.Serial.Port
+                || BaudOr(_serialBaud, _config.Serial.Baud) != _config.Serial.Baud;
+        }
+    }
+
+    // Valid port or the previous value.
+    static int PortOr(TextBox box, int fallback) =>
+        int.TryParse(box.Text.Trim(), out var port) && port is >= 1 and <= 65535 ? port : fallback;
+
+    static int BaudOr(TextBox box, int fallback) =>
+        int.TryParse(box.Text.Trim(), out var baud) && baud >= 1 ? baud : fallback;
+
+    // Same as PortOr/BaudOr, and the field is normalized to the result.
     static int ParsePort(TextBox box, int fallback)
     {
-        if (!int.TryParse(box.Text.Trim(), out var port) || port is < 1 or > 65535)
-            port = fallback;
+        var port = PortOr(box, fallback);
         box.Text = port.ToString();
         return port;
     }
 
     static int ParseBaud(TextBox box, int fallback)
     {
-        if (!int.TryParse(box.Text.Trim(), out var baud) || baud < 1)
-            baud = fallback;
+        var baud = BaudOr(box, fallback);
         box.Text = baud.ToString();
         return baud;
     }

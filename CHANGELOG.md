@@ -3,7 +3,7 @@
 User-facing changes per release. The release workflow publishes the matching
 section as the GitHub release notes — every tagged version needs a section here.
 
-## v2.9.2 — 2026-10-26
+## v2.10.0 — 2026-10-26
 
 - An unreadable `config.json` is now moved to `config.json.bad` instead of
   being overwritten with defaults on the next save, so manual edits with a
@@ -18,6 +18,8 @@ section as the GitHub release notes — every tagged version needs a section her
 - MQTT and UDP host fields reject incomplete or invalid IPv4 addresses such as
   `192.168.2.411` while typing: the field turns red and the Save button is
   disabled until it is corrected.
+- The save bar disappears again when edits are changed back to the saved
+  values, and a new **Discard** button resets all unsaved edits.
 - Home Assistant entities that disappear while the app runs (a sensor or fan
   unchecked, a drive or network adapter gone) are now removed from HA right
   away instead of lingering with their last value.

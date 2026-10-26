@@ -47,8 +47,7 @@ sealed class SettingsPage : Panel
             Width = Theme.S(100),
         };
         _theme.Items.AddRange([L.T.ThemeSystem, L.T.ThemeLight, L.T.ThemeDark]);
-        int themeIdx = Array.IndexOf(ThemeValues, config.General.Theme?.ToLowerInvariant());
-        _theme.SelectedIndex = themeIdx >= 0 ? themeIdx : 0;
+        _theme.SelectedIndex = IndexOr0(ThemeValues, config.General.Theme);
         _theme.SelectedIndexChanged += (_, _) => markDirty();
 
         // Language names stay in their own language — the standard convention.
@@ -58,8 +57,7 @@ sealed class SettingsPage : Panel
             Width = Theme.S(100),
         };
         _language.Items.AddRange([L.T.LangSystem, "English", "Deutsch"]);
-        int langIdx = Array.IndexOf(LangValues, config.General.Language?.ToLowerInvariant());
-        _language.SelectedIndex = langIdx >= 0 ? langIdx : 0;
+        _language.SelectedIndex = IndexOr0(LangValues, config.General.Language);
         _language.SelectedIndexChanged += (_, _) => markDirty();
 
         var card1 = new SettingsCard { Location = new Point(Theme.S(16), Theme.S(42)) };
@@ -97,14 +95,43 @@ sealed class SettingsPage : Panel
         return t;
     }
 
+    // Combo index of a config value; unknown values select "system" (index 0).
+    static int IndexOr0(string[] values, string? value) =>
+        Math.Max(0, Array.IndexOf(values, value?.ToLowerInvariant()));
+
+    // Discard edits: reset every control to the saved config.
+    public void Revert()
+    {
+        _interval.Box.Text = _config.General.PublishIntervalSeconds.ToString("0.0", CultureInfo.InvariantCulture);
+        _debug.SetChecked(_config.General.DebugEnabled);
+        _updateCheck.SetChecked(_config.General.UpdateCheckEnabled);
+        _autoStart.SetChecked(_autoStartInitial);
+        _theme.SelectedIndex = IndexOr0(ThemeValues, _config.General.Theme);
+        _language.SelectedIndex = IndexOr0(LangValues, _config.General.Language);
+    }
+
+    // Interval as Apply would store it. Accepts both "1.5" and "1,5"; keeps
+    // the current value on garbage input.
+    double IntervalValue() =>
+        double.TryParse(_interval.Box.Text.Replace(',', '.'),
+            NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds)
+            ? Math.Clamp(seconds, 0.5, 3600)
+            : _config.General.PublishIntervalSeconds;
+
+    // True when the controls differ from the saved config.
+    public bool HasChanges =>
+        IntervalValue() != _config.General.PublishIntervalSeconds
+        || _debug.Checked != _config.General.DebugEnabled
+        || _updateCheck.Checked != _config.General.UpdateCheckEnabled
+        || _autoStart.Checked != _autoStartInitial
+        || !string.Equals(ThemeValues[_theme.SelectedIndex], _config.General.Theme, StringComparison.OrdinalIgnoreCase)
+        || !string.Equals(LangValues[_language.SelectedIndex], _config.General.Language, StringComparison.OrdinalIgnoreCase);
+
     // Returns true when the app must restart to apply (theme or language
     // change — WinForms can switch neither color mode nor strings at runtime).
     public bool Apply()
     {
-        // Accept both "1.5" and "1,5"; keep the previous value on garbage input.
-        if (double.TryParse(_interval.Box.Text.Replace(',', '.'),
-                NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds))
-            _config.General.PublishIntervalSeconds = Math.Clamp(seconds, 0.5, 3600);
+        _config.General.PublishIntervalSeconds = IntervalValue();
         _interval.Box.Text = _config.General.PublishIntervalSeconds.ToString("0.0", CultureInfo.InvariantCulture);
         _config.General.DebugEnabled           = _debug.Checked;
         _config.General.UpdateCheckEnabled     = _updateCheck.Checked;

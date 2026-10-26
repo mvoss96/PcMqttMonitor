@@ -388,7 +388,7 @@ sealed class InputBox : Control
 sealed class SaveBar : CardPanel
 {
     public readonly Label Msg;
-    public readonly PillButton Button;
+    public readonly PillButton Revert, Button;
 
     public SaveBar()
     {
@@ -397,20 +397,21 @@ sealed class SaveBar : CardPanel
             Text = L.T.UnsavedChanges, AutoSize = true,
             Font = Theme.Small, ForeColor = Theme.Fg2, BackColor = Theme.CardBg,
         };
-        Button = new PillButton
-        {
-            Text = L.T.Save,   // "Speichern" needs more room than "Save"
-            Size = new Size(
-                Math.Max(Theme.S(64), TextRenderer.MeasureText(L.T.Save, Theme.SemiBold).Width + Theme.S(24)),
-                Theme.S(26)),
-        };
+        Revert = new PillButton { Text = L.T.Discard, Secondary = true, Size = PillSize(L.T.Discard) };
+        Button = new PillButton { Text = L.T.Save, Size = PillSize(L.T.Save) };
         Controls.Add(Msg);
+        Controls.Add(Revert);
         Controls.Add(Button);
         Msg.TextChanged += (_, _) => PerformLayout();
         Visible = false;
     }
 
-    // Message on the left, button on the right, bar shrink-wraps both.
+    // Width follows the text: "Speichern" needs more room than "Save".
+    static Size PillSize(string text) => new(
+        Math.Max(Theme.S(64), TextRenderer.MeasureText(text, Theme.SemiBold).Width + Theme.S(24)),
+        Theme.S(26));
+
+    // Message on the left, buttons on the right, bar shrink-wraps all.
     protected override void OnLayout(LayoutEventArgs levent)
     {
         base.OnLayout(levent);
@@ -418,12 +419,14 @@ sealed class SaveBar : CardPanel
         int x = Theme.S(14);
         Msg.Location = new Point(x, (h - Msg.Height) / 2);
         x += Msg.Width + Theme.S(12);
-        if (Button.Visible)
+        foreach (var b in new[] { Revert, Button })
         {
-            Button.Location = new Point(x, (h - Button.Height) / 2);
-            x += Button.Width;
+            if (!b.Visible) continue;
+            b.Location = new Point(x, (h - b.Height) / 2);
+            x += b.Width + Theme.S(6);
         }
-        Size = new Size(x + Theme.S(8), h);
+        // 8px right padding; the last button already added a 6px gap.
+        Size = new Size(x + Theme.S(Revert.Visible || Button.Visible ? 2 : 8), h);
     }
 }
 
@@ -432,6 +435,10 @@ sealed class SaveBar : CardPanel
 sealed class PillButton : Control
 {
     bool _hover;
+
+    // Secondary: outlined, without the accent fill (e.g. "Discard" next to "Save").
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public bool Secondary { get; set; }
 
     public PillButton()
     {
@@ -460,12 +467,18 @@ sealed class PillButton : Control
         var r = new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
         using var path = Theme.RoundedRect(r, Theme.SF(5));
         // Disabled: neutral grey fill instead of the accent color.
-        var bg = Enabled ? Theme.Accent : Theme.InputBorder;
-        if (_hover && Enabled) bg = Theme.Mix(bg, Theme.Dark ? Color.White : Color.Black, 0.08f);
+        var bg = Secondary ? Theme.CardBg : Enabled ? Theme.Accent : Theme.InputBorder;
+        if (_hover && Enabled) bg = Secondary ? Theme.Hover : Theme.Mix(bg, Theme.Dark ? Color.White : Color.Black, 0.08f);
         using var fill = new SolidBrush(bg);
         g.FillPath(fill, path);
+        if (Secondary)
+        {
+            using var border = new Pen(Theme.InputBorder);
+            g.DrawPath(border, path);
+        }
 
-        TextRenderer.DrawText(g, Text, Font, new Rectangle(0, 0, Width, Height), Enabled ? Theme.AccentFg : Theme.Fg3,
+        var fg = !Enabled ? Theme.Fg3 : Secondary ? Theme.Fg : Theme.AccentFg;
+        TextRenderer.DrawText(g, Text, Font, new Rectangle(0, 0, Width, Height), fg,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
     }
 }

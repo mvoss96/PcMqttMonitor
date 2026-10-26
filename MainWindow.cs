@@ -27,7 +27,7 @@ sealed class MainWindow : Form
     // floating save panel
     readonly SaveBar _saveBar;
     readonly System.Windows.Forms.Timer _savedFlash = new() { Interval = 1200 };
-    bool _dirty, _outputsDirty;
+    bool _dirty;
 
     // Update notification: title-bar text suffix + accent badge on the About
     // nav icon — no extra chrome inside the window (see SetUpdateAvailable).
@@ -69,9 +69,9 @@ sealed class MainWindow : Form
         dashboardHost.Controls.Add(_dashboard);
         dashboardHost.Controls.Add(_pauseBanner);   // added after Fill so Top wins
 
-        _outputs  = new OutputsPage(config, () => MarkDirty(outputs: true)) { Dock = DockStyle.Fill };
-        _sensors  = new SensorsPage(config, () => MarkDirty()) { Dock = DockStyle.Fill };
-        _settings = new SettingsPage(config, () => MarkDirty()) { Dock = DockStyle.Fill };
+        _outputs  = new OutputsPage(config, UpdateSaveBar) { Dock = DockStyle.Fill };
+        _sensors  = new SensorsPage(config, UpdateSaveBar) { Dock = DockStyle.Fill };
+        _settings = new SettingsPage(config, UpdateSaveBar) { Dock = DockStyle.Fill };
         _about    = new AboutPage(v => SetUpdateAvailable(v)) { Dock = DockStyle.Fill };
 
         _pages = [dashboardHost, _outputs, _sensors, _settings, _about];
@@ -119,6 +119,7 @@ sealed class MainWindow : Form
         // ── floating save panel (bottom-right, only while dirty) ────────────
         _saveBar = new SaveBar();
         _saveBar.Button.Click += (_, _) => Save();
+        _saveBar.Revert.Click += (_, _) => Revert();
         _saveBar.SizeChanged += (_, _) => PositionSaveBar();
         Controls.Add(_saveBar);
         _saveBar.BringToFront();
@@ -189,10 +190,16 @@ sealed class MainWindow : Form
 
     // ── dirty / save ──────────────────────────────────────────────────────────
 
-    void MarkDirty(bool outputs = false)
+    // Called on every edit. The bar shows only while some page differs from
+    // the saved config, so changing a value and changing it back hides it.
+    void UpdateSaveBar()
     {
-        _dirty = true;
-        _outputsDirty |= outputs;
+        _dirty = _outputs.HasChanges || _sensors.HasChanges || _settings.HasChanges;
+        if (!_dirty)
+        {
+            if (!_savedFlash.Enabled) _saveBar.Visible = false;
+            return;
+        }
         _savedFlash.Stop();
         // Invalid input disables Save; the red field on the Outputs page shows which one.
         bool invalid = _outputs.HasInvalidInput;
@@ -200,9 +207,19 @@ sealed class MainWindow : Form
         _saveBar.Msg.ForeColor = invalid ? Theme.Crit : Theme.Fg2;
         _saveBar.Button.Enabled = !invalid;
         _saveBar.Button.Visible = true;
+        _saveBar.Revert.Visible = true;
         _saveBar.PerformLayout();
         PositionSaveBar();
         _saveBar.Visible = true;
+    }
+
+    // Discard all unsaved edits on every page.
+    void Revert()
+    {
+        _outputs.Revert();
+        _sensors.Revert();
+        _settings.Revert();
+        UpdateSaveBar();
     }
 
     void Save()
@@ -210,6 +227,9 @@ sealed class MainWindow : Form
         if (_outputs.HasInvalidInput)
             return;
 
+        // Output settings need a sink rebuild; general/sensor settings apply
+        // live through the shared config object.
+        bool outputsChanged = _outputs.HasChanges;
         _outputs.Apply();
         _sensors.Apply();
         bool needsRestart = _settings.Apply();
@@ -224,16 +244,14 @@ sealed class MainWindow : Form
             return;
         }
 
-        // Output settings need a sink rebuild; general/sensor settings apply
-        // live through the shared config object.
-        if (_outputsDirty)
+        if (outputsChanged)
             Program.RequestSinksReload();
 
         _dirty = false;
-        _outputsDirty = false;
         _saveBar.Msg.Text = L.T.Saved;
         _saveBar.Msg.ForeColor = Theme.Good;
         _saveBar.Button.Visible = false;
+        _saveBar.Revert.Visible = false;
         _saveBar.PerformLayout();
         PositionSaveBar();
         _savedFlash.Start();

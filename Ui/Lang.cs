@@ -36,6 +36,7 @@ sealed class Lang
     public string UnsavedChanges { get; init; } = "Unsaved changes";
     public string Saved          { get; init; } = "✓ Saved";
     public string Save           { get; init; } = "Save";
+    public string Discard        { get; init; } = "Discard";
     public string TitleUpdate    { get; init; } = "v{0} available";   // title-bar suffix
 
     public string PausedBanner { get; init; } = "Publishing is paused";
@@ -165,6 +166,7 @@ sealed class Lang
         UnsavedChanges = "Ungespeicherte Änderungen",
         Saved          = "✓ Gespeichert",
         Save           = "Speichern",
+        Discard        = "Verwerfen",
         TitleUpdate    = "v{0} verfügbar",
 
         PausedBanner = "Übertragung pausiert",
