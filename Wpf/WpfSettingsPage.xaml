@@ -19,7 +19,7 @@
     </UserControl.Resources>
 
     <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <StackPanel Margin="24,20,24,16">
+        <StackPanel Margin="24,16,24,16">
             <TextBlock Text="{Binding SettingsTitle}" Style="{StaticResource PageTitle}"/>
 
             <Border Style="{StaticResource Card}" Margin="0,0,0,8">

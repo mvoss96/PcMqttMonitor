@@ -64,7 +64,7 @@ public partial class WpfMainWindow : Window
 
     static UIElement Placeholder(string title)
     {
-        var panel = new StackPanel { Margin = new Thickness(24, 20, 24, 0) };
+        var panel = new StackPanel { Margin = new Thickness(24, 16, 24, 0) };
         panel.Children.Add(new TextBlock { Text = title, Style = (Style)Application.Current.FindResource("PageTitle") });
         panel.Children.Add(new TextBlock { Text = "Not ported yet (WPF prototype)." });
         return panel;
@@ -121,5 +121,6 @@ public partial class WpfMainWindow : Window
     // ── hooks for the screenshot run ──────────────────────────────────────────
 
     internal WpfOutputsPage DemoOutputs => _outputs;
+    internal void DemoDiscard() => Discard_Click(this, new RoutedEventArgs());
     internal void DemoMarkDirty() => _settings.DebugSwitch.IsChecked = !_settings.DebugSwitch.IsChecked;
 }

@@ -63,7 +63,7 @@ sealed class WpfOutputsPage : UserControl
             (_serial, _baud, OutputsPage.ValidBaud, L.T.OutInvalidBaud),
         ];
 
-        var stack = new StackPanel { Margin = new Thickness(24, 20, 24, 16) };
+        var stack = new StackPanel { Margin = new Thickness(24, 16, 24, 16) };
         Grid.SetIsSharedSizeScope(stack, true);
         var title = new TextBlock { Text = L.T.OutputsTitle, Style = (Style)Application.Current.FindResource("PageTitle") };
         stack.Children.Add(title);
@@ -212,7 +212,7 @@ sealed class OutputExpander : Border
     readonly Ellipse _dot = new() { Width = 8, Height = 8, Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
     readonly TextBlock _status = new() { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
     readonly TextBlock _chevron = new() { FontFamily = new FontFamily("Segoe Fluent Icons"), FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(16, 0, 0, 0) };
-    readonly Grid _body = new() { Margin = new Thickness(16, 8, 16, 8) };
+    readonly Grid _body = new() { Margin = new Thickness(16, 6, 16, 6) };
     readonly Border _bodyHost;
     bool _expanded;
 
@@ -235,7 +235,7 @@ sealed class OutputExpander : Border
         Enabled.Unchecked += (_, _) => changed();
 
         var title = new TextBlock { Text = name, FontWeight = FontWeights.SemiBold, Width = 64, VerticalAlignment = VerticalAlignment.Center };
-        var head = new DockPanel { MinHeight = 56, Background = Brushes.Transparent, Cursor = System.Windows.Input.Cursors.Hand };
+        var head = new DockPanel { MinHeight = 52, Background = Brushes.Transparent, Cursor = System.Windows.Input.Cursors.Hand };
         var headHost = new Border { CornerRadius = new CornerRadius(7), Padding = new Thickness(16, 0, 16, 0), Child = head };
         DockPanel.SetDock(title, Dock.Left);
         DockPanel.SetDock(_dot, Dock.Left);
@@ -296,9 +296,9 @@ sealed class OutputExpander : Border
     {
         int row = _body.RowDefinitions.Count;
         _body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        var text = new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 4, 16, 4) };
+        var text = new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 2, 16, 2) };
         text.SetResourceReference(TextBlock.ForegroundProperty, "TextFillColorSecondaryBrush");
-        field.Margin = new Thickness(0, 4, 0, 4);
+        field.Margin = new Thickness(0, 2, 0, 2);
         Grid.SetRow(text, row);
         Grid.SetRow(field, row);
         Grid.SetColumn(field, 1);

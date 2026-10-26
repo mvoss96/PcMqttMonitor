@@ -56,11 +56,18 @@ static class WpfPreview
                 await Shot("dashboard");
                 window.SelectPage(1);
                 await Shot("outputs");
+                window.DemoMarkDirty();
+                await Shot("outputs-dirty");
+                window.DemoDiscard();
                 window.DemoOutputs.DemoExpandAll();
                 window.DemoOutputs.DemoSetText("udp.host", "192.168.2.411");
                 await Shot("outputs-invalid");
                 window.SelectPage(3);
                 await Shot("settings");
+                window.DemoMarkDirty();
+                await Shot("settings-dirty");
+                window.SelectPage(0);
+                await Shot("dashboard-dirty");
                 window.Close();
             };
         }
