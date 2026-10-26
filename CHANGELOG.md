@@ -12,6 +12,11 @@ section as the GitHub release notes — every tagged version needs a section her
   dashboard and the other outputs for up to 20 seconds per attempt:
   connecting times out after 5 seconds, retries back off up to 60 seconds,
   and only the first failure is logged.
+- The MQTT card on the Outputs page now says why a connection failed: no
+  response from the broker, connection refused, host not found or login
+  failed, instead of only "Not connected".
+- MQTT and UDP host fields reject incomplete or invalid IPv4 addresses such as
+  `192.168.2.411` while typing; saving is blocked until they are corrected.
 - Home Assistant entities that disappear while the app runs (a sensor or fan
   unchecked, a drive or network adapter gone) are now removed from HA right
   away instead of lingering with their last value.

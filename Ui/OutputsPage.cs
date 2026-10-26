@@ -23,9 +23,10 @@ sealed class OutputsPage : Panel
     readonly ComboBox _serialPort;
     readonly TextBox _serialBaud;
 
-    // live MQTT state pushed in from the sink via MainWindow
+    // live MQTT state pushed in from the sink via MainWindow: the broker when
+    // connected, otherwise "connecting…" or the failure reason ("" = none)
     bool _mqttConnected;
-    string _mqttBroker = "";
+    string _mqttDetail = "";
 
     // manual scrolling (slim overlay rail, no native scrollbar)
     readonly Label _title;
@@ -86,6 +87,10 @@ sealed class OutputsPage : Panel
         };
         _serialBaud = _serialCard.AddPortRow(L.T.FieldBaudRate, config.Serial.Baud);
         _serialCard.Toggle.SetChecked(config.Serial.Enabled);
+
+        // Live IP check while typing.
+        _host.TextChanged    += (_, _) => RefreshStatus();
+        _udpHost.TextChanged += (_, _) => RefreshStatus();
 
         foreach (var card in new[] { _mqttCard, _udpCard, _tcpCard, _serialCard })
         {
@@ -209,11 +214,28 @@ sealed class OutputsPage : Panel
 
     // Called by MainWindow when the MQTT sink reports a connection change,
     // and locally whenever a toggle flips.
-    public void SetMqttStatus(bool connected, string broker)
+    public void SetMqttStatus(bool connected, string detail)
     {
         _mqttConnected = connected;
-        _mqttBroker = broker;
+        _mqttDetail = detail;
         RefreshStatus();
+    }
+
+    // True when an enabled card holds a host that cannot be valid; MainWindow
+    // refuses to save in that case.
+    public bool HasInvalidInput =>
+        (_mqttCard.Toggle.Checked && IsInvalidIp(_host.Text)) ||
+        (_udpCard.Toggle.Checked && IsInvalidIp(_udpHost.Text));
+
+    // Text made only of digits and dots is meant as an IPv4 address and must
+    // be a complete, valid one ("192.168.2.411" is rejected). Anything else
+    // is a host name, which can only be checked by connecting.
+    static bool IsInvalidIp(string text)
+    {
+        var host = text.Trim();
+        if (host.Length == 0 || !host.All(c => char.IsAsciiDigit(c) || c == '.'))
+            return false;
+        return host.Split('.').Length != 4 || !System.Net.IPAddress.TryParse(host, out _);
     }
 
     void RefreshStatus()
@@ -222,15 +244,19 @@ sealed class OutputsPage : Panel
             _mqttCard.SetStatus(L.T.OutDisabled, false);
         else if (string.IsNullOrWhiteSpace(_host.Text))
             _mqttCard.SetStatus(L.T.OutNoHost, false);
+        else if (IsInvalidIp(_host.Text))
+            _mqttCard.SetStatus(L.T.OutInvalidIp, false);
         else if (_mqttConnected)
-            _mqttCard.SetStatus(string.Format(L.T.StatusConnected, _mqttBroker), true);
+            _mqttCard.SetStatus(string.Format(L.T.StatusConnected, _mqttDetail), true);
         else
-            _mqttCard.SetStatus(L.T.OutNotConnected, false);
+            _mqttCard.SetStatus(_mqttDetail.Length > 0 ? _mqttDetail : L.T.OutNotConnected, false);
 
         if (!_udpCard.Toggle.Checked)
             _udpCard.SetStatus(L.T.OutDisabled, false);
         else if (string.IsNullOrWhiteSpace(_udpHost.Text))
             _udpCard.SetStatus(L.T.OutNoHost, false);
+        else if (IsInvalidIp(_udpHost.Text))
+            _udpCard.SetStatus(L.T.OutInvalidIp, false);
         else
             _udpCard.SetStatus(string.Format(L.T.OutSendingTo, _udpHost.Text, _udpPort.Text), true);
 

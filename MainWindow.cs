@@ -204,6 +204,17 @@ sealed class MainWindow : Form
 
     void Save()
     {
+        // The Outputs card itself names the invalid field.
+        if (_outputs.HasInvalidInput)
+        {
+            _savedFlash.Stop();
+            _saveBar.Msg.Text = L.T.SaveInvalidInput;
+            _saveBar.Msg.ForeColor = Theme.Crit;
+            _saveBar.PerformLayout();
+            PositionSaveBar();
+            return;
+        }
+
         _outputs.Apply();
         _sensors.Apply();
         bool needsRestart = _settings.Apply();
@@ -278,10 +289,10 @@ sealed class MainWindow : Form
     }
 
     // Called from the MQTT sink (any thread) — feeds the Outputs page status line.
-    public void SetConnectionStatus(bool connected, string broker)
+    public void SetConnectionStatus(bool connected, string detail)
     {
         if (!IsHandleCreated) return;
-        BeginInvoke(() => _outputs.SetMqttStatus(connected, broker));
+        BeginInvoke(() => _outputs.SetMqttStatus(connected, detail));
     }
 
     // Called by TrayApp's central pause switch. UI thread only.

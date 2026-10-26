@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.IO;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using MQTTnet;
@@ -13,7 +14,9 @@ sealed class MqttSink : IMetricsSink
     readonly MqttConfig _config;
     readonly Action<string> _log;
     readonly Action<string> _setStatus;               // tray context-menu status line
-    readonly Action<bool, string> _setConnectionStatus; // status dot in the Settings tab
+    // Outputs card status: (true, broker) when connected, otherwise (false, text)
+    // with "connecting…" or the failure reason; "" means plain "not connected".
+    readonly Action<bool, string> _setConnectionStatus;
     readonly MqttClientFactory _factory = new();
     readonly IMqttClient _client;
     readonly MqttClientOptions _options;
@@ -92,9 +95,14 @@ sealed class MqttSink : IMetricsSink
                 return;
             try
             {
+                var connecting = string.Format(L.T.StatusConnectingTo, $"{_config.Host}:{_config.Port}");
+                // During retries the Outputs card keeps showing the failure reason.
                 if (!_connectFailureLogged)
+                {
                     _log($"Connecting to {_config.Host}:{_config.Port}...");
-                _setStatus(string.Format(L.T.StatusConnectingTo, $"{_config.Host}:{_config.Port}"));
+                    _setConnectionStatus(false, connecting);
+                }
+                _setStatus(connecting);
                 // WithTimeout alone does not bound the TCP connect (still ~21 s to
                 // an unreachable host), so cancel the attempt after 5 s here.
                 using (var connectCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
@@ -122,7 +130,7 @@ sealed class MqttSink : IMetricsSink
                     _connectFailureLogged = true;
                 }
                 _setStatus(L.T.StatusDisconnected);
-                _setConnectionStatus(false, "");
+                _setConnectionStatus(false, FailureText(ex));
                 return;
             }
         }
@@ -142,6 +150,28 @@ sealed class MqttSink : IMetricsSink
                 _setConnectionStatus(false, "");
             throw;   // the main loop logs it as "[error] MQTT publish: ..."
         }
+    }
+
+    // User-facing reason for a failed connect, shown on the Outputs card.
+    // MQTTnet 5 reports a rejected CONNECT only through the message text,
+    // which contains the result code name (e.g. "BadUserNameOrPassword").
+    static string FailureText(Exception ex)
+    {
+        if (ex is OperationCanceledException)   // our 5 s connect timeout
+            return L.T.OutUnreachable;
+        for (var e = ex; e != null; e = e.InnerException)
+        {
+            if (e is SocketException se)
+                return se.SocketErrorCode switch
+                {
+                    SocketError.ConnectionRefused => L.T.OutRefused,
+                    SocketError.HostNotFound or SocketError.NoData or SocketError.TryAgain => L.T.OutHostNotFound,
+                    _ => L.T.OutUnreachable,
+                };
+        }
+        if (ex.Message.Contains("BadUserNameOrPassword") || ex.Message.Contains("NotAuthorized"))
+            return L.T.OutAuthFailed;
+        return string.Format(L.T.OutConnectFailed, ex.Message);
     }
 
     // Pause/resume: reflect the transition on the availability topic while the

@@ -143,8 +143,8 @@ sealed class TrayApp : ApplicationContext
     }
 
     // Called from the MQTT loop thread to update the connection indicator in the Settings tab.
-    public void SetConnectionStatus(bool connected, string broker)
-        => _window.SetConnectionStatus(connected, broker);
+    public void SetConnectionStatus(bool connected, string detail)
+        => _window.SetConnectionStatus(connected, detail);
 
     // Called from the MQTT loop thread with the latest sensor snapshot.
     public void UpdateSnapshot(SensorSnapshot snapshot)
