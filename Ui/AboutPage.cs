@@ -1,145 +1,111 @@
-using System.Drawing;
-using System.Drawing.Drawing2D;
-using System.Windows.Forms;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Documents;
+using System.Windows.Media;
+using System.Windows.Shapes;
 
-// The About page: logo, name, version, author/license — and the update check,
-// which runs automatically every time the page is opened. A found update is
-// reported back so MainWindow can show its title-area pill.
-sealed class AboutPage : Panel
+// The About page: logo, name, version, author and license, and an update
+// check that runs every time the page is shown. A found update is reported
+// back so the window can show it in the title and on the nav icon.
+sealed class AboutPage : UserControl
 {
-    readonly Label _updStatus;
-    readonly LinkLabel _updLink;
+    readonly TextBlock _status = new() { HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 12, 0, 0) };
+    readonly TextBlock _download = new() { HorizontalAlignment = HorizontalAlignment.Center, Visibility = Visibility.Collapsed };
     readonly Action<Version> _updateFound;
     CancellationTokenSource? _checkCts;
 
     public AboutPage(Action<Version> updateFound)
     {
         _updateFound = updateFound;
-        BackColor = Theme.WinBg;
 
-        var logo = new LogoBox { Size = new Size(Theme.S(52), Theme.S(52)) };
-        var name = new Label
+        var stack = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(24) };
+        stack.Children.Add(Logo(52));
+        stack.Children.Add(new TextBlock
         {
-            Text = "PC MQTT Monitor", Font = Theme.Title,
-            ForeColor = Theme.Fg, AutoSize = true
-        };
-        var version = new Label
-        {
-            Text = string.Format(L.T.AboutVersion, UpdateChecker.CurrentVersion.ToString(3)),
-            ForeColor = Theme.Fg2, AutoSize = true
-        };
-        _updStatus = new Label { ForeColor = Theme.Fg3, AutoSize = true };
-        _updLink = new LinkLabel
-        {
-            Text = L.T.AboutDownload, AutoSize = true, Visible = false,
-            LinkColor = Theme.Accent, ActiveLinkColor = Theme.Accent,
-        };
-        _updLink.LinkClicked += (_, _) => TrayApp.OpenReleasesPage();
+            Text = "PC MQTT Monitor", Style = (Style)Application.Current.FindResource("PageTitle"),
+            HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 14, 0, 2),
+        });
+        stack.Children.Add(Secondary(string.Format(L.T.AboutVersion, UpdateChecker.CurrentVersion.ToString(3)), 14));
+        stack.Children.Add(_status);
+        _download.Inlines.Add(Link(L.T.AboutDownload, TrayApp.OpenReleasesPage));
+        stack.Children.Add(_download);
 
-        var repo = new LinkLabel
-        {
-            Text = "github.com/mvoss96/PcMqttMonitor", AutoSize = true,
-            LinkColor = Theme.Accent, ActiveLinkColor = Theme.Accent,
-        };
-        repo.LinkClicked += (_, _) => OpenUrl($"https://github.com/{UpdateChecker.RepoOwner}/{UpdateChecker.RepoName}");
+        var repo = new TextBlock { HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 20, 0, 6) };
+        string repoUrl = $"https://github.com/{UpdateChecker.RepoOwner}/{UpdateChecker.RepoName}";
+        repo.Inlines.Add(Link($"github.com/{UpdateChecker.RepoOwner}/{UpdateChecker.RepoName}", () => OpenUrl(repoUrl)));
+        stack.Children.Add(repo);
+        stack.Children.Add(Secondary($"© {DateTime.Now.Year} Marcus Voß — {L.T.AboutLicense}", 12));
+        stack.Children.Add(Secondary(L.T.AboutDeps, 12));
+        Content = stack;
 
-        var license = new Label
+        IsVisibleChanged += (_, _) =>
         {
-            Text = $"© {DateTime.Now.Year} Marcus Voß — {L.T.AboutLicense}",
-            ForeColor = Theme.Fg3, Font = Theme.Small, AutoSize = true
+            if (IsVisible) RunUpdateCheck();
+            else _checkCts?.Cancel();
         };
-        var deps = new Label
-        {
-            Text = L.T.AboutDeps,
-            ForeColor = Theme.Fg3, Font = Theme.Small, AutoSize = true
-        };
+    }
 
-        Controls.AddRange([logo, name, version, _updStatus, _updLink, repo, license, deps]);
+    static TextBlock Secondary(string text, double size)
+    {
+        var tb = new TextBlock { Text = text, FontSize = size, HorizontalAlignment = HorizontalAlignment.Center, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center };
+        tb.SetResourceReference(TextBlock.ForegroundProperty, "TextFillColorSecondaryBrush");
+        return tb;
+    }
+
+    static Hyperlink Link(string text, Action click)
+    {
+        var link = new Hyperlink(new Run(text));
+        link.Click += (_, _) => click();
+        return link;
     }
 
     static void OpenUrl(string url)
     {
-        try
-        {
-            System.Diagnostics.Process.Start(
-                new System.Diagnostics.ProcessStartInfo { FileName = url, UseShellExecute = true });
-        }
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = url, UseShellExecute = true }); }
         catch (Exception ex) { AppLog.Write($"[ui] open url failed: {ex.Message}"); }
     }
 
-    // Vertical stack, everything horizontally centered.
-    protected override void OnLayout(LayoutEventArgs levent)
+    // The app's signal-bars logo (same design as app.ico) in the accent color.
+    internal static FrameworkElement Logo(double size)
     {
-        base.OnLayout(levent);
-        int y = Theme.S(64);
-        foreach (Control c in Controls)
+        double u = size / 16;
+        var canvas = new Canvas { Width = size, Height = size, HorizontalAlignment = HorizontalAlignment.Center };
+        foreach (var (x, y, opacity) in new[] { (1.0, 10.0, 1.0), (5.0, 7.0, 1.0), (9.0, 4.0, 1.0), (13.0, 1.0, 0.45) })
         {
-            if (c == _updLink && !_updLink.Visible) continue;
-            c.Left = (Width - c.Width) / 2;
-            c.Top = y;
-            y += c.Height + Theme.S(c is LogoBox ? 14 : 6);
-            // extra gap between the update block and the repo link
-            if (c == _updLink || (c == _updStatus && !_updLink.Visible)) y += Theme.S(10);
+            var bar = new Rectangle { Width = 2.6 * u, Height = (15 - y) * u, RadiusX = 0.8 * u, RadiusY = 0.8 * u, Opacity = opacity };
+            bar.SetResourceReference(Shape.FillProperty, "AccentFillColorDefaultBrush");
+            Canvas.SetLeft(bar, x * u);
+            Canvas.SetTop(bar, y * u);
+            canvas.Children.Add(bar);
         }
-    }
-
-    protected override void OnVisibleChanged(EventArgs e)
-    {
-        base.OnVisibleChanged(e);
-        if (Visible) RunUpdateCheck();
-        else _checkCts?.Cancel();
+        return canvas;
     }
 
     async void RunUpdateCheck()
     {
         _checkCts?.Cancel();
         var cts = _checkCts = new CancellationTokenSource();
-
-        _updStatus.Text = L.T.AboutChecking;
-        _updStatus.ForeColor = Theme.Fg3;
-        _updLink.Visible = false;
-        PerformLayout();
-
+        SetStatus(L.T.AboutChecking, "TextFillColorTertiaryBrush");
+        _download.Visibility = Visibility.Collapsed;
         try
         {
             var newer = await UpdateChecker.CheckAsync(cts.Token);
             if (cts.Token.IsCancellationRequested) return;
             if (newer != null)
             {
-                _updStatus.Text = string.Format(L.T.AboutUpdateFound, newer.ToString(3));
-                _updStatus.ForeColor = Theme.Fg;
-                _updLink.Visible = true;
+                SetStatus(string.Format(L.T.AboutUpdateFound, newer.ToString(3)), "TextFillColorPrimaryBrush");
+                _download.Visibility = Visibility.Visible;
                 _updateFound(newer);
             }
-            else
-            {
-                _updStatus.Text = L.T.AboutUpToDate;
-                _updStatus.ForeColor = Theme.Good;
-            }
+            else SetStatus(L.T.AboutUpToDate, "SystemFillColorSuccessBrush");
         }
-        catch (OperationCanceledException) { return; }
-        catch (Exception ex)
-        {
-            _updStatus.Text = string.Format(L.T.AboutCheckFailed, ex.Message);
-            _updStatus.ForeColor = Theme.Fg3;
-        }
-        PerformLayout();
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { SetStatus(string.Format(L.T.AboutCheckFailed, ex.Message), "TextFillColorTertiaryBrush"); }
     }
 
-    // The signal-bars logo, drawn with the shared glyph painter.
-    sealed class LogoBox : Control
+    void SetStatus(string text, string brush)
     {
-        public LogoBox()
-        {
-            SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint
-                   | ControlStyles.UserPaint, true);
-        }
-
-        protected override void OnPaint(PaintEventArgs e)
-        {
-            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            e.Graphics.Clear(Theme.WinBg);
-            NavIcons.Logo(e.Graphics, new RectangleF(0, 0, Width, Height), Theme.Accent);
-        }
+        _status.Text = text;
+        _status.SetResourceReference(TextBlock.ForegroundProperty, brush);
     }
 }

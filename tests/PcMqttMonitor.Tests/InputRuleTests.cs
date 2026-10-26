@@ -23,7 +23,7 @@ public class InputRuleTests
     [InlineData("::1", true)]
     [InlineData("fe80::1", true)]
     [InlineData("fe80::zz", false)]
-    public void Host(string text, bool valid) => Assert.Equal(valid, OutputsPage.ValidHost(text));
+    public void Host(string text, bool valid) => Assert.Equal(valid, InputRules.ValidHost(text));
 
     [Theory]
     [InlineData("1", true)]
@@ -34,13 +34,13 @@ public class InputRuleTests
     [InlineData("9871111111", false)]
     [InlineData("12a", false)]
     [InlineData("", false)]
-    public void Port(string text, bool valid) => Assert.Equal(valid, OutputsPage.ValidPort(text));
+    public void Port(string text, bool valid) => Assert.Equal(valid, InputRules.ValidPort(text));
 
     [Theory]
     [InlineData("115200", true)]
     [InlineData("0", false)]
     [InlineData("abc", false)]
-    public void Baud(string text, bool valid) => Assert.Equal(valid, OutputsPage.ValidBaud(text));
+    public void Baud(string text, bool valid) => Assert.Equal(valid, InputRules.ValidBaud(text));
 }
 
 // Progressive shortening of CPU/GPU names for the dashboard card titles.
@@ -49,15 +49,15 @@ public class NameStageTests
     [Fact]
     public void AmdCpu() => Assert.Equal(
         ["AMD Ryzen 7 9800X3D", "AMD 9800X3D", "9800X3D"],
-        DashboardView.NameStages("AMD Ryzen 7 9800X3D 8-Core Processor"));
+        Format.NameStages("AMD Ryzen 7 9800X3D 8-Core Processor"));
 
     [Fact]
     public void NvidiaGpu() => Assert.Equal(
         ["NVIDIA GeForce RTX 5070", "NVIDIA RTX 5070", "RTX 5070"],
-        DashboardView.NameStages("NVIDIA GeForce RTX 5070"));
+        Format.NameStages("NVIDIA GeForce RTX 5070"));
 
     [Fact]
     public void IntelCpu() => Assert.Equal(
         ["12th Gen Intel Core i7-12700K", "Intel Core i7-12700K", "Intel i7-12700K", "i7-12700K"],
-        DashboardView.NameStages("12th Gen Intel(R) Core(TM) i7-12700K"));
+        Format.NameStages("12th Gen Intel(R) Core(TM) i7-12700K"));
 }

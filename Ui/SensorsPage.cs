@@ -1,71 +1,47 @@
-using System.Drawing;
-using System.Windows.Forms;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 
 // The Sensors page: which metrics get published, grouped by hardware, as a
-// two-column checkbox grid inside one card. Unchecked values are not read
-// from LHM and not published. The fan group lists every detected fan channel
-// individually — hardware detection finishes AFTER this page is built, so the
-// card is rebuilt once the channels are available.
-sealed class SensorsPage : Panel
+// two-column check box grid inside one card. Unchecked values are not read
+// from LHM and not published. The fan group lists every detected fan channel;
+// detection finishes after the window is built, so the card is rebuilt the
+// first time the page is shown with channels available.
+sealed class SensorsPage : UserControl
 {
-    readonly List<(FlatCheck Box, Action<SensorConfig, bool> Setter)> _boxes = new();
-    // Checked state as last loaded from or written to the config, per box.
-    readonly Dictionary<FlatCheck, bool> _saved = new();
-    readonly Dictionary<string, FlatCheck> _fanBoxes = new();
     readonly AppConfig _config;
     readonly Action _markDirty;
-    CardPanel _card = null!;
-
-    static readonly int Col0 = Theme.S(16), Col1 = Theme.S(196), RowStep = Theme.S(26);
-
-    int _y;
-    bool _col1;       // next checkbox goes into the second column
-    bool _fansListed; // fan channels were available during the last Build
+    readonly StackPanel _card = new() { Margin = new Thickness(16, 8, 16, 12) };
+    readonly List<(CheckBox Box, Action<SensorConfig, bool> Setter)> _boxes = new();
+    readonly Dictionary<CheckBox, bool> _saved = new();
+    readonly Dictionary<string, CheckBox> _fanBoxes = new();
+    UniformGrid? _group;
+    bool _fansListed;
 
     public SensorsPage(AppConfig config, Action markDirty)
     {
         _config = config;
         _markDirty = markDirty;
-        BackColor = Theme.WinBg;
 
-        var title = new Label
-        {
-            Text = L.T.SensorsTitle, Font = Theme.Title, ForeColor = Theme.Fg,
-            AutoSize = true, Location = new Point(Theme.S(16), Theme.S(12))
-        };
-        Controls.Add(title);
+        var stack = new StackPanel { Margin = new Thickness(24, 16, 24, 16) };
+        stack.Children.Add(new TextBlock { Text = L.T.SensorsTitle, Style = (Style)Application.Current.FindResource("PageTitle") });
+        stack.Children.Add(new Border { Style = (Style)Application.Current.FindResource("Card"), Child = _card });
+        Content = new ScrollViewer { Content = stack, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
 
         Build();
-    }
-
-    // Sensor discovery (and with it the fan channel list) runs on a background
-    // thread after the UI exists — pick the channels up when the page is next
-    // shown. Rebuilding resets pending edits, but the first show long precedes
-    // any editing in practice.
-    protected override void OnVisibleChanged(EventArgs e)
-    {
-        base.OnVisibleChanged(e);
-        if (Visible && !_fansListed && SensorService.DetectedFans.Count > 0)
-            Build();
+        IsVisibleChanged += (_, _) =>
+        {
+            if (IsVisible && !_fansListed && SensorService.DetectedFans.Count > 0)
+                Build();
+        };
     }
 
     void Build()
     {
-        // A fresh card panel: Group() wires Resize handlers onto the card, so
-        // reusing the old instance would leave stale handlers behind.
-        _card?.Dispose();
+        _card.Children.Clear();
         _boxes.Clear();
         _saved.Clear();
-        _y = Theme.S(10);
-        _col1 = false;
-        _card = new CardPanel
-        {
-            Location = new Point(Theme.S(16), Theme.PageTop),
-            Width = Width - Theme.S(32),
-            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-        };
-        Controls.Add(_card);
-
+        _fanBoxes.Clear();
         var s = _config.Sensors;
 
         Group(L.T.CardCpu);
@@ -91,20 +67,17 @@ sealed class SensorsPage : Panel
         Add(L.T.SensorUpload,   s.NetworkUpload,   (c, v) => c.NetworkUpload = v);
         Add(L.T.SensorDownload, s.NetworkDownload, (c, v) => c.NetworkDownload = v);
 
-        // One checkbox per detected channel: "Fan #2 · 861 RPM" (RPM kept live
-        // via RefreshFanRpm). Enabled fans are published even at 0 RPM (GPU
-        // zero-RPM mode stays visible).
+        // One box per detected channel: "Fan #2 · 861 RPM", kept live by
+        // RefreshFanRpm. Enabled fans are published even at 0 RPM.
         var fans = SensorService.DetectedFans;
         _fansListed = fans.Count > 0;
-        _fanBoxes.Clear();
         if (_fansListed)
         {
             Group(L.T.CardFans);
             foreach (var fan in fans)
             {
                 var id = fan.Id;
-                _fanBoxes[id] = Add(FanLabel(fan),
-                    _config.Sensors.FanChannels.GetValueOrDefault(id),
+                _fanBoxes[id] = Add(FanLabel(fan), _config.Sensors.FanChannels.GetValueOrDefault(id),
                     (c, v) => c.FanChannels[id] = v);
             }
         }
@@ -113,80 +86,53 @@ sealed class SensorsPage : Panel
         Add(L.T.SensorBoard,  s.MotherboardName, (c, v) => c.MotherboardName = v);
         Add(L.T.SensorDrives, s.Drives,          (c, v) => c.Drives = v);
         Add(L.T.SensorUptime, s.Uptime,          (c, v) => c.Uptime = v);
-
-        if (_col1) _y += RowStep;
-        _card.Height = _y + Theme.S(10);
     }
 
-    protected override void OnResize(EventArgs eventargs)
-    {
-        if (_card != null) _card.Width = Width - Theme.S(32);
-        base.OnResize(eventargs);
-    }
-
+    // Group heading with a rule to its right, then a two-column grid.
     void Group(string name)
     {
-        if (_col1) { _y += RowStep; _col1 = false; }
-        var header = new Label
-        {
-            Text = name, Font = Theme.GroupHead, ForeColor = Theme.Fg,
-            AutoSize = true, Location = new Point(Col0, _y + Theme.S(8))
-        };
-        var rule = new Panel
-        {
-            Height = 1, BackColor = Theme.CardBorder,
-            Bounds = new Rectangle(Col0 + Theme.S(40), _y + Theme.S(16), _card.Width - Col0 - Theme.S(56), 1),
-            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-        };
-        _card.Controls.Add(header);
-        _card.Controls.Add(rule);
-        // the rule starts after the actual text width once the label measured itself
-        rule.Left = header.Right + Theme.S(8);
-        rule.Width = 0;   // set on first card resize below
-        _card.Resize += (_, _) => { rule.Left = header.Right + Theme.S(8); rule.Width = _card.Width - rule.Left - Theme.S(16); };
-        _y += Theme.S(28);
+        var head = new DockPanel { Margin = new Thickness(0, _card.Children.Count == 0 ? 0 : 10, 0, 2) };
+        var text = new TextBlock { Text = name, Style = (Style)Application.Current.FindResource("CardTitle"), Margin = new Thickness(0, 0, 8, 0) };
+        DockPanel.SetDock(text, Dock.Left);
+        head.Children.Add(text);
+        head.Children.Add(new Border { Style = (Style)Application.Current.FindResource("RowSep"), VerticalAlignment = VerticalAlignment.Center });
+        _card.Children.Add(head);
+        _group = new UniformGrid { Columns = 2 };
+        _card.Children.Add(_group);
     }
 
-    FlatCheck Add(string label, bool value, Action<SensorConfig, bool> setter)
+    CheckBox Add(string label, bool value, Action<SensorConfig, bool> setter)
     {
-        var box = new FlatCheck
-        {
-            Text = label,
-            Location = new Point(_col1 ? Col1 : Col0, _y)
-        };
-        box.Checked = value;
-        box.CheckedChanged += (_, _) => _markDirty();
-        _card.Controls.Add(box);
+        var box = new CheckBox { Content = label, IsChecked = value, MinHeight = 28, Padding = new Thickness(6, 0, 0, 0) };
+        box.Checked += (_, _) => _markDirty();
+        box.Unchecked += (_, _) => _markDirty();
+        _group!.Children.Add(box);
         _boxes.Add((box, setter));
         _saved[box] = value;
-        if (_col1) _y += RowStep;
-        _col1 = !_col1;
         return box;
     }
 
     static string FanLabel(SensorService.DetectedFan fan) => $"{fan.Name} · {fan.Rpm:0} RPM";
 
-    // Called from MainWindow on every snapshot while this page is visible —
-    // keeps the RPM in the checkbox labels live. Setting an unchanged Text is
-    // a no-op, so idle fans cost nothing.
+    // Called on every snapshot while this page is visible.
     public void RefreshFanRpm()
     {
         foreach (var fan in SensorService.DetectedFans)
             if (_fanBoxes.TryGetValue(fan.Id, out var box))
-                box.Text = FanLabel(fan);
+                box.Content = FanLabel(fan);
     }
 
-    // Discard edits: the page is built from the saved config anyway.
+    // The page is built from the saved config, so rebuilding discards edits.
     public void Revert() => Build();
 
-    public bool HasChanges => _boxes.Any(b => b.Box.Checked != _saved[b.Box]);
+    public bool HasChanges => _boxes.Any(b => b.Box.IsChecked != _saved[b.Box]);
 
     public void Apply()
     {
         foreach (var (box, setter) in _boxes)
         {
-            setter(_config.Sensors, box.Checked);
-            _saved[box] = box.Checked;
+            setter(_config.Sensors, box.IsChecked == true);
+            _saved[box] = box.IsChecked == true;
         }
     }
 }

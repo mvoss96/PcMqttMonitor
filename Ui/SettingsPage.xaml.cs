@@ -1,8 +1,9 @@
 using System.Windows.Controls;
 
-// WPF port of SettingsPage: same options and the same save/revert logic.
-// The theme applies on Save without restarting the app.
-public partial class WpfSettingsPage : UserControl
+// The Settings page: general options as title + subtitle rows with the
+// control on the right. The theme applies on Save without a restart; a
+// language change restarts the app.
+public partial class SettingsPage : UserControl
 {
     readonly AppConfig _config;
     readonly double[] _intervalValues;
@@ -12,7 +13,7 @@ public partial class WpfSettingsPage : UserControl
     static readonly string[] ThemeValues = ["system", "light", "dark"];
     static readonly string[] LangValues  = ["system", "en", "de"];
 
-    internal WpfSettingsPage(AppConfig config, Action markDirty)
+    internal SettingsPage(AppConfig config, Action markDirty)
     {
         InitializeComponent();
         DataContext = L.T;
@@ -67,18 +68,40 @@ public partial class WpfSettingsPage : UserControl
         || DebugSwitch.IsChecked != _config.General.DebugEnabled
         || UpdateSwitch.IsChecked != _config.General.UpdateCheckEnabled
         || AutoStartSwitch.IsChecked != _autoStartInitial
-        || ThemeValues[ThemeChoice.SelectedIndex] != _config.General.Theme?.ToLowerInvariant()
-        || LangValues[LanguageChoice.SelectedIndex] != _config.General.Language?.ToLowerInvariant();
+        || ThemeChoice.SelectedIndex != IndexOr0(ThemeValues, _config.General.Theme)
+        || LanguageChoice.SelectedIndex != IndexOr0(LangValues, _config.General.Language);
 
-    // Write the controls into the config. Autostart is not registered from
-    // the prototype; a language change still needs a restart.
-    public void Apply()
+    // Write the controls into the config. Returns true when the language
+    // changed, which needs a restart.
+    public bool Apply()
     {
         _config.General.PublishIntervalSeconds = IntervalValue();
         _config.General.DebugEnabled = DebugSwitch.IsChecked == true;
         _config.General.UpdateCheckEnabled = UpdateSwitch.IsChecked == true;
-        _autoStartInitial = AutoStartSwitch.IsChecked == true;
         _config.General.Theme = ThemeValues[ThemeChoice.SelectedIndex];
-        _config.General.Language = LangValues[LanguageChoice.SelectedIndex];
+
+        bool enable = AutoStartSwitch.IsChecked == true;
+        if (enable != _autoStartInitial)
+        {
+            _autoStartInitial = enable;
+            // schtasks is slow: off the UI thread. On failure the switch goes
+            // back, so the UI never claims a task that was not registered.
+            if (!DemoMode.Active)
+                Task.Run(() => AutoStart.Apply(enable)).ContinueWith(t =>
+                {
+                    if (!t.IsFaulted && t.Result) return;
+                    AppLog.Write($"[error] autostart {(enable ? "register" : "remove")} failed (schtasks)");
+                    Dispatcher.Invoke(() =>
+                    {
+                        _autoStartInitial = !enable;
+                        AutoStartSwitch.IsChecked = !enable;
+                    });
+                });
+        }
+
+        int lang = LanguageChoice.SelectedIndex;
+        bool languageChanged = lang != IndexOr0(LangValues, _config.General.Language);
+        _config.General.Language = LangValues[lang];
+        return languageChanged;
     }
 }

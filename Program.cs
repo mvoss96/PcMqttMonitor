@@ -1,5 +1,5 @@
 using System.Runtime.InteropServices;
-using System.Windows.Forms;
+using System.Windows;
 using Microsoft.Win32;
 
 class Program
@@ -13,18 +13,18 @@ class Program
     static volatile bool _sinksReloadRequested;
     public static void RequestSinksReload() => _sinksReloadRequested = true;
 
+    // Start a new instance and end this one (language change). The new
+    // instance comes up while this one shuts down its sinks.
+    public static void Restart()
+    {
+        try { System.Diagnostics.Process.Start(Environment.ProcessPath!); }
+        catch (Exception ex) { Log($"[error] restart failed: {ex.Message}"); return; }
+        Application.Current.Shutdown();
+    }
+
     [STAThread]
     static void Main(string[] args)
     {
-        // System-DPI-aware: crisp rendering at the login-time DPI instead of the
-        // blurry bitmap upscaling a DPI-unaware process gets. SystemAware (not
-        // PerMonitorV2) on purpose — one fixed scale factor for the whole run
-        // keeps the owner-drawn layout code simple (see Theme.Scale); moving the
-        // window to a monitor with a different DPI falls back to GDI stretching.
-        // Must be the FIRST Application call: even subscribing ThreadException
-        // spins up the WinForms thread context, after which the mode is locked.
-        Application.SetHighDpiMode(HighDpiMode.SystemAware);
-
         // Called by the installer: register the autostart task and exit. Keeps
         // the task definition in one place (AutoStart.cs).
         if (args.Contains("--register-autostart"))
@@ -38,15 +38,6 @@ class Program
         else
             Console.SetOut(TextWriter.Null);
 
-        Application.ThreadException += (_, e) =>
-        {
-            WriteCrashLog(e.Exception.ToString());
-            MessageBox.Show(
-                $"{e.Exception.Message}\n\n{L.T.CrashDetails}\n{CrashLogPath}",
-                L.T.CrashTitle,
-                MessageBoxButtons.OK, MessageBoxIcon.Error);
-        };
-
         // Managed crashes reach this handler and are logged before Windows
         // restarts the process. Native driver faults may bypass this handler.
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
@@ -59,41 +50,41 @@ class Program
 
             MessageBox.Show(
                 $"{msg}\n\n{L.T.CrashDetails}\n{CrashLogPath}",
-                L.T.CrashTitleFatal,
-                MessageBoxButtons.OK, MessageBoxIcon.Error);
+                L.T.CrashTitleFatal, MessageBoxButton.OK, MessageBoxImage.Error);
         };
 
-        Application.EnableVisualStyles();
-        Application.SetCompatibleTextRenderingDefault(false);
-
         // Config lives next to the exe — Program Files when installed (works because
-        // the app always runs elevated), or bin\Debug during development. Survives
+        // the app always runs elevated), or bin\Release during development. Survives
         // upgrades because the installer only replaces the exe, never config.json.
         var configPath = Path.Combine(AppContext.BaseDirectory, "config.json");
         var config = ConfigLoader.Load(configPath);
 
-        // Hidden dev mode: render demo screenshots and exit (CI workflow).
-        if (DemoMode.TryRun(args))
-            return;
-        if (WpfPreview.TryRun(args))
-            return;
-
-        ApplicationRestart.RegisterForCrashes();
-
         // Language before any UI is built; changing it restarts the app.
         L.Init(config.General.Language);
 
-        // Color mode from config (system/light/dark). A change in Settings saves
-        // the config and restarts the app — WinForms cannot re-theme live.
-#pragma warning disable WFO5001 // SetColorMode is marked experimental
-        Application.SetColorMode(config.General.Theme?.ToLowerInvariant() switch
+        // The WPF application: Fluent theme first, the app styles build on it.
+        // The app runs until Exit in the tray menu, not until a window closes.
+        var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+        MainWindow.ApplyTheme(config.General.Theme);
+        app.Resources.MergedDictionaries.Add(new ResourceDictionary
         {
-            "light" => SystemColorMode.Classic,
-            "dark"  => SystemColorMode.Dark,
-            _       => SystemColorMode.System,
+            Source = new Uri("pack://application:,,,/PcMqttMonitor;component/Ui/Styles.xaml"),
         });
-#pragma warning restore WFO5001
-        Theme.Init();   // palette for all owner-drawn UI — after SetColorMode
+        // An exception in a UI event handler: log it, tell the user, keep running.
+        app.DispatcherUnhandledException += (_, e) =>
+        {
+            WriteCrashLog(e.Exception.ToString());
+            MessageBox.Show(
+                $"{e.Exception.Message}\n\n{L.T.CrashDetails}\n{CrashLogPath}",
+                L.T.CrashTitle, MessageBoxButton.OK, MessageBoxImage.Error);
+            e.Handled = true;
+        };
+
+        // Hidden dev mode: demo window or screenshots, no sensors and no sinks.
+        if (DemoMode.TryRun(args, app))
+            return;
+
+        ApplicationRestart.RegisterForCrashes();
 
         Log($"=== PC MQTT Monitor v{UpdateChecker.CurrentVersion.ToString(3)} starting ===");
         Log($"MQTT:     {(config.Mqtt.Enabled && !string.IsNullOrWhiteSpace(config.Mqtt.Host) ? $"{config.Mqtt.Host}:{config.Mqtt.Port} (topic root '{config.Mqtt.TopicRoot}')" : "disabled")}");
@@ -109,7 +100,7 @@ class Program
         {
             e.Cancel = true;
             shutdown.Cancel();
-            Application.Exit();
+            app.Dispatcher.BeginInvoke(() => app.Shutdown());
         };
 
         // Run the sensor + publish loop on a background thread so the UI stays responsive.
@@ -119,7 +110,7 @@ class Program
             catch (Exception ex) { Log($"[fatal] Background task crashed: {ex}"); }
         });
 
-        // Logoff/shutdown kills the process without ending Application.Run.
+        // Logoff/shutdown kills the process without ending the app loop.
         // Stop the loop here so the sinks are disposed (MQTT publishes "offline")
         // instead of HA waiting for the LWT after the keep-alive timeout.
         // Blocking the handler keeps Windows waiting; the timeout bounds it.
@@ -132,7 +123,8 @@ class Program
         _ = Task.Run(() => RunUpdateCheckLoopAsync(config, tray, shutdown.Token));
 
         // Blocks here until the user clicks Exit in the tray (or Ctrl+C).
-        Application.Run(tray);
+        app.Run();
+        tray.Dispose();
 
         // Tray was closed — cancel the loop and wait for it to finish cleanly.
         shutdown.Cancel();

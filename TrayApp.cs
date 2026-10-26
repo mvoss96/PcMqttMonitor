@@ -1,17 +1,24 @@
 using System.Drawing;
 using System.Drawing.Imaging;
-using System.Windows.Forms;
+using System.Runtime.InteropServices;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Interop;
+using Forms = System.Windows.Forms;
 
-// Manages the system tray icon, native hover tooltip, and the main window.
-sealed class TrayApp : ApplicationContext
+// The tray icon (WinForms NotifyIcon; WPF has none), its Fluent context menu
+// and the main window.
+sealed class TrayApp : IDisposable
 {
-    readonly NotifyIcon _tray;
+    readonly Forms.NotifyIcon _tray;
     readonly MainWindow _window;
     readonly Icon _normalIcon;
     readonly Icon _pausedIcon;
-    readonly ToolStripMenuItem _pauseItem;
-    readonly ContextMenuStrip _menu;
-    ToolStripMenuItem? _updateItem;
+    readonly ContextMenu _menu = new() { Placement = PlacementMode.MousePoint };
+    readonly MenuItem _statusItem = new() { IsEnabled = false };
+    readonly MenuItem _pauseItem = new() { Header = L.T.TrayPause };
+    MenuItem? _updateItem;
     Version? _notifiedUpdate;
     volatile string _statusText = L.T.StatusStarting;
     volatile bool _paused;
@@ -20,53 +27,33 @@ sealed class TrayApp : ApplicationContext
 
     public TrayApp(CancellationTokenSource shutdown, string configPath, AppConfig config)
     {
-        _window = new MainWindow(configPath, config);
+        _window = new MainWindow(configPath, config) { PauseChangeRequested = SetPaused };
 
         _normalIcon = CreateIcon();
         _pausedIcon = CreatePausedIcon(_normalIcon);
+        _tray = new Forms.NotifyIcon { Icon = _normalIcon, Visible = true, Text = "PC MQTT Monitor" };
 
-        _tray = new NotifyIcon
-        {
-            Icon    = _normalIcon,
-            Visible = true,
-            Text    = "PC MQTT Monitor"
-        };
-
-        // Left-click opens the dashboard.
-        _tray.MouseClick += (_, e) =>
-        {
-            if (e.Button == MouseButtons.Left)
-                _window.ShowDashboard();
-        };
-
-        var statusItem = new ToolStripMenuItem(_statusText) { Enabled = false };
-        var pauseItem  = new ToolStripMenuItem(L.T.TrayPause);
-        _pauseItem = pauseItem;
-
-        pauseItem.Click += (_, _) => SetPaused(!_paused);
-
-        // The main window's pause banner can request a state change too.
-        _window.PauseChangeRequested = SetPaused;
-
-        // The notify-icon menu does not follow Application.SetColorMode —
-        // MenuStyle gives it the app palette and Windows 11 shape.
-        var menu = new ContextMenuStrip { ForeColor = Theme.Fg, BackColor = Theme.CardBg };
-        MenuStyle.Apply(menu, checkMargin: false);
-        menu.Opening += (_, _) => statusItem.Text = _statusText;
-        menu.Items.Add(statusItem);
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(L.T.NavDashboard, null, (_, _) => _window.ShowDashboard());
-        menu.Items.Add(L.T.NavSettings,  null, (_, _) => _window.ShowSettings());
-        menu.Items.Add(pauseItem);
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(L.T.TrayExit, null, (_, _) =>
+        _pauseItem.Click += (_, _) => SetPaused(!_paused);
+        _menu.Items.Add(_statusItem);
+        _menu.Items.Add(new Separator());
+        _menu.Items.Add(Item(L.T.NavDashboard, _window.ShowDashboard));
+        _menu.Items.Add(Item(L.T.NavSettings, _window.ShowSettings));
+        _menu.Items.Add(_pauseItem);
+        _menu.Items.Add(new Separator());
+        _menu.Items.Add(Item(L.T.TrayExit, () =>
         {
             shutdown.Cancel();
             _tray.Visible = false;
-            Application.Exit();
-        });
-        _tray.ContextMenuStrip = menu;
-        _menu = menu;
+            _window.CloseForExit();
+            Application.Current.Shutdown();
+        }));
+
+        // Left click opens the dashboard, right click the menu.
+        _tray.MouseUp += (_, e) =>
+        {
+            if (e.Button == Forms.MouseButtons.Left) _window.ShowDashboard();
+            else if (e.Button == Forms.MouseButtons.Right) ShowMenu();
+        };
 
         // The only balloon this app shows is the update notification.
         _tray.BalloonTipClicked += (_, _) =>
@@ -75,31 +62,47 @@ sealed class TrayApp : ApplicationContext
         };
     }
 
+    static MenuItem Item(string header, Action click)
+    {
+        var item = new MenuItem { Header = header };
+        item.Click += (_, _) => click();
+        return item;
+    }
+
+    // A WPF menu opened from the tray only closes on an outside click when
+    // its popup window is the foreground window.
+    void ShowMenu()
+    {
+        _statusItem.Header = _statusText;
+        _menu.IsOpen = true;
+        if (PresentationSource.FromVisual(_menu) is HwndSource source)
+            SetForegroundWindow(source.Handle);
+    }
+
+    [DllImport("user32.dll")]
+    static extern bool SetForegroundWindow(IntPtr hwnd);
+
     // Called from the update-check thread when a newer GitHub release exists.
     // Adds a menu entry and shows a balloon once per discovered version.
     public void NotifyUpdateAvailable(Version version)
     {
-        _window.BeginInvoke(() =>
+        _window.Dispatcher.BeginInvoke(() =>
         {
             if (_notifiedUpdate != null && version <= _notifiedUpdate) return;
             _notifiedUpdate = version;
 
             if (_updateItem == null)
             {
-                _updateItem = new ToolStripMenuItem
-                {
-                    Font = new Font(_menu.Font, FontStyle.Bold)
-                };
-                _updateItem.Click += (_, _) => OpenReleasesPage();
-                // Directly under the status line, above Show Sensors.
-                _menu.Items.Insert(2, _updateItem);
+                _updateItem = Item("", OpenReleasesPage);
+                _updateItem.FontWeight = FontWeights.SemiBold;
+                _menu.Items.Insert(2, _updateItem);   // under the status line
             }
-            _updateItem.Text = string.Format(L.T.TrayUpdateItem, version.ToString(3));
-            _window.SetUpdateAvailable(version);   // title-bar text + About badge
+            _updateItem.Header = string.Format(L.T.TrayUpdateItem, version.ToString(3));
+            _window.SetUpdateAvailable(version);
 
             _tray.BalloonTipTitle = "PC MQTT Monitor";
             _tray.BalloonTipText  = string.Format(L.T.BalloonUpdate, version.ToString(3));
-            _tray.BalloonTipIcon  = ToolTipIcon.Info;
+            _tray.BalloonTipIcon  = Forms.ToolTipIcon.Info;
             _tray.ShowBalloonTip(10_000);
         });
     }
@@ -118,29 +121,29 @@ sealed class TrayApp : ApplicationContext
         catch (Exception ex) { AppLog.Write($"[update] open releases page failed: {ex.Message}"); }
     }
 
-    // Central pause switch — keeps tray menu, tray icon and the main window's
-    // banner in sync no matter where the change was triggered. UI thread only.
+    // Central pause switch: keeps menu, tray icon and the window's pause bar
+    // in sync no matter where the change was triggered. UI thread only.
     void SetPaused(bool paused)
     {
-        _paused         = paused;
-        _pauseItem.Text = paused ? L.T.TrayResume : L.T.TrayPause;
-        _tray.Icon      = paused ? _pausedIcon : _normalIcon;
+        _paused          = paused;
+        _pauseItem.Header = paused ? L.T.TrayResume : L.T.TrayPause;
+        _tray.Icon       = paused ? _pausedIcon : _normalIcon;
         _window.SetPauseState(paused);
     }
 
-    // Called from any thread to update the status shown in the context menu.
-    // Also feeds the dashboard's startup placeholder until first data arrives.
+    // Any thread: the status line of the menu, and the dashboard placeholder
+    // until the first data arrives.
     public void SetStatus(string status)
     {
         _statusText = status;
         _window.SetLoadingStatus(status);
     }
 
-    // Called from the sinks (any thread) with their state for the Outputs page.
+    // Any thread: a sink's state for the Outputs page.
     public void SetSinkStatus(string sink, StatusKind? kind, string text)
         => _window.SetSinkStatus(sink, kind, text);
 
-    // Called from the MQTT loop thread with the latest sensor snapshot.
+    // Publish loop thread: the latest sensor snapshot.
     public void UpdateSnapshot(SensorSnapshot snapshot)
     {
         var tooltip = BuildTooltipText(snapshot.Metrics, _paused);
@@ -148,7 +151,7 @@ sealed class TrayApp : ApplicationContext
         _window.SetLatestMetrics(snapshot.Metrics);
     }
 
-    // Short single-line summary for the native OS tooltip.
+    // Short single-line summary for the native tray tooltip.
     static string BuildTooltipText(MetricsSnapshot m, bool paused)
     {
         var cpuString = (m.Cpu != null && (m.Cpu.Load != null || m.Cpu.TempC != null))
@@ -168,9 +171,9 @@ sealed class TrayApp : ApplicationContext
         return string.Join(" | ", parts);
     }
 
-    // Used by MainWindow for the window title-bar icon.
+    // The exe's embedded app.ico; also the window icon.
     internal static Icon CreateIcon()
-        => Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Application;
+        => Icon.ExtractAssociatedIcon(Environment.ProcessPath!) ?? SystemIcons.Application;
 
     // Takes the embedded app.ico and adds a small "||" badge at the bottom-right.
     static Icon CreatePausedIcon(Icon baseIcon)
@@ -229,15 +232,10 @@ sealed class TrayApp : ApplicationContext
         return bmp;
     }
 
-    protected override void Dispose(bool disposing)
+    public void Dispose()
     {
-        if (disposing)
-        {
-            _tray.Dispose();
-            _window.Dispose();
-            _normalIcon.Dispose();
-            _pausedIcon.Dispose();
-        }
-        base.Dispose(disposing);
+        _tray.Dispose();
+        _normalIcon.Dispose();
+        _pausedIcon.Dispose();
     }
 }

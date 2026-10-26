@@ -3,13 +3,12 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
-using D = DashboardView;   // shared number formatting and name shortening
 
-// WPF port of DashboardView: the same cards in a two-column grid, built from
-// Fluent controls instead of GDI drawing. The card elements are created once
+// The dashboard: hardware cards in a two-column grid, built from Fluent
+// controls plus a drawn sparkline. The card elements are created once
 // per layout (which sections exist, how many drives/fans/adapters) and only
 // their texts and values change on each snapshot, so open tooltips survive.
-sealed class WpfDashboard : UserControl
+sealed class DashboardPage : UserControl
 {
     const int HistoryLen = 60;   // one sample per publish cycle, about 60 s
 
@@ -22,7 +21,7 @@ sealed class WpfDashboard : UserControl
     readonly List<Action<MetricsSnapshot>> _updates = new();
     string _layout = "";
 
-    public WpfDashboard()
+    public DashboardPage()
     {
         _placeholder.SetResourceReference(TextBlock.ForegroundProperty, "TextFillColorSecondaryBrush");
         Content = _placeholder;
@@ -63,23 +62,23 @@ sealed class WpfDashboard : UserControl
         if (m.Cpu != null) cards.Add(LoadCard(L.T.CardCpu, _cpuHist, s =>
         {
             var c = s.Cpu!;
-            return (DashboardView.NameStages(c.Name), c.Load,
+            return (Format.NameStages(c.Name), c.Load,
             [
-                (D.Fmt(c.TempC, "°C"), TempBrush(c.TempC)),
-                (D.Fmt(c.PackagePowerW, "W", "0"), null),
-                (D.Fmt(c.CoreVoltageV, "V", "0.###"), null),
+                (Format.Unit(c.TempC, "°C"), TempBrush(c.TempC)),
+                (Format.Unit(c.PackagePowerW, "W", "0"), null),
+                (Format.Unit(c.CoreVoltageV, "V", "0.###"), null),
             ]);
         }));
         if (m.Gpu != null) cards.Add(LoadCard(L.T.CardGpu, _gpuHist, s =>
         {
             var g = s.Gpu!;
             string? vram = g.MemoryUsedMb != null || g.MemoryTotalMb != null
-                ? $"VRAM {D.FmtGb(g.MemoryUsedMb)}/{(g.MemoryTotalMb != null ? MathF.Round(g.MemoryTotalMb.Value / 1024f).ToString(L.Culture) : "?")} GB"
+                ? $"VRAM {Format.Gb(g.MemoryUsedMb)}/{(g.MemoryTotalMb != null ? MathF.Round(g.MemoryTotalMb.Value / 1024f).ToString(L.Culture) : "?")} GB"
                 : null;
-            return (DashboardView.NameStages(g.Name), g.Load,
+            return (Format.NameStages(g.Name), g.Load,
             [
-                (D.Fmt(g.TempC, "°C"), TempBrush(g.TempC)),
-                (D.Fmt(g.BoardPowerW, "W", "0"), null),
+                (Format.Unit(g.TempC, "°C"), TempBrush(g.TempC)),
+                (Format.Unit(g.BoardPowerW, "W", "0"), null),
                 (vram, null),
             ]);
         }));
@@ -89,7 +88,7 @@ sealed class WpfDashboard : UserControl
             string? info = r.Type != null && r.SpeedMtps != null ? $"{r.Type}-{r.SpeedMtps}"
                 : r.Type ?? (r.SpeedMtps != null ? $"{r.SpeedMtps} MT/s" : null);
             string? usage = r.UsedGb != null || r.TotalGb != null
-                ? $"{D.FmtNum(r.UsedGb)} / {D.FmtNum(r.TotalGb)} GB" : null;
+                ? $"{Format.Num(r.UsedGb)} / {Format.Num(r.TotalGb)} GB" : null;
             return (info != null ? new[] { info } : Array.Empty<string>(), r.Load, [(usage, null)]);
         }));
         if (m.Drives is { Count: > 0 }) cards.Add(DrivesCard(m.Drives.Count));
@@ -199,13 +198,13 @@ sealed class WpfDashboard : UserControl
                 rows[i].Letter.Text = paren >= 0 ? name[paren..].Trim('(', ')') : name;
                 var parts = new List<string>();
                 if (d.UsedPercent != null) parts.Add($"{d.UsedPercent} %");
-                if (d.FreeGb != null) parts.Add($"{D.FmtSize(d.FreeGb.Value)} {L.T.DriveFree}");
+                if (d.FreeGb != null) parts.Add($"{Format.Size(d.FreeGb.Value)} {L.T.DriveFree}");
                 rows[i].Value.Text = parts.Count > 0 ? string.Join(" · ", parts) : "—";
                 rows[i].Bar.Value = Math.Clamp(d.UsedPercent ?? 0, 0, 100);
                 // Volume name, type and GB only in the tooltip.
                 var details = new List<string> { name };
                 if (d.Type != null) details.Add(d.Type);
-                if (d.UsedGb != null && d.TotalGb != null) details.Add($"{D.FmtNum(d.UsedGb)} / {D.FmtNum(d.TotalGb)} GB");
+                if (d.UsedGb != null && d.TotalGb != null) details.Add($"{Format.Num(d.UsedGb)} / {Format.Num(d.TotalGb)} GB");
                 if (d.UsedPercent != null) details.Add($"{d.UsedPercent} %");
                 rows[i].Row.ToolTip = string.Join(" · ", details);
             }
@@ -237,8 +236,8 @@ sealed class WpfDashboard : UserControl
             {
                 var f = m.Fans![i];
                 var parts = new List<string>();
-                if (f.Rpm != null) parts.Add($"{D.FmtNum(f.Rpm, "0")} RPM");
-                if (f.Pwm != null) parts.Add($"{D.FmtNum(f.Pwm, "0")} %");
+                if (f.Rpm != null) parts.Add($"{Format.Num(f.Rpm, "0")} RPM");
+                if (f.Pwm != null) parts.Add($"{Format.Num(f.Pwm, "0")} %");
                 rows[i].Name.Text = f.Name;
                 rows[i].Value.Text = parts.Count > 0 ? string.Join(" · ", parts) : "—";
             }
@@ -278,7 +277,7 @@ sealed class WpfDashboard : UserControl
                 var a = m.Network![i];
                 rows[i].Name.Text = a.Name;
                 rows[i].Ip.Text = a.IpAddress ?? "—";
-                rows[i].Rates.Text = $"↑ {D.FmtSpeed(a.UploadKbps)}   ↓ {D.FmtSpeed(a.DownloadKbps)}";
+                rows[i].Rates.Text = $"↑ {Format.Speed(a.UploadKbps)}   ↓ {Format.Speed(a.DownloadKbps)}";
                 rows[i].Head.ToolTip = a.Mac != null ? $"{a.Name} · MAC {a.Mac}" : a.Name;
             }
         });
@@ -309,7 +308,7 @@ sealed class WpfDashboard : UserControl
         body.Children.Add(grid);
         _updates.Add(m =>
         {
-            values[0].Text = D.FmtUptime(m.System?.UptimeSec);
+            values[0].Text = Format.Uptime(m.System?.UptimeSec);
             values[1].Text = m.Host;
             values[2].Text = m.System?.OsVersion ?? "—";
             values[3].Text = m.Motherboard?.Name ?? "—";
@@ -357,7 +356,7 @@ sealed class WpfDashboard : UserControl
 }
 
 // Right-aligned info text that picks the longest of several shortening
-// stages that fits (see DashboardView.NameStages); the tooltip shows the full
+// stages that fits (see Format.NameStages); the tooltip shows the full
 // name once a shorter stage or an ellipsis is in use.
 sealed class StagedText : Decorator
 {
