@@ -22,6 +22,9 @@ section as the GitHub release notes — every tagged version needs a section her
   and the save bar disappeared.
 - The publish interval is chosen from a dropdown (0.5 to 60 s) instead of
   typed as text; a value set by hand in `config.json` stays selectable.
+- The save bar is easier to notice (accent-tinted with a colored top line and
+  a pencil icon, red for invalid input) and disappears right after saving
+  instead of showing "Saved" for a moment.
 - Fixed: after saving once, the Discard and Save buttons of the save bar
   could be hidden behind the "Unsaved changes" text on the next edit.
 - The README screenshots are regenerated automatically for every release.

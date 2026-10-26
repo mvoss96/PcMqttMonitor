@@ -34,7 +34,6 @@ sealed class Lang
     public string NavAbout     { get; init; } = "About";
 
     public string UnsavedChanges { get; init; } = "Unsaved changes";
-    public string Saved          { get; init; } = "✓ Saved";
     public string Save           { get; init; } = "Save";
     public string Discard        { get; init; } = "Discard";
     public string TitleUpdate    { get; init; } = "v{0} available";   // title-bar suffix
@@ -171,8 +170,7 @@ sealed class Lang
         NavSettings  = "Einstellungen",
         NavAbout     = "Über",
 
-        UnsavedChanges = "Ungespeicherte Änderungen",
-        Saved          = "✓ Gespeichert",
+        UnsavedChanges = "Nicht gespeichert",
         Save           = "Speichern",
         Discard        = "Verwerfen",
         TitleUpdate    = "v{0} verfügbar",

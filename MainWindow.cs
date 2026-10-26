@@ -25,7 +25,6 @@ sealed class MainWindow : Form
 
     // save footer
     readonly SaveFooter _saveBar;
-    readonly System.Windows.Forms.Timer _savedFlash = new() { Interval = 1200 };
     bool _dirty;
 
     // Update notification: title-bar text suffix + accent badge on the About
@@ -121,7 +120,6 @@ sealed class MainWindow : Form
         _saveBar.Button.Click += (_, _) => Save();
         _saveBar.Revert.Click += (_, _) => Revert();
         _content.Controls.Add(_saveBar);   // added after the Fill pages so Bottom wins
-        _savedFlash.Tick += (_, _) => { _savedFlash.Stop(); if (!_dirty) _saveBar.Visible = false; };
 
         SelectPage(0);
 
@@ -200,15 +198,12 @@ sealed class MainWindow : Form
         _dirty = invalid || _outputs.HasChanges || _sensors.HasChanges || _settings.HasChanges;
         if (!_dirty)
         {
-            if (!_savedFlash.Enabled) _saveBar.Visible = false;
+            _saveBar.Visible = false;
             return;
         }
-        _savedFlash.Stop();
         // Invalid input disables Save; the red field shows which one.
-        _saveBar.Msg.Text = invalid ? L.T.SaveInvalidInput : L.T.UnsavedChanges;
-        _saveBar.Msg.ForeColor = invalid ? Theme.Crit : Theme.Fg2;
+        _saveBar.SetMessage(invalid ? L.T.SaveInvalidInput : L.T.UnsavedChanges, error: invalid);
         _saveBar.Button.Enabled = !invalid;
-        _saveBar.ButtonsShown = true;
         _saveBar.Visible = true;
     }
 
@@ -246,11 +241,9 @@ sealed class MainWindow : Form
         if (outputsChanged)
             Program.RequestSinksReload();
 
+        // No "saved" confirmation: the footer disappearing is the confirmation.
         _dirty = false;
-        _saveBar.Msg.Text = L.T.Saved;
-        _saveBar.Msg.ForeColor = Theme.Good;
-        _saveBar.ButtonsShown = false;
-        _savedFlash.Start();
+        _saveBar.Visible = false;
     }
 
     // ── update pill ───────────────────────────────────────────────────────────

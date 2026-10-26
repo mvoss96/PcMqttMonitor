@@ -86,7 +86,8 @@ static class NavIcons
 {
     public const int Dashboard = 0xF0E2, Outputs = 0xE93E, Sensors = 0xE950,
                      Settings = 0xE713, About = 0xE946,
-                     Warning = 0xE7BA, ChevronDown = 0xE70D, ChevronRight = 0xE76C, Check = 0xE73E;
+                     Warning = 0xE7BA, ChevronDown = 0xE70D, ChevronRight = 0xE76C, Check = 0xE73E,
+                     Edit = 0xE70F;
 
     // The app's signal-bars logo, used on the About page.
     public static void Logo(Graphics g, RectangleF b, Color accent)
@@ -482,74 +483,70 @@ sealed class ActionButton : Control
 }
 
 // Footer of the content area while there are unsaved changes, laid out like
-// a Windows 11 dialog footer: message left, Discard and Save right.
+// a Windows 11 dialog footer: message left, Discard and Save right. Tinted
+// with the accent color (red for invalid input) and topped by a 2px line so
+// it stands out from the page above it.
 sealed class SaveFooter : Control
 {
-    public readonly Label Msg;
     public readonly ActionButton Revert, Button;
-
-    // Tracked here instead of reading Button.Visible: Visible also reports
-    // false while the footer itself is hidden, which made OnLayout skip the
-    // buttons and let the message cover them after the footer reappeared.
-    bool _buttonsShown = true;
-    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
-    public bool ButtonsShown
-    {
-        get => _buttonsShown;
-        set
-        {
-            _buttonsShown = value;
-            Revert.Visible = Button.Visible = value;
-            PerformLayout();
-        }
-    }
+    string _message = "";
+    bool _error;
 
     public SaveFooter()
     {
         SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint
                | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
         // Children first: setting Height triggers OnLayout, which positions them.
-        Msg = new Label { AutoSize = false, AutoEllipsis = true, Height = Theme.S(22), Font = Theme.Base, ForeColor = Theme.Fg2, BackColor = Theme.CardBg, TextAlign = ContentAlignment.MiddleLeft };
         Revert = new ActionButton(L.T.Discard, accent: false);
         Button = new ActionButton(L.T.Save, accent: true);
-        Controls.Add(Msg);
         Controls.Add(Revert);
         Controls.Add(Button);
-        Msg.TextChanged += (_, _) => PerformLayout();
         Dock = DockStyle.Bottom;
         Height = Theme.S(64);
-        BackColor = Theme.CardBg;
+        BackColor = Tint(false);
         Visible = false;
     }
 
-    protected override void OnVisibleChanged(EventArgs e)
+    Color LineColor => _error ? Theme.Crit : Theme.Accent;
+    static Color Tint(bool error) =>
+        Theme.Mix(Theme.CardBg, error ? Theme.Crit : Theme.Accent, Theme.Dark ? 0.12f : 0.08f);
+
+    public void SetMessage(string text, bool error)
     {
-        base.OnVisibleChanged(e);
-        if (Visible) PerformLayout();
+        _message = text;
+        _error = error;
+        BackColor = Tint(error);   // the buttons clear their corners with it
+        Invalidate(true);
     }
 
     protected override void OnLayout(LayoutEventArgs levent)
     {
         base.OnLayout(levent);
-        int pad = Theme.S(16), x = Width - pad;
-        if (_buttonsShown)
+        int x = Width - Theme.S(16);
+        foreach (var b in new[] { Button, Revert })
         {
-            foreach (var b in new[] { Button, Revert })
-            {
-                x -= b.Width;
-                b.Location = new Point(x, (Height - b.Height) / 2);
-                x -= Theme.S(8);
-            }
+            x -= b.Width;
+            b.Location = new Point(x, (Height - b.Height) / 2);
+            x -= Theme.S(8);
         }
-        // The message takes the space left of the buttons, cut with "…" if longer.
-        Msg.Bounds = new Rectangle(pad, (Height - Msg.Height) / 2, Math.Max(0, x - pad), Msg.Height);
     }
 
     protected override void OnPaint(PaintEventArgs e)
     {
-        e.Graphics.Clear(Theme.CardBg);
-        using var pen = new Pen(Theme.CardBorder);
-        e.Graphics.DrawLine(pen, 0, 0, Width, 0);
+        var g = e.Graphics;
+        g.Clear(BackColor);
+        using (var line = new SolidBrush(LineColor))
+            g.FillRectangle(line, 0, 0, Width, Theme.S(2));
+
+        // Icon and message in the space left of the buttons, cut with "…" if longer.
+        int x = Theme.S(16), right = Revert.Left - Theme.S(8);
+        TextRenderer.DrawText(g, Theme.Glyph(_error ? NavIcons.Warning : NavIcons.Edit), Theme.Icons,
+            new Rectangle(x, 0, Theme.S(20), Height), LineColor,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+        x += Theme.S(30);
+        TextRenderer.DrawText(g, _message, Theme.SemiBold, new Rectangle(x, 0, Math.Max(0, right - x), Height),
+            _error ? Theme.Crit : Theme.Fg,
+            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
     }
 }
 
