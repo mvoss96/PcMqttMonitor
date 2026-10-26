@@ -143,6 +143,9 @@ sealed class MainWindow : Form
     // ── hooks for DemoMode (CI screenshots) ───────────────────────────────────
 
     internal void DemoSelectPage(int index) => SelectPage(index);
+    internal OutputsPage DemoOutputs => _outputs;
+    internal void DemoSave() => Save();
+    internal void DemoRevert() => Revert();
 
     internal void DemoFeed(MetricsSnapshot m)
     {
@@ -186,7 +189,7 @@ sealed class MainWindow : Form
 
     // ── dirty / save ──────────────────────────────────────────────────────────
 
-    bool HasInvalidInput => _outputs.HasInvalidInput || _settings.HasInvalidInput;
+    bool HasInvalidInput => _outputs.HasInvalidInput;
 
     // Called on every edit. The bar shows while some page differs from the
     // saved config or holds invalid input — an invalid value would otherwise

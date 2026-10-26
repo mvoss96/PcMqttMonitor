@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 // Hidden dev mode for CI-generated screenshots:
-//   PcMqttMonitor.exe --screenshots <dir> [--lang en|de] [--theme dark|light] [--scale N]
+//   PcMqttMonitor.exe --screenshots <dir> [--lang en|de] [--theme dark|light] [--scale N] [--scenarios]
 // Renders every page with deterministic demo data (no sensors, no sinks, no
 // tray) and writes one PNG per page, then exits. The screenshots workflow uses
 // this so the README images never go stale — real hardware values would be
@@ -12,7 +12,7 @@ using System.Windows.Forms;
 // high-res README images, independent of the machine's actual DPI.
 static class DemoMode
 {
-    public static bool TryRun(string[] args, string configPath)
+    public static bool TryRun(string[] args)
     {
         int idx = Array.IndexOf(args, "--screenshots");
         if (idx < 0 || idx + 1 >= args.Length) return false;
@@ -50,7 +50,9 @@ static class DemoMode
         ]);
 
         var config = DemoConfig();
-        var window = new MainWindow(configPath, config);
+        // A throwaway config path: scenarios press Save, which must never
+        // write the demo settings over the real config.json next to the exe.
+        var window = new MainWindow(Path.Combine(Path.GetTempPath(), "PcMqttMonitor-demo-config.json"), config);
         window.SetSinkStatus("MQTT", StatusKind.Good, string.Format(L.T.StatusConnected, $"{config.Mqtt.Host}:{config.Mqtt.Port}"));
 
         // 60 samples so the sparklines show a full, plausible minute.
@@ -90,10 +92,71 @@ static class DemoMode
                 await Task.Delay(500);   // paint + native combos + About check settle
                 Capture(window, Path.Combine(dir, pages[p] + ".png"));
             }
+            if (args.Contains("--scenarios"))
+                await RunScenarios(window, dir);
             Application.Exit();
         };
         Application.Run(window);
         return true;
+    }
+
+    // ── scenarios ─────────────────────────────────────────────────────────────
+
+    // --scenarios: extra states for checking UI changes by eye, written as
+    // scenario-*.png next to the page shots. Not used by the CI workflow.
+    static async Task RunScenarios(MainWindow w, string dir)
+    {
+        var outputs = w.DemoOutputs;
+        string[] sinks = ["MQTT", "UDP", "TCP", "Serial"];
+
+        void OpenOnly(string sink)
+        {
+            foreach (var s in sinks) outputs.DemoCard(s).Open = s == sink;
+        }
+
+        async Task Shot(int page, string name)
+        {
+            w.DemoSelectPage(page);
+            await Task.Delay(400);
+            Capture(w, Path.Combine(dir, $"scenario-{name}.png"));
+        }
+
+        // Invalid input: red field, red card status, Save disabled.
+        OpenOnly("UDP");
+        outputs.DemoCard("UDP").Toggle.Checked = true;
+        outputs.DemoField("udp.host").Text = "192.168.2.255eeee";
+        await Shot(1, "invalid-host");
+        w.DemoRevert();
+
+        OpenOnly("TCP");
+        outputs.DemoCard("TCP").Toggle.Checked = true;
+        outputs.DemoField("tcp.port").Text = "9871111111";
+        await Shot(1, "invalid-port");
+        w.DemoRevert();
+
+        // Save footer: edit, save, footer hides after the "Saved" flash, edit again.
+        OpenOnly("Serial");
+        outputs.DemoField("serial.port").Text = "COM8";
+        w.DemoSave();
+        await Task.Delay(1500);
+        outputs.DemoField("serial.port").Text = "COM9";
+        await Shot(1, "footer-after-save");
+        w.DemoRevert();
+
+        // What running sinks report: errors in red, the TCP client count.
+        OpenOnly("");
+        outputs.DemoField("udp.host").Text = "gibtsnicht.local";
+        foreach (var s in sinks) outputs.DemoCard(s).Toggle.SetChecked(true);
+        w.SetSinkStatus("UDP", StatusKind.Error, string.Format(L.T.OutNotFound, "gibtsnicht.local"));
+        w.SetSinkStatus("TCP", StatusKind.Good,
+            $"{string.Format(L.T.OutListeningOn, 5556)} · {string.Format(L.T.OutConnectedCount, 2)}");
+        w.SetSinkStatus("Serial", StatusKind.Error, string.Format(L.T.OutNotFound, "COM9"));
+        await Shot(1, "sink-status");
+
+        // Pause notice on the dashboard.
+        w.SetPauseState(true);
+        await Shot(0, "paused");
+        w.SetPauseState(false);
     }
 
     // ── capture ───────────────────────────────────────────────────────────────

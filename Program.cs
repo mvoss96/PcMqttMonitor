@@ -73,7 +73,7 @@ class Program
         var config = ConfigLoader.Load(configPath);
 
         // Hidden dev mode: render demo screenshots and exit (CI workflow).
-        if (DemoMode.TryRun(args, configPath))
+        if (DemoMode.TryRun(args))
             return;
 
         ApplicationRestart.RegisterForCrashes();

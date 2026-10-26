@@ -226,20 +226,41 @@ sealed class OutputsPage : Panel
         RefreshStatus();
     }
 
+    // Hooks for DemoMode scenarios.
+    internal OutputCard DemoCard(string sink) => sink switch
+    {
+        "MQTT" => _mqttCard, "UDP" => _udpCard, "TCP" => _tcpCard, _ => _serialCard,
+    };
+    internal TextBox DemoField(string name) => name switch
+    {
+        "udp.host" => _udpHost, "tcp.port" => _tcpPort, "serial.port" => _serialPort, _ => _host,
+    };
+
     // True while any checked field is invalid, enabled card or not; MainWindow
     // refuses to save in that case.
     public bool HasInvalidInput => _checks.Any(c => InputBox.Of(c.Box).Invalid);
 
-    // Text made only of digits and dots is meant as an IPv4 address and must
-    // be a complete, valid one ("192.168.2.411" is rejected). Anything else
-    // is a host name, which can only be checked by connecting. Empty is
-    // allowed here; the card shows "set a host" for it.
+    // Host field rule. Empty is allowed here; the card shows "set a host".
+    // - Starts like an IPv4 address (digits-only first part): must be a
+    //   complete one, so "192.168.2.411" and "192.168.2.255eeee" are rejected.
+    // - Contains ':': must be an IPv6 address.
+    // - Otherwise a host name: dot-separated parts of letters, digits and
+    //   inner hyphens (RFC 1123). Whether it resolves shows up on connecting.
     static bool ValidHost(string text)
     {
         var host = text.Trim();
-        if (host.Length == 0 || !host.All(c => char.IsAsciiDigit(c) || c == '.'))
+        if (host.Length == 0)
             return true;
-        return host.Split('.').Length == 4 && System.Net.IPAddress.TryParse(host, out _);
+        if (host.Contains(':'))
+            return System.Net.IPAddress.TryParse(host, out var v6)
+                && v6.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6;
+        var parts = host.Split('.');
+        if (parts[0].Length > 0 && parts[0].All(char.IsAsciiDigit))
+            return parts.Length == 4 && parts.All(p => p.Length is > 0 and <= 3 && p.All(char.IsAsciiDigit))
+                && System.Net.IPAddress.TryParse(host, out _);
+        return parts.All(p => p.Length is > 0 and <= 63
+            && p.All(c => char.IsAsciiLetterOrDigit(c) || c == '-')
+            && p[0] != '-' && p[^1] != '-');
     }
 
     static bool ValidPort(string text) => int.TryParse(text.Trim(), out var p) && p is >= 1 and <= 65535;
