@@ -134,6 +134,7 @@ sealed class Lang
     public string SetIntervalSub   { get; init; } = "Seconds between two measurements";
     public string SetTheme         { get; init; } = "Theme";
     public string SetRestartSub    { get; init; } = "Changing restarts the app";
+    public string SetThemeLiveSub  { get; init; } = "Applies right after saving";
     public string SetLanguage      { get; init; } = "Language";
     public string SetAutostart     { get; init; } = "Start with Windows";
     public string SetAutostartSub  { get; init; } = "Scheduled task with highest privileges";
@@ -253,6 +254,7 @@ sealed class Lang
         SetIntervalSub   = "Sekunden zwischen zwei Messungen",
         SetTheme         = "Design",
         SetRestartSub    = "Änderung startet die App neu",
+        SetThemeLiveSub  = "Gilt sofort nach dem Speichern",
         SetLanguage      = "Sprache",
         SetAutostart     = "Mit Windows starten",
         SetAutostartSub  = "Geplante Aufgabe mit höchsten Rechten",

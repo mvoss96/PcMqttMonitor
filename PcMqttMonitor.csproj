@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
+    <UseWPF>true</UseWPF>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <Version>2.10.1</Version>
@@ -16,6 +17,8 @@
     <None Remove="tools\**;tests\**" />
     <!-- The test project calls internal classes (sinks, input rules) directly. -->
     <InternalsVisibleTo Include="PcMqttMonitor.Tests" />
+    <!-- UseWPF drops System.IO from the implicit usings (clash with Shapes.Path). -->
+    <Using Include="System.IO" />
   </ItemGroup>
 
   <ItemGroup>

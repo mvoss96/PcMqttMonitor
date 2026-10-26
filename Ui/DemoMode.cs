@@ -218,7 +218,7 @@ static class DemoMode
 
     // ── demo data ─────────────────────────────────────────────────────────────
 
-    static AppConfig DemoConfig() => new()
+    internal static AppConfig DemoConfig() => new()
     {
         Mqtt = new MqttConfig
         {

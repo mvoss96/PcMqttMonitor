@@ -75,6 +75,8 @@ class Program
         // Hidden dev mode: render demo screenshots and exit (CI workflow).
         if (DemoMode.TryRun(args))
             return;
+        if (WpfPreview.TryRun(args))
+            return;
 
         ApplicationRestart.RegisterForCrashes();
 

@@ -1,0 +1,129 @@
+<UserControl x:Class="WpfSettingsPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- DataContext is the active string table (L.T); {Binding X} reads L.T.X. -->
+
+    <UserControl.Resources>
+        <!-- Card: Windows 11 Settings style, rows separated by thin lines. -->
+        <Style x:Key="Card" TargetType="Border">
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Margin" Value="0,0,0,8"/>
+            <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}"/>
+        </Style>
+        <Style x:Key="Row" TargetType="DockPanel">
+            <Setter Property="MinHeight" Value="64"/>
+            <Setter Property="Margin" Value="16,0"/>
+            <Setter Property="LastChildFill" Value="True"/>
+        </Style>
+        <Style x:Key="RowSep" TargetType="Border">
+            <Setter Property="Height" Value="1"/>
+            <Setter Property="Background" Value="{DynamicResource CardStrokeColorDefaultBrush}"/>
+        </Style>
+        <Style x:Key="Sub" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+
+        <!-- Windows 11 toggle switch. WPF has no ToggleSwitch control; this
+             re-templates CheckBox with the Fluent theme's ToggleSwitch brushes. -->
+        <Style x:Key="Switch" TargetType="CheckBox">
+            <Setter Property="DockPanel.Dock" Value="Right"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Grid Width="40" Height="20" Background="Transparent">
+                            <Border x:Name="Track" CornerRadius="10" BorderThickness="1"
+                                    Background="{DynamicResource ToggleSwitchFillOff}"
+                                    BorderBrush="{DynamicResource ToggleSwitchStrokeOff}"/>
+                            <Ellipse x:Name="Knob" Width="12" Height="12" Margin="4,0"
+                                     HorizontalAlignment="Left"
+                                     Fill="{DynamicResource ToggleSwitchKnobFillOff}"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Knob" Property="Width" Value="14"/>
+                                <Setter TargetName="Knob" Property="Height" Value="14"/>
+                                <Setter TargetName="Knob" Property="Margin" Value="3,0"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Track" Property="Background" Value="{DynamicResource ToggleSwitchFillOn}"/>
+                                <Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource ToggleSwitchStrokeOn}"/>
+                                <Setter TargetName="Knob" Property="Fill" Value="{DynamicResource ToggleSwitchKnobFillOn}"/>
+                                <Setter TargetName="Knob" Property="HorizontalAlignment" Value="Right"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="Choice" TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+            <Setter Property="DockPanel.Dock" Value="Right"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Width" Value="150"/>
+        </Style>
+    </UserControl.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="24,20,24,16">
+            <TextBlock Text="{Binding SettingsTitle}" Style="{StaticResource TitleTextBlockStyle}" Margin="0,0,0,16"/>
+
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <DockPanel Style="{StaticResource Row}">
+                        <ComboBox x:Name="Interval" Style="{StaticResource Choice}"/>
+                        <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
+                            <TextBlock Text="{Binding SetInterval}"/>
+                            <TextBlock Text="{Binding SetIntervalSub}" Style="{StaticResource Sub}"/>
+                        </StackPanel>
+                    </DockPanel>
+                    <Border Style="{StaticResource RowSep}"/>
+                    <DockPanel Style="{StaticResource Row}">
+                        <ComboBox x:Name="ThemeChoice" Style="{StaticResource Choice}"/>
+                        <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
+                            <TextBlock Text="{Binding SetTheme}"/>
+                            <TextBlock x:Name="ThemeSub" Style="{StaticResource Sub}"/>
+                        </StackPanel>
+                    </DockPanel>
+                    <Border Style="{StaticResource RowSep}"/>
+                    <DockPanel Style="{StaticResource Row}">
+                        <ComboBox x:Name="LanguageChoice" Style="{StaticResource Choice}"/>
+                        <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
+                            <TextBlock Text="{Binding SetLanguage}"/>
+                            <TextBlock Text="{Binding SetRestartSub}" Style="{StaticResource Sub}"/>
+                        </StackPanel>
+                    </DockPanel>
+                    <Border Style="{StaticResource RowSep}"/>
+                    <DockPanel Style="{StaticResource Row}">
+                        <CheckBox x:Name="AutoStartSwitch" Style="{StaticResource Switch}"/>
+                        <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
+                            <TextBlock Text="{Binding SetAutostart}"/>
+                            <TextBlock Text="{Binding SetAutostartSub}" Style="{StaticResource Sub}"/>
+                        </StackPanel>
+                    </DockPanel>
+                    <Border Style="{StaticResource RowSep}"/>
+                    <DockPanel Style="{StaticResource Row}">
+                        <CheckBox x:Name="DebugSwitch" Style="{StaticResource Switch}"/>
+                        <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
+                            <TextBlock Text="{Binding SetDebug}"/>
+                            <TextBlock Text="{Binding SetDebugSub}" Style="{StaticResource Sub}"/>
+                        </StackPanel>
+                    </DockPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource Card}">
+                <DockPanel Style="{StaticResource Row}">
+                    <CheckBox x:Name="UpdateSwitch" Style="{StaticResource Switch}"/>
+                    <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
+                        <TextBlock Text="{Binding SetUpdates}"/>
+                        <TextBlock Text="{Binding SetUpdatesSub}" Style="{StaticResource Sub}"/>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
