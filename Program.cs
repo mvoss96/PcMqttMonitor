@@ -163,7 +163,7 @@ class Program
 
         if (config.Serial.Enabled && !string.IsNullOrWhiteSpace(config.Serial.Port))
         {
-            try { sinks.Add(new SerialSink(config.Serial, Log)); }
+            try { sinks.Add(new SerialSink(config.Serial, Log, tray.SetSerialStatus)); }
             catch (Exception ex) { Log($"[error] Serial sink: {ex.Message}"); }
         }
 

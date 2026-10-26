@@ -298,6 +298,15 @@ sealed class MainWindow : Form
         BeginInvoke(() => _outputs.SetMqttStatus(connected, detail));
     }
 
+    // Called from the serial sink (any thread) — feeds the Serial card status.
+    // The sink also reports on dispose, which can happen while the app shuts down.
+    public void SetSerialStatus(bool? ok, string detail)
+    {
+        if (!IsHandleCreated || IsDisposed) return;
+        try { BeginInvoke(() => _outputs.SetSerialStatus(ok, detail)); }
+        catch (InvalidOperationException) { }   // window handle already destroyed
+    }
+
     // Called by TrayApp's central pause switch. UI thread only.
     public void SetPauseState(bool paused) => _pauseBanner.Visible = paused;
 

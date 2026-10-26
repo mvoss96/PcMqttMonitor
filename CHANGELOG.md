@@ -9,6 +9,9 @@ section as the GitHub release notes — every tagged version needs a section her
   a Windows 11 text field with a dropdown of the COM ports present right
   now (click the arrow, or press F4 / Alt+Down). A port that is not plugged
   in can still be typed.
+- The Serial card shows whether the port is actually usable: "COM9 not
+  found" or "in use by another program" in red, instead of "Sending on COM9"
+  for a port that does not exist.
 - The README screenshots are regenerated automatically for every release.
 
 ## v2.10.0 — 2026-10-26

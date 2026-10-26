@@ -28,6 +28,11 @@ sealed class OutputsPage : Panel
     bool _mqttConnected;
     string _mqttDetail = "";
 
+    // live serial port state from the sink: true = open, false = failure
+    // reason in _serialDetail, null = no report yet (status from the settings)
+    bool? _serialOk;
+    string _serialDetail = "";
+
     // manual scrolling (slim overlay rail, no native scrollbar)
     readonly Label _title;
     ScrollRail? _rail;
@@ -214,6 +219,13 @@ sealed class OutputsPage : Panel
         RefreshStatus();
     }
 
+    public void SetSerialStatus(bool? ok, string detail)
+    {
+        _serialOk = ok;
+        _serialDetail = detail;
+        RefreshStatus();
+    }
+
     // True when an enabled card holds a host that cannot be valid; MainWindow
     // refuses to save in that case.
     public bool HasInvalidInput =>
@@ -272,6 +284,8 @@ sealed class OutputsPage : Panel
             _serialCard.SetStatus(L.T.OutDisabled, StatusKind.Off);
         else if (string.IsNullOrWhiteSpace(_serialPort.Text))
             _serialCard.SetStatus(L.T.OutNoComPort, StatusKind.Off);
+        else if (_serialOk == false)
+            _serialCard.SetStatus(_serialDetail, StatusKind.Error);
         else
             _serialCard.SetStatus(string.Format(L.T.OutSendingCom, ExtractComPort(_serialPort.Text), _serialBaud.Text), StatusKind.Good);
     }

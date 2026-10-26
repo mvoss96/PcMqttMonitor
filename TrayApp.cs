@@ -140,6 +140,10 @@ sealed class TrayApp : ApplicationContext
     public void SetConnectionStatus(bool connected, string detail)
         => _window.SetConnectionStatus(connected, detail);
 
+    // Called from the publish loop thread with the serial sink's port state.
+    public void SetSerialStatus(bool? ok, string detail)
+        => _window.SetSerialStatus(ok, detail);
+
     // Called from the MQTT loop thread with the latest sensor snapshot.
     public void UpdateSnapshot(SensorSnapshot snapshot)
     {
