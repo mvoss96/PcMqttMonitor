@@ -251,8 +251,11 @@ class Program
                 catch (OperationCanceledException) { throw; }
                 catch (Exception ex)
                 {
-                    Log($"[error] sensor read: {ex.Message}");
-                    snapshot = new SensorSnapshot("", new MetricsSnapshot { Host = Environment.MachineName });
+                    // Skip this cycle instead of publishing an empty snapshot: the
+                    // MQTT sink would treat every HA entity as gone and delete it.
+                    Log($"[error] sensor read: {ex.Message} — skipping this cycle.");
+                    await Task.Delay(TimeSpan.FromSeconds(config.General.PublishIntervalSeconds), cancellationToken);
+                    continue;
                 }
 
                 bool paused = tray.IsPaused;
