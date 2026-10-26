@@ -1,5 +1,4 @@
 using System.Drawing;
-using System.Globalization;
 using System.Windows.Forms;
 
 // The Settings page: general options as title+subtitle rows with the control
@@ -8,9 +7,9 @@ sealed class SettingsPage : Panel
 {
     readonly AppConfig _config;
 
-    readonly InputBox _interval;
+    readonly ChoiceBox _interval, _theme, _language;
+    readonly double[] _intervalValues;   // seconds behind each _interval entry
     readonly ToggleSwitch _autoStart, _debug, _updateCheck;
-    readonly ChoiceBox _theme, _language;
     bool _autoStartInitial;
 
     static readonly string[] ThemeValues = ["system", "light", "dark"];
@@ -28,11 +27,13 @@ sealed class SettingsPage : Panel
         };
         Controls.Add(title);
 
-        // Plain text field (no spinner arrows) — validated and clamped on Save.
-        _interval = new InputBox();
-        _interval.Box.TextAlign = HorizontalAlignment.Center;
-        _interval.Box.Text = FormatInterval(config.General.PublishIntervalSeconds);
-        _interval.Box.TextChanged += (_, _) => markDirty();
+        // Fixed choices instead of free text: nothing to validate. A value set
+        // by hand in config.json joins the list so it is shown, not lost.
+        _intervalValues = IntervalPresets.Append(config.General.PublishIntervalSeconds)
+            .Distinct().Order().ToArray();
+        _interval = new ChoiceBox(_intervalValues.Select(s => s.ToString("0.#", L.Culture) + " s").ToArray());
+        _interval.SelectedIndex = Array.IndexOf(_intervalValues, config.General.PublishIntervalSeconds);
+        _interval.SelectedIndexChanged += (_, _) => markDirty();
         _autoStart   = MakeToggle(markDirty);
         _debug       = MakeToggle(markDirty);
         _updateCheck = MakeToggle(markDirty);
@@ -49,7 +50,7 @@ sealed class SettingsPage : Panel
         _language.SelectedIndexChanged += (_, _) => markDirty();
 
         // One width for the three right-hand fields so their edges line up.
-        int fieldW = Math.Max(_theme.Width, _language.Width);
+        int fieldW = Math.Max(_interval.Width, Math.Max(_theme.Width, _language.Width));
         _theme.Width = _language.Width = _interval.Width = fieldW;
 
         var card1 = new SettingsCard { Location = new Point(Theme.S(16), Theme.PageTop) };
@@ -94,7 +95,7 @@ sealed class SettingsPage : Panel
     // Discard edits: reset every control to the saved config.
     public void Revert()
     {
-        _interval.Box.Text = FormatInterval(_config.General.PublishIntervalSeconds);
+        _interval.SelectedIndex = Array.IndexOf(_intervalValues, _config.General.PublishIntervalSeconds);
         _debug.SetChecked(_config.General.DebugEnabled);
         _updateCheck.SetChecked(_config.General.UpdateCheckEnabled);
         _autoStart.SetChecked(_autoStartInitial);
@@ -102,16 +103,9 @@ sealed class SettingsPage : Panel
         _language.SelectedIndex = IndexOr0(LangValues, _config.General.Language);
     }
 
-    // "1,0 s" in German, "1.0 s" in English.
-    static string FormatInterval(double seconds) => seconds.ToString("0.0", L.Culture) + " s";
+    static readonly double[] IntervalPresets = [0.5, 1, 2, 5, 10, 30, 60];
 
-    // Interval as Apply would store it. Accepts "1.5", "1,5" and a trailing
-    // "s"; keeps the current value on garbage input.
-    double IntervalValue() =>
-        double.TryParse(_interval.Box.Text.Trim().TrimEnd('s', 'S').Trim().Replace(',', '.'),
-            NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds)
-            ? Math.Clamp(seconds, 0.5, 3600)
-            : _config.General.PublishIntervalSeconds;
+    double IntervalValue() => _intervalValues[_interval.SelectedIndex];
 
     // True when the controls differ from the saved config.
     public bool HasChanges =>
@@ -127,7 +121,6 @@ sealed class SettingsPage : Panel
     public bool Apply()
     {
         _config.General.PublishIntervalSeconds = IntervalValue();
-        _interval.Box.Text = FormatInterval(_config.General.PublishIntervalSeconds);
         _config.General.DebugEnabled           = _debug.Checked;
         _config.General.UpdateCheckEnabled     = _updateCheck.Checked;
 

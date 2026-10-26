@@ -136,9 +136,9 @@ sealed class TrayApp : ApplicationContext
         _window.SetLoadingStatus(status);
     }
 
-    // Called from the MQTT loop thread to update the connection indicator in the Settings tab.
-    public void SetConnectionStatus(bool connected, string detail)
-        => _window.SetConnectionStatus(connected, detail);
+    // Called from the sinks (any thread) with their state for the Outputs page.
+    public void SetSinkStatus(string sink, StatusKind? kind, string text)
+        => _window.SetSinkStatus(sink, kind, text);
 
     // Called from the MQTT loop thread with the latest sensor snapshot.
     public void UpdateSnapshot(SensorSnapshot snapshot)

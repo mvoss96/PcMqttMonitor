@@ -3,6 +3,36 @@
 User-facing changes per release. The release workflow publishes the matching
 section as the GitHub release notes — every tagged version needs a section here.
 
+## v2.10.1 — 2026-10-26
+
+- The serial port field on the Outputs page now matches the other inputs:
+  a Windows 11 text field with a dropdown of the COM ports present right
+  now (click the arrow, or press F4 / Alt+Down). A port that is not plugged
+  in can still be typed.
+- Every card on the Outputs page shows what the output is actually doing,
+  not just what is configured: Serial "COM9 not found" or "in use by another
+  program", TCP "Port 5556 is in use by another program" or the number of
+  connected clients, UDP "host not found" or "not reachable", in red when it
+  fails. Previously these cards showed green as soon as they were enabled.
+- UDP send errors are logged once instead of every second, and the TCP
+  output retries listening every cycle when its port is taken.
+- For a UDP target on the local network, the card shows "No device at …"
+  when no device owns the address (checked every 30 s in the background).
+  Sending continues either way, so a device that comes online later
+  receives data right away.
+- Hosts, ports and the baud rate are checked while typing: an invalid value
+  (e.g. port `9871111111` or host `192.168.2.255eeee`) turns the field red
+  and blocks saving. Previously it was silently replaced by the old value
+  and the save bar disappeared.
+- The publish interval is chosen from a dropdown (0.5 to 60 s) instead of
+  typed as text; a value set by hand in `config.json` stays selectable.
+- The save bar is easier to notice (accent-tinted with a colored top line and
+  a pencil icon, red for invalid input) and disappears right after saving
+  instead of showing "Saved" for a moment.
+- Fixed: after saving once, the Discard and Save buttons of the save bar
+  could be hidden behind the "Unsaved changes" text on the next edit.
+- The README screenshots are regenerated automatically for every release.
+
 ## v2.10.0 — 2026-10-26
 
 - **Windows 11 look:** Segoe UI Variable font and the Windows 11 type sizes,

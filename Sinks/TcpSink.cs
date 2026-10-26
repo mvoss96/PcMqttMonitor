@@ -2,36 +2,59 @@ using System.Net;
 using System.Net.Sockets;
 
 // Line-delimited JSON server: listens on a port and pushes one JSON object
-// per publish cycle (terminated by '\n') to every connected client.
+// per publish cycle (terminated by '\n') to every connected client. If the
+// port is taken, listening is retried every cycle like a serial reopen.
 sealed class TcpSink : IMetricsSink
 {
-    readonly TcpListener _listener;
+    readonly int _listenPort;
     readonly List<TcpClient> _clients = new();
     readonly Action<string> _log;
+    readonly SinkStatus _status;
     readonly CancellationTokenSource _stop = new();
-    readonly Task _acceptLoop;
+    TcpListener? _listener;
+    Task? _acceptLoop;
 
     public string Name => "TCP";
 
-    public TcpSink(TcpConfig config, Action<string> log)
+    public TcpSink(TcpConfig config, Action<string> log, Action<string, StatusKind?, string> report)
     {
+        _listenPort = config.ListenPort;
         _log = log;
-        _listener = new TcpListener(IPAddress.Any, config.ListenPort);
-        _listener.Start();   // throws if the port is taken — caller logs and skips the sink
-        _acceptLoop = Task.Run(AcceptLoopAsync);
-        _log($"TCP stream listening on port {config.ListenPort}.");
+        _status = new SinkStatus(Name, log, report);
+        TryListen();   // report the state right away instead of after the first cycle
     }
 
-    async Task AcceptLoopAsync()
+    bool TryListen()
+    {
+        if (_listener != null) return true;
+        try
+        {
+            var listener = new TcpListener(IPAddress.Any, _listenPort);
+            listener.Start();
+            _listener = listener;
+            _acceptLoop = Task.Run(() => AcceptLoopAsync(listener));
+            _log($"TCP stream listening on port {_listenPort}.");
+            ReportClients();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _status.Fail(ex, $"Port {_listenPort}", "listen");
+            return false;
+        }
+    }
+
+    async Task AcceptLoopAsync(TcpListener listener)
     {
         try
         {
             while (!_stop.IsCancellationRequested)
             {
-                var client = await _listener.AcceptTcpClientAsync(_stop.Token);
+                var client = await listener.AcceptTcpClientAsync(_stop.Token);
                 client.NoDelay = true;
                 lock (_clients) _clients.Add(client);
                 _log($"TCP client connected: {client.Client.RemoteEndPoint} ({ClientCount} total)");
+                ReportClients();
             }
         }
         catch (OperationCanceledException) { }
@@ -41,8 +64,14 @@ sealed class TcpSink : IMetricsSink
         }
     }
 
+    // "Listening on port 5556 · 2 connected"
+    void ReportClients() => _status.Ok(
+        $"{string.Format(L.T.OutListeningOn, _listenPort)} · {string.Format(L.T.OutConnectedCount, ClientCount)}");
+
     public async Task PublishAsync(MetricsSnapshot metrics, CancellationToken ct)
     {
+        if (!TryListen()) return;
+
         TcpClient[] clients;
         lock (_clients) clients = _clients.ToArray();
         if (clients.Length == 0) return;
@@ -67,6 +96,7 @@ sealed class TcpSink : IMetricsSink
                 lock (_clients) _clients.Remove(client);
                 client.Dispose();
                 _log($"TCP client disconnected ({ClientCount} remaining)");
+                ReportClients();
             }
         }
     }
@@ -76,13 +106,15 @@ sealed class TcpSink : IMetricsSink
     public async ValueTask DisposeAsync()
     {
         _stop.Cancel();
-        _listener.Stop();
-        try { await _acceptLoop; } catch { }
+        _listener?.Stop();
+        if (_acceptLoop != null)
+            try { await _acceptLoop; } catch { }
         lock (_clients)
         {
             foreach (var c in _clients) c.Dispose();
             _clients.Clear();
         }
         _stop.Dispose();
+        _status.Clear();
     }
 }

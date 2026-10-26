@@ -26,6 +26,23 @@ dotnet publish PcMqttMonitor.csproj -c Release -r win-x64 --self-contained true 
 
 Do not publish directly into the install directory — writing to Program Files needs an elevated shell; the installer handles that.
 
+## Testing
+
+Check changes yourself before handing them over:
+
+```powershell
+# Unit tests (input rules, sink status reports, name shortening) — also run by CI
+dotnet test tests/PcMqttMonitor.Tests -c Release
+
+# UI: render every page plus the scenario states (invalid input, save footer,
+# sink status, pause notice) and look at the PNGs. Runs unelevated via dotnet;
+# demo mode uses a throwaway config in %TEMP%, never the real config.json.
+dotnet build PcMqttMonitor.csproj -c Release
+dotnet bin\Release\net10.0-windows\PcMqttMonitor.dll --screenshots <dir> --lang de --theme dark --scale 1 --scenarios
+```
+
+Add a scenario in `DemoMode.RunScenarios` for every new UI state. Never open real COM ports in tests (a port open can reset an attached ESP32).
+
 ## Releasing on GitHub
 
 Repo: `mvoss96/PcMqttMonitor`. CI (`.github/workflows/build.yml`) builds exe + installer on every push/PR. To release: bump the version in both files (see above), **add a `## vx.y.z` section to `CHANGELOG.md`** (user-facing wording — it becomes the GitHub release notes; the release workflow fails without it), commit, then
@@ -45,9 +62,12 @@ git tag v1.x.y && git push origin main --tags
 - `Metrics.cs` — transport-neutral metrics model, `HostInfo`, `MetricTable` (one row per
   scalar metric — drives MQTT subtopics AND HA discovery; drives are special-cased)
 - `Sinks/` — `IMetricsSink` (the project's only interface) + `MqttSink` (connection,
-  availability/LWT, subtopics, HA discovery sync), `UdpSink` (JSON datagram per snapshot),
-  `TcpSink` (line-delimited JSON server), `SerialSink` (line-delimited JSON on a COM port,
-  lazy open/reopen)
+  availability/LWT, subtopics, HA discovery sync), `UdpSink` (JSON datagram per snapshot,
+  ARP check of local targets for the card), `TcpSink` (line-delimited JSON server),
+  `SerialSink` (line-delimited JSON on a COM port, lazy open/reopen); `SinkStatus` reports
+  each sink's state to its Outputs card and logs failures once
+- `Ui/DemoMode.cs` — `--screenshots` (README images, CI) and `--scenarios` (extra UI states)
+- `tests/PcMqttMonitor.Tests/` — xUnit tests; the app grants `InternalsVisibleTo`
 - `Config.cs` — JSON config in sections: `general`, `mqtt`, `udp`, `tcp`, `sensors`
   (v2 schema, breaking vs. 1.x — no migration by design)
 - `UpdateChecker.cs` — daily GitHub-releases check, notify-only (tray balloon + menu item)

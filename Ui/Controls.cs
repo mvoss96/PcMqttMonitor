@@ -86,7 +86,8 @@ static class NavIcons
 {
     public const int Dashboard = 0xF0E2, Outputs = 0xE93E, Sensors = 0xE950,
                      Settings = 0xE713, About = 0xE946,
-                     Warning = 0xE7BA, ChevronDown = 0xE70D, ChevronRight = 0xE76C, Check = 0xE73E;
+                     Warning = 0xE7BA, ChevronDown = 0xE70D, ChevronRight = 0xE76C, Check = 0xE73E,
+                     Edit = 0xE70F;
 
     // The app's signal-bars logo, used on the About page.
     public static void Logo(Graphics g, RectangleF b, Color accent)
@@ -266,14 +267,43 @@ sealed class InputBox : Control
 {
     public readonly TextBox Box;
 
-    // Red border and bottom edge for a value that cannot be saved.
+    // Optional input rule. While the text breaks it the field is Invalid:
+    // red border and bottom edge, and the pages refuse to save.
+    Func<string, bool>? _rule;
     bool _invalid;
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
-    public bool Invalid
+    public Func<string, bool>? Rule
     {
-        get => _invalid;
-        set { if (_invalid != value) { _invalid = value; Invalidate(); } }
+        get => _rule;
+        set { _rule = value; Check(); }
     }
+
+    public bool Invalid => _invalid;
+
+    // The InputBox around a TextBox handed out by the pages' Add…Row helpers.
+    public static InputBox Of(TextBox box) => (InputBox)box.Parent!;
+
+    void Check()
+    {
+        bool invalid = _rule != null && !_rule(Box.Text);
+        if (invalid == _invalid) return;
+        _invalid = invalid;
+        Invalidate();
+    }
+
+    // Optional suggestion list: a chevron at the right edge (or F4 / Alt+Down
+    // in the field) opens a menu; picking an entry replaces the text. The
+    // list is fetched on every open. Typing stays possible.
+    Func<string[]>? _suggestions;
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public Func<string[]>? Suggestions
+    {
+        get => _suggestions;
+        set { _suggestions = value; PerformLayout(); Invalidate(); }
+    }
+
+    static readonly int ChevronW = Theme.S(32);
+    bool OnChevron(Point p) => _suggestions != null && p.X >= Width - ChevronW;
 
     public InputBox()
     {
@@ -289,16 +319,67 @@ sealed class InputBox : Control
         };
         Box.GotFocus  += (_, _) => Invalidate();
         Box.LostFocus += (_, _) => Invalidate();
+        // Subscribed first, so Invalid is current when the pages' own
+        // TextChanged handlers (dirty tracking, status line) run.
+        Box.TextChanged += (_, _) => Check();
+        Box.KeyDown += (_, e) =>
+        {
+            if (_suggestions != null && (e.KeyCode == Keys.F4 || (e.Alt && e.KeyCode == Keys.Down)))
+            {
+                OpenSuggestions();
+                e.Handled = e.SuppressKeyPress = true;
+            }
+        };
         Controls.Add(Box);
         Size = new Size(Theme.S(70), Theme.S(32));
         Cursor = Cursors.IBeam;
-        Click += (_, _) => Box.Focus();
+    }
+
+    protected override void OnMouseClick(MouseEventArgs e)
+    {
+        base.OnMouseClick(e);
+        if (OnChevron(e.Location)) OpenSuggestions();
+        else Box.Focus();
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        Cursor = OnChevron(e.Location) ? Cursors.Hand : Cursors.IBeam;
+        base.OnMouseMove(e);
+    }
+
+    void OpenSuggestions()
+    {
+        var items = _suggestions!();
+        var menu = new ContextMenuStrip();
+        MenuStyle.Apply(menu);
+        menu.MinimumSize = new Size(Width, 0);
+        string current = Box.Text.Trim();
+        foreach (var text in items)
+        {
+            var item = new ToolStripMenuItem(text)
+            {
+                Checked = current.Length > 0 && text.StartsWith(current, StringComparison.OrdinalIgnoreCase),
+            };
+            item.Click += (_, _) =>
+            {
+                Box.Text = text;
+                Box.Focus();
+                Box.SelectionStart = Box.Text.Length;
+            };
+            menu.Items.Add(item);
+        }
+        if (items.Length == 0)
+            menu.Items.Add(new ToolStripMenuItem(L.T.NoSuggestions) { Enabled = false });
+        menu.Closed += (_, _) => BeginInvoke(menu.Dispose);
+        menu.Show(this, new Point(0, Height + Theme.S(2)));
     }
 
     protected override void OnLayout(LayoutEventArgs levent)
     {
         base.OnLayout(levent);
-        Box?.SetBounds(Theme.S(10), (Height - Box.Height) / 2, Width - Theme.S(20), Box.Height);
+        int right = _suggestions != null ? ChevronW : Theme.S(10);
+        Box?.SetBounds(Theme.S(10), (Height - Box.Height) / 2, Width - Theme.S(10) - right, Box.Height);
     }
 
     protected override void OnPaint(PaintEventArgs e)
@@ -322,6 +403,11 @@ sealed class InputBox : Control
         using var bottom = new SolidBrush(_invalid ? Theme.Crit : Box.Focused ? Theme.Accent : Theme.InputBottom);
         g.FillRectangle(bottom, 0, Height - h, Width, h);
         g.Clip = clip;
+
+        if (_suggestions != null)
+            TextRenderer.DrawText(g, Theme.Glyph(NavIcons.ChevronDown), Theme.IconsSmall,
+                new Rectangle(Width - ChevronW, 0, ChevronW, Height), Theme.Fg2,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
     }
 }
 
@@ -397,50 +483,70 @@ sealed class ActionButton : Control
 }
 
 // Footer of the content area while there are unsaved changes, laid out like
-// a Windows 11 dialog footer: message left, Discard and Save right.
+// a Windows 11 dialog footer: message left, Discard and Save right. Tinted
+// with the accent color (red for invalid input) and topped by a 2px line so
+// it stands out from the page above it.
 sealed class SaveFooter : Control
 {
-    public readonly Label Msg;
     public readonly ActionButton Revert, Button;
+    string _message = "";
+    bool _error;
 
     public SaveFooter()
     {
         SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint
                | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
         // Children first: setting Height triggers OnLayout, which positions them.
-        Msg = new Label { AutoSize = false, AutoEllipsis = true, Height = Theme.S(22), Font = Theme.Base, ForeColor = Theme.Fg2, BackColor = Theme.CardBg, TextAlign = ContentAlignment.MiddleLeft };
         Revert = new ActionButton(L.T.Discard, accent: false);
         Button = new ActionButton(L.T.Save, accent: true);
-        Controls.Add(Msg);
         Controls.Add(Revert);
         Controls.Add(Button);
-        Msg.TextChanged += (_, _) => PerformLayout();
         Dock = DockStyle.Bottom;
         Height = Theme.S(64);
-        BackColor = Theme.CardBg;
+        BackColor = Tint(false);
         Visible = false;
+    }
+
+    Color LineColor => _error ? Theme.Crit : Theme.Accent;
+    static Color Tint(bool error) =>
+        Theme.Mix(Theme.CardBg, error ? Theme.Crit : Theme.Accent, Theme.Dark ? 0.12f : 0.08f);
+
+    public void SetMessage(string text, bool error)
+    {
+        _message = text;
+        _error = error;
+        BackColor = Tint(error);   // the buttons clear their corners with it
+        Invalidate(true);
     }
 
     protected override void OnLayout(LayoutEventArgs levent)
     {
         base.OnLayout(levent);
-        int pad = Theme.S(16), x = Width - pad;
+        int x = Width - Theme.S(16);
         foreach (var b in new[] { Button, Revert })
         {
-            if (!b.Visible) continue;
             x -= b.Width;
             b.Location = new Point(x, (Height - b.Height) / 2);
             x -= Theme.S(8);
         }
-        // The message takes the space left of the buttons, cut with "…" if longer.
-        Msg.Bounds = new Rectangle(pad, (Height - Msg.Height) / 2, Math.Max(0, x - pad), Msg.Height);
     }
 
     protected override void OnPaint(PaintEventArgs e)
     {
-        e.Graphics.Clear(Theme.CardBg);
-        using var pen = new Pen(Theme.CardBorder);
-        e.Graphics.DrawLine(pen, 0, 0, Width, 0);
+        var g = e.Graphics;
+        g.Clear(BackColor);
+        using (var line = new SolidBrush(LineColor))
+            g.FillRectangle(line, 0, 0, Width, Theme.S(2));
+
+        // Icon and message in the space left of the buttons, cut with "…" if longer.
+        int x = Theme.S(16), right = Revert.Left - Theme.S(8);
+        TextRenderer.DrawText(g, Theme.Glyph(_error ? NavIcons.Warning : NavIcons.Edit), Theme.Icons,
+            new Rectangle(x, 0, Theme.S(20), Height), LineColor,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+        x += Theme.S(30);
+        TextRenderer.DrawText(g, _message, Theme.SemiBold, new Rectangle(x, 0, Math.Max(0, right - x), Height),
+            _error ? Theme.Crit : Theme.Fg,
+            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
     }
 }
 

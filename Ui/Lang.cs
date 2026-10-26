@@ -34,7 +34,6 @@ sealed class Lang
     public string NavAbout     { get; init; } = "About";
 
     public string UnsavedChanges { get; init; } = "Unsaved changes";
-    public string Saved          { get; init; } = "✓ Saved";
     public string Save           { get; init; } = "Save";
     public string Discard        { get; init; } = "Discard";
     public string TitleUpdate    { get; init; } = "v{0} available";   // title-bar suffix
@@ -90,13 +89,21 @@ sealed class Lang
     public string OutDisabled     { get; init; } = "Disabled";
     public string OutNoHost       { get; init; } = "Not configured — set a host";
     public string OutNoComPort    { get; init; } = "Not configured — set a port (e.g. COM3)";
-    public string OutNotConnected { get; init; } = "Not connected";
-    public string OutInvalidIp    { get; init; } = "Invalid IP address";
-    public string OutUnreachable  { get; init; } = "Not reachable — no response from the broker";
+    public string NoSuggestions   { get; init; } = "Nothing found";
+    // Sink status texts; {0} is the host, "COM9" or "Port 5556".
+    public string OutNotFound     { get; init; } = "{0} not found";
+    public string OutInUse        { get; init; } = "{0} is in use by another program";
+    public string OutUnreachable  { get; init; } = "{0} not reachable";
     public string OutRefused      { get; init; } = "Connection refused — is a broker running on this port?";
-    public string OutHostNotFound { get; init; } = "Host not found";
     public string OutAuthFailed   { get; init; } = "Login failed — check username and password";
-    public string OutConnectFailed { get; init; } = "Connection failed: {0}";
+    public string OutError        { get; init; } = "Error: {0}";
+    public string OutNotConnected { get; init; } = "Not connected";
+    public string OutNotActive    { get; init; } = "Not active yet — save to start";
+    public string OutConnectedCount { get; init; } = "{0} connected";
+    public string OutNoDevice     { get; init; } = "No device at {0}";
+    public string OutInvalidIp    { get; init; } = "Invalid IP address";
+    public string OutInvalidPort  { get; init; } = "Invalid port (1–65535)";
+    public string OutInvalidBaud  { get; init; } = "Invalid baud rate";
     public string SaveInvalidInput { get; init; } = "Invalid input";
     public string OutSendingTo    { get; init; } = "Sending to {0}:{1}";
     public string OutListeningOn  { get; init; } = "Listening on {0}";
@@ -164,8 +171,7 @@ sealed class Lang
         NavSettings  = "Einstellungen",
         NavAbout     = "Über",
 
-        UnsavedChanges = "Ungespeicherte Änderungen",
-        Saved          = "✓ Gespeichert",
+        UnsavedChanges = "Nicht gespeichert",
         Save           = "Speichern",
         Discard        = "Verwerfen",
         TitleUpdate    = "v{0} verfügbar",
@@ -207,13 +213,20 @@ sealed class Lang
         OutDisabled     = "Deaktiviert",
         OutNoHost       = "Nicht konfiguriert — Host angeben",
         OutNoComPort    = "Nicht konfiguriert — Port angeben (z. B. COM3)",
-        OutNotConnected = "Nicht verbunden",
-        OutInvalidIp    = "Ungültige IP-Adresse",
-        OutUnreachable  = "Nicht erreichbar — keine Antwort vom Broker",
+        NoSuggestions   = "Nichts gefunden",
+        OutNotFound     = "{0} nicht gefunden",
+        OutInUse        = "{0} wird von einem anderen Programm benutzt",
+        OutUnreachable  = "{0} nicht erreichbar",
         OutRefused      = "Verbindung abgelehnt — läuft dort ein Broker auf diesem Port?",
-        OutHostNotFound = "Host nicht gefunden",
         OutAuthFailed   = "Anmeldung fehlgeschlagen — Benutzer und Passwort prüfen",
-        OutConnectFailed = "Verbindung fehlgeschlagen: {0}",
+        OutError        = "Fehler: {0}",
+        OutNotConnected = "Nicht verbunden",
+        OutNotActive    = "Noch nicht aktiv — speichern zum Starten",
+        OutConnectedCount = "{0} verbunden",
+        OutNoDevice     = "Kein Gerät unter {0}",
+        OutInvalidIp    = "Ungültige IP-Adresse",
+        OutInvalidPort  = "Ungültiger Port (1–65535)",
+        OutInvalidBaud  = "Ungültige Baudrate",
         SaveInvalidInput = "Ungültige Eingabe",
         OutSendingTo    = "Sendet an {0}:{1}",
         OutListeningOn  = "Lauscht auf Port {0}",

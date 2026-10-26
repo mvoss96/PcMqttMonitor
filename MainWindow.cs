@@ -25,7 +25,6 @@ sealed class MainWindow : Form
 
     // save footer
     readonly SaveFooter _saveBar;
-    readonly System.Windows.Forms.Timer _savedFlash = new() { Interval = 1200 };
     bool _dirty;
 
     // Update notification: title-bar text suffix + accent badge on the About
@@ -121,7 +120,6 @@ sealed class MainWindow : Form
         _saveBar.Button.Click += (_, _) => Save();
         _saveBar.Revert.Click += (_, _) => Revert();
         _content.Controls.Add(_saveBar);   // added after the Fill pages so Bottom wins
-        _savedFlash.Tick += (_, _) => { _savedFlash.Stop(); if (!_dirty) _saveBar.Visible = false; };
 
         SelectPage(0);
 
@@ -143,6 +141,9 @@ sealed class MainWindow : Form
     // ── hooks for DemoMode (CI screenshots) ───────────────────────────────────
 
     internal void DemoSelectPage(int index) => SelectPage(index);
+    internal OutputsPage DemoOutputs => _outputs;
+    internal void DemoSave() => Save();
+    internal void DemoRevert() => Revert();
 
     internal void DemoFeed(MetricsSnapshot m)
     {
@@ -186,25 +187,23 @@ sealed class MainWindow : Form
 
     // ── dirty / save ──────────────────────────────────────────────────────────
 
-    // Called on every edit. The bar shows only while some page differs from
-    // the saved config, so changing a value and changing it back hides it.
+    bool HasInvalidInput => _outputs.HasInvalidInput;
+
+    // Called on every edit. The bar shows while some page differs from the
+    // saved config or holds invalid input — an invalid value would otherwise
+    // compare equal to the saved one and the bar would silently disappear.
     void UpdateSaveBar()
     {
-        _dirty = _outputs.HasChanges || _sensors.HasChanges || _settings.HasChanges;
+        bool invalid = HasInvalidInput;
+        _dirty = invalid || _outputs.HasChanges || _sensors.HasChanges || _settings.HasChanges;
         if (!_dirty)
         {
-            if (!_savedFlash.Enabled) _saveBar.Visible = false;
+            _saveBar.Visible = false;
             return;
         }
-        _savedFlash.Stop();
-        // Invalid input disables Save; the red field on the Outputs page shows which one.
-        bool invalid = _outputs.HasInvalidInput;
-        _saveBar.Msg.Text = invalid ? L.T.SaveInvalidInput : L.T.UnsavedChanges;
-        _saveBar.Msg.ForeColor = invalid ? Theme.Crit : Theme.Fg2;
+        // Invalid input disables Save; the red field shows which one.
+        _saveBar.SetMessage(invalid ? L.T.SaveInvalidInput : L.T.UnsavedChanges, error: invalid);
         _saveBar.Button.Enabled = !invalid;
-        _saveBar.Button.Visible = true;
-        _saveBar.Revert.Visible = true;
-        _saveBar.PerformLayout();
         _saveBar.Visible = true;
     }
 
@@ -219,7 +218,7 @@ sealed class MainWindow : Form
 
     void Save()
     {
-        if (_outputs.HasInvalidInput)
+        if (HasInvalidInput)
             return;
 
         // Output settings need a sink rebuild; general/sensor settings apply
@@ -242,13 +241,9 @@ sealed class MainWindow : Form
         if (outputsChanged)
             Program.RequestSinksReload();
 
+        // No "saved" confirmation: the footer disappearing is the confirmation.
         _dirty = false;
-        _saveBar.Msg.Text = L.T.Saved;
-        _saveBar.Msg.ForeColor = Theme.Good;
-        _saveBar.Button.Visible = false;
-        _saveBar.Revert.Visible = false;
-        _saveBar.PerformLayout();
-        _savedFlash.Start();
+        _saveBar.Visible = false;
     }
 
     // ── update pill ───────────────────────────────────────────────────────────
@@ -291,11 +286,13 @@ sealed class MainWindow : Form
         BeginInvoke(() => _dashboard.SetPlaceholder(status));
     }
 
-    // Called from the MQTT sink (any thread) — feeds the Outputs page status line.
-    public void SetConnectionStatus(bool connected, string detail)
+    // Called from the sinks (any thread) — feeds the status line of their card.
+    // Sinks also report when disposed, which can happen while the app shuts down.
+    public void SetSinkStatus(string sink, StatusKind? kind, string text)
     {
-        if (!IsHandleCreated) return;
-        BeginInvoke(() => _outputs.SetMqttStatus(connected, detail));
+        if (!IsHandleCreated || IsDisposed) return;
+        try { BeginInvoke(() => _outputs.SetSinkStatus(sink, kind, text)); }
+        catch (InvalidOperationException) { }   // window handle already destroyed
     }
 
     // Called by TrayApp's central pause switch. UI thread only.

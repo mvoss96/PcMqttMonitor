@@ -312,7 +312,7 @@ sealed class DashboardView : Control
     //     → "12th Gen Intel Core i7-12700K" → "Intel Core i7-12700K"
     //     → "Intel i7-12700K" → "i7-12700K"
     // MQTT always carries the raw name, the hover tooltip the cleaned one.
-    static List<string> NameStages(string name)
+    internal static List<string> NameStages(string name)
     {
         string s = NameJunkRx.Replace(name, "").Trim();
         while (s.Contains("  ")) s = s.Replace("  ", " ");

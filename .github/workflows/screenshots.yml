@@ -1,9 +1,11 @@
 name: Screenshots
 
 # Renders all app pages with deterministic demo data (--screenshots dev mode)
-# so the README images never go stale. Manually triggered; optionally commits
-# the English/dark set straight to docs/.
+# so the README images never go stale. Runs on every release tag and commits
+# the English/dark set to docs/ on main; a manual run commits only on request.
 on:
+  push:
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       commit:
@@ -22,6 +24,10 @@ permissions:
 jobs:
   screenshots:
     runs-on: windows-latest
+    env:
+      # Tag pushes have no inputs: render at scale 2 and always commit.
+      SCALE: ${{ inputs.scale || '2' }}
+      COMMIT: ${{ github.event_name == 'push' || inputs.commit }}
     steps:
       - uses: actions/checkout@v5
 
@@ -36,13 +42,13 @@ jobs:
         run: |
           foreach ($combo in @(("en","dark"), ("de","dark"), ("en","light"), ("de","light"))) {
             $dir = "shots/$($combo[0])-$($combo[1])"
-            Start-Process publish/PcMqttMonitor.exe -ArgumentList '--screenshots',$dir,'--lang',$combo[0],'--theme',$combo[1],'--scale','${{ inputs.scale }}' -Wait
+            Start-Process publish/PcMqttMonitor.exe -ArgumentList '--screenshots',$dir,'--lang',$combo[0],'--theme',$combo[1],'--scale',$env:SCALE -Wait
           }
 
       - name: Apply rounded-corner mask
         run: |
           Add-Type -AssemblyName System.Drawing
-          $scale = [int]'${{ inputs.scale }}'
+          $scale = [int]$env:SCALE
           foreach ($file in Get-ChildItem shots -Recurse -Filter *.png) {
             $src = [System.Drawing.Image]::FromFile($file.FullName)
             $crop = 1 * $scale; $radius = 8 * $scale
@@ -70,9 +76,14 @@ jobs:
           name: screenshots
           path: shots/
 
-      - name: Commit en/dark set to docs
-        if: inputs.commit
+      # Rendered from the tag (or the dispatched branch), committed on top of
+      # the current main: a tag checkout is a detached HEAD, and main may have
+      # moved on since the tag was set.
+      - name: Commit en/dark set to docs on main
+        if: env.COMMIT == 'true'
         run: |
+          git fetch origin main
+          git checkout -B main origin/main
           Copy-Item shots/en-dark/dashboard.png docs/dashboard.png -Force
           Copy-Item shots/en-dark/outputs.png   docs/outputs.png -Force
           Copy-Item shots/en-dark/sensors.png   docs/sensors.png -Force
@@ -83,7 +94,7 @@ jobs:
           git diff --cached --quiet
           if ($LASTEXITCODE -ne 0) {
             git commit -m "docs: regenerate screenshots (demo mode)"
-            git push
+            git push origin main
           } else {
             "No changes."
           }

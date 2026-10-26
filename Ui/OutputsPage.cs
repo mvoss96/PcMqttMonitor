@@ -20,13 +20,14 @@ sealed class OutputsPage : Panel
     // TCP fields
     readonly TextBox _tcpPort;
     // Serial fields
-    readonly ComboBox _serialPort;
+    readonly TextBox _serialPort;
     readonly TextBox _serialBaud;
 
-    // live MQTT state pushed in from the sink via MainWindow: the broker when
-    // connected, otherwise "connecting…" or the failure reason ("" = none)
-    bool _mqttConnected;
-    string _mqttDetail = "";
+    // Last state each running sink reported, keyed by sink name ("MQTT", …).
+    readonly Dictionary<string, (StatusKind Kind, string Text)> _reported = new();
+
+    // Checked fields: the card status shows Problem while the field is invalid.
+    readonly (OutputCard Card, TextBox Box, string Problem)[] _checks;
 
     // manual scrolling (slim overlay rail, no native scrollbar)
     readonly Label _title;
@@ -76,21 +77,25 @@ sealed class OutputsPage : Panel
 
         // ── Serial ──────────────────────────────────────────────────────────
         _serialCard = new OutputCard("Serial", markDirty);
-        _serialPort = _serialCard.AddComboRow(L.T.FieldPort, config.Serial.Port, AvailableComPorts());
-        // Re-enumerate on every open — USB adapters come and go.
-        _serialPort.DropDown += (_, _) =>
-        {
-            var current = _serialPort.Text;
-            _serialPort.Items.Clear();
-            _serialPort.Items.AddRange(AvailableComPorts());
-            _serialPort.Text = current;
-        };
+        // Enumerated on every open — USB adapters come and go.
+        _serialPort = _serialCard.AddSuggestRow(L.T.FieldPort, config.Serial.Port, AvailableComPorts);
         _serialBaud = _serialCard.AddPortRow(L.T.FieldBaudRate, config.Serial.Baud);
         _serialCard.Toggle.SetChecked(config.Serial.Enabled);
 
-        // Live IP check while typing.
-        _host.TextChanged    += (_, _) => RefreshStatus();
-        _udpHost.TextChanged += (_, _) => RefreshStatus();
+        // Input rules, checked live while typing.
+        InputBox.Of(_host).Rule = InputBox.Of(_udpHost).Rule = ValidHost;
+        InputBox.Of(_port).Rule = InputBox.Of(_udpPort).Rule = InputBox.Of(_tcpPort).Rule = ValidPort;
+        InputBox.Of(_serialBaud).Rule = ValidBaud;
+        _checks =
+        [
+            (_mqttCard, _host, L.T.OutInvalidIp),   (_mqttCard, _port, L.T.OutInvalidPort),
+            (_udpCard, _udpHost, L.T.OutInvalidIp), (_udpCard, _udpPort, L.T.OutInvalidPort),
+            (_tcpCard, _tcpPort, L.T.OutInvalidPort),
+            (_serialCard, _serialBaud, L.T.OutInvalidBaud),
+        ];
+        foreach (var check in _checks)
+            check.Box.TextChanged += (_, _) => RefreshStatus();
+        _serialPort.TextChanged += (_, _) => RefreshStatus();
 
         foreach (var card in new[] { _mqttCard, _udpCard, _tcpCard, _serialCard })
         {
@@ -212,75 +217,88 @@ sealed class OutputsPage : Panel
         protected override void OnMouseLeave(EventArgs e) { _hover = false; Invalidate(); base.OnMouseLeave(e); }
     }
 
-    // Called by MainWindow when the MQTT sink reports a connection change,
-    // and locally whenever a toggle flips.
-    public void SetMqttStatus(bool connected, string detail)
+    // Called by MainWindow when a sink reports a state change; null kind means
+    // the sink was disposed.
+    public void SetSinkStatus(string sink, StatusKind? kind, string text)
     {
-        _mqttConnected = connected;
-        _mqttDetail = detail;
+        if (kind == null) _reported.Remove(sink);
+        else _reported[sink] = (kind.Value, text);
         RefreshStatus();
     }
 
-    // True when an enabled card holds a host that cannot be valid; MainWindow
-    // refuses to save in that case.
-    public bool HasInvalidInput =>
-        (_mqttCard.Toggle.Checked && IsInvalidIp(_host.Text)) ||
-        (_udpCard.Toggle.Checked && IsInvalidIp(_udpHost.Text));
+    // Hooks for DemoMode scenarios.
+    internal OutputCard DemoCard(string sink) => sink switch
+    {
+        "MQTT" => _mqttCard, "UDP" => _udpCard, "TCP" => _tcpCard, _ => _serialCard,
+    };
+    internal TextBox DemoField(string name) => name switch
+    {
+        "udp.host" => _udpHost, "tcp.port" => _tcpPort, "serial.port" => _serialPort, _ => _host,
+    };
 
-    // Text made only of digits and dots is meant as an IPv4 address and must
-    // be a complete, valid one ("192.168.2.411" is rejected). Anything else
-    // is a host name, which can only be checked by connecting.
-    static bool IsInvalidIp(string text)
+    // True while any checked field is invalid, enabled card or not; MainWindow
+    // refuses to save in that case.
+    public bool HasInvalidInput => _checks.Any(c => InputBox.Of(c.Box).Invalid);
+
+    // Host field rule. Empty is allowed here; the card shows "set a host".
+    // - Starts like an IPv4 address (digits-only first part): must be a
+    //   complete one, so "192.168.2.411" and "192.168.2.255eeee" are rejected.
+    // - Contains ':': must be an IPv6 address.
+    // - Otherwise a host name: dot-separated parts of letters, digits and
+    //   inner hyphens (RFC 1123). Whether it resolves shows up on connecting.
+    internal static bool ValidHost(string text)
     {
         var host = text.Trim();
-        if (host.Length == 0 || !host.All(c => char.IsAsciiDigit(c) || c == '.'))
-            return false;
-        return host.Split('.').Length != 4 || !System.Net.IPAddress.TryParse(host, out _);
+        if (host.Length == 0)
+            return true;
+        if (host.Contains(':'))
+            return System.Net.IPAddress.TryParse(host, out var v6)
+                && v6.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6;
+        var parts = host.Split('.');
+        if (parts[0].Length > 0 && parts[0].All(char.IsAsciiDigit))
+            return parts.Length == 4 && parts.All(p => p.Length is > 0 and <= 3 && p.All(char.IsAsciiDigit))
+                && System.Net.IPAddress.TryParse(host, out _);
+        return parts.All(p => p.Length is > 0 and <= 63
+            && p.All(c => char.IsAsciiLetterOrDigit(c) || c == '-')
+            && p[0] != '-' && p[^1] != '-');
     }
 
-    // The sink reports "Connecting to …" through the same text channel as
-    // failure reasons; it is the one non-connected state that is not an error.
-    static bool IsConnecting(string detail) =>
-        detail.StartsWith(L.T.StatusConnectingTo[..L.T.StatusConnectingTo.IndexOf('{')]);
+    internal static bool ValidPort(string text) => int.TryParse(text.Trim(), out var p) && p is >= 1 and <= 65535;
+    internal static bool ValidBaud(string text) => int.TryParse(text.Trim(), out var b) && b >= 1;
 
     void RefreshStatus()
     {
-        // Each TextBox sits inside an InputBox that draws its border.
-        ((InputBox)_host.Parent!).Invalid    = IsInvalidIp(_host.Text);
-        ((InputBox)_udpHost.Parent!).Invalid = IsInvalidIp(_udpHost.Text);
+        ShowStatus(_mqttCard, "MQTT", Missing(_host, L.T.OutNoHost) ?? Problem(_mqttCard));
+        ShowStatus(_udpCard, "UDP", Missing(_udpHost, L.T.OutNoHost) ?? Problem(_udpCard));
+        ShowStatus(_tcpCard, "TCP", Problem(_tcpCard));
+        ShowStatus(_serialCard, "Serial", Missing(_serialPort, L.T.OutNoComPort) ?? Problem(_serialCard));
+    }
 
-        if (!_mqttCard.Toggle.Checked)
-            _mqttCard.SetStatus(L.T.OutDisabled, StatusKind.Off);
-        else if (string.IsNullOrWhiteSpace(_host.Text))
-            _mqttCard.SetStatus(L.T.OutNoHost, StatusKind.Off);
-        else if (IsInvalidIp(_host.Text))
-            _mqttCard.SetStatus(L.T.OutInvalidIp, StatusKind.Error);
-        else if (_mqttConnected)
-            _mqttCard.SetStatus(string.Format(L.T.StatusConnected, _mqttDetail), StatusKind.Good);
-        else if (IsConnecting(_mqttDetail))
-            _mqttCard.SetStatus(_mqttDetail, StatusKind.Off);
+    static (string, StatusKind)? Missing(TextBox box, string text) =>
+        string.IsNullOrWhiteSpace(box.Text) ? (text, StatusKind.Off) : null;
+
+    // The first invalid field of the card, if any.
+    (string, StatusKind)? Problem(OutputCard card)
+    {
+        foreach (var c in _checks)
+            if (c.Card == card && InputBox.Of(c.Box).Invalid)
+                return (c.Problem, StatusKind.Error);
+        return null;
+    }
+
+    // One rule for every card: switched off, then a problem in the fields,
+    // then whatever the running sink reported. A sink that is not running
+    // yet (enabled but not saved) has not reported anything.
+    void ShowStatus(OutputCard card, string sink, (string Text, StatusKind Kind)? problem)
+    {
+        if (!card.Toggle.Checked)
+            card.SetStatus(L.T.OutDisabled, StatusKind.Off);
+        else if (problem is { } p)
+            card.SetStatus(p.Text, p.Kind);
+        else if (_reported.TryGetValue(sink, out var r))
+            card.SetStatus(r.Text, r.Kind);
         else
-            _mqttCard.SetStatus(_mqttDetail.Length > 0 ? _mqttDetail : L.T.OutNotConnected, StatusKind.Error);
-
-        if (!_udpCard.Toggle.Checked)
-            _udpCard.SetStatus(L.T.OutDisabled, StatusKind.Off);
-        else if (string.IsNullOrWhiteSpace(_udpHost.Text))
-            _udpCard.SetStatus(L.T.OutNoHost, StatusKind.Off);
-        else if (IsInvalidIp(_udpHost.Text))
-            _udpCard.SetStatus(L.T.OutInvalidIp, StatusKind.Error);
-        else
-            _udpCard.SetStatus(string.Format(L.T.OutSendingTo, _udpHost.Text, _udpPort.Text), StatusKind.Good);
-
-        _tcpCard.SetStatus(_tcpCard.Toggle.Checked
-            ? string.Format(L.T.OutListeningOn, _tcpPort.Text) : L.T.OutDisabled,
-            _tcpCard.Toggle.Checked ? StatusKind.Good : StatusKind.Off);
-
-        if (!_serialCard.Toggle.Checked)
-            _serialCard.SetStatus(L.T.OutDisabled, StatusKind.Off);
-        else if (string.IsNullOrWhiteSpace(_serialPort.Text))
-            _serialCard.SetStatus(L.T.OutNoComPort, StatusKind.Off);
-        else
-            _serialCard.SetStatus(string.Format(L.T.OutSendingCom, ExtractComPort(_serialPort.Text), _serialBaud.Text), StatusKind.Good);
+            card.SetStatus(L.T.OutNotActive, StatusKind.Off);
     }
 
     // Write the edited values back into the shared config. Called on Save.
@@ -387,7 +405,7 @@ sealed class OutputsPage : Panel
     // Dropdown entries like "COM9 — Silicon Labs CP210x USB to UART Bridge":
     // friendly names come from WMI (Win32_PnPEntity), matched to the raw port
     // list; ports without a PnP entry stay plain. "COM2" before "COM10".
-    static object[] AvailableComPorts()
+    static string[] AvailableComPorts()
     {
         var ports = System.IO.Ports.SerialPort.GetPortNames()
             .Distinct()
@@ -411,7 +429,6 @@ sealed class OutputsPage : Panel
 
         return ports
             .Select(p => names.TryGetValue(p, out var n) && n.Length > 0 ? $"{p} — {n}" : p)
-            .Cast<object>()
             .ToArray();
     }
 
@@ -424,7 +441,6 @@ sealed class OutputsPage : Panel
     }
 }
 
-enum StatusKind { Off, Good, Error }
 
 // A collapsible sink card: fixed header (chevron, name, status dot + text,
 // enable switch), body rows added by the page. Clicking the header toggles.
@@ -514,18 +530,15 @@ sealed class OutputCard : CardPanel
         return input.Box;
     }
 
-    // Native rendering on purpose — same reason as the theme selector in
-    // SettingsPage: the dark color mode themes the ComboBox correctly, custom
-    // colors break its arrow drawing. Editable so a port that is not currently
-    // plugged in can still be typed.
-    public ComboBox AddComboRow(string label, string value, object[] items)
+    // Text field with a suggestion list (e.g. the COM ports present right now).
+    // Stays editable so a port that is not plugged in can still be typed.
+    public TextBox AddSuggestRow(string label, string value, Func<string[]> suggestions)
     {
-        var combo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDown };
-        combo.Items.AddRange(items);
-        combo.Text = value;
-        combo.TextChanged += (_, _) => _markDirty();
-        AddRow(label, combo, stretch: true);
-        return combo;
+        var input = new InputBox { Suggestions = suggestions };
+        input.Box.Text = value;
+        input.Box.TextChanged += (_, _) => _markDirty();
+        AddRow(label, input, stretch: true);
+        return input.Box;
     }
 
     public FlatCheck AddCheckRow(string text, bool value)
