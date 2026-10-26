@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
+using Microsoft.Win32;
 
 class Program
 {
@@ -23,6 +24,11 @@ class Program
         // Must be the FIRST Application call: even subscribing ThreadException
         // spins up the WinForms thread context, after which the mode is locked.
         Application.SetHighDpiMode(HighDpiMode.SystemAware);
+
+        // Called by the installer: register the autostart task and exit. Keeps
+        // the task definition in one place (AutoStart.cs).
+        if (args.Contains("--register-autostart"))
+            Environment.Exit(AutoStart.Apply(true) ? 0 : 1);
 
         // Pass --console to see log output in the terminal that launched the app.
         // Without it no console is allocated (WinExe) so output is silenced.
@@ -110,6 +116,15 @@ class Program
             try { await RunPublishLoopAsync(config, configPath, tray, consoleAttached, shutdown.Token); }
             catch (Exception ex) { Log($"[fatal] Background task crashed: {ex}"); }
         });
+
+        // Logoff/shutdown kills the process without ending Application.Run.
+        // Stop the loop here so the sinks are disposed (MQTT publishes "offline")
+        // instead of HA waiting for the LWT after the keep-alive timeout.
+        // Blocking the handler keeps Windows waiting; the timeout bounds it.
+        SystemEvents.SessionEnded += (_, _) =>
+        {
+            try { shutdown.Cancel(); publishTask.Wait(TimeSpan.FromSeconds(3)); } catch { }
+        };
 
         // Daily update check against GitHub releases (fire-and-forget; notify-only).
         _ = Task.Run(() => RunUpdateCheckLoopAsync(config, tray, shutdown.Token));
@@ -361,8 +376,6 @@ class Program
     // Suppress the fatal-error dialog for known driver crashes. Windows restarts
     // the registered process after the runtime terminates it.
     static bool IsHardwareDriverCrash(string msg) =>
-        msg.Contains("DiskInfoToolkit")                              ||  // storage at boot
-        msg.Contains("StorageManager")                               ||  // storage device change
         msg.Contains("NvApi",      StringComparison.OrdinalIgnoreCase) || // NVIDIA driver
         msg.Contains("NvidiaGpu",  StringComparison.OrdinalIgnoreCase) ||
         msg.Contains("AmdGpu",     StringComparison.OrdinalIgnoreCase) || // AMD driver

@@ -1,5 +1,5 @@
 #define MyAppName "PC MQTT Monitor"
-#define MyAppVersion "2.9.1"
+#define MyAppVersion "2.9.2"
 #define MyAppPublisher "mvoss"
 #define MyAppExeName "PcMqttMonitor.exe"
 #define MyAppTaskName "PcMqttMonitor"
@@ -50,8 +50,8 @@ Name: "german";  MessagesFile: "compiler:Languages\German.isl"
 
 [Tasks]
 ; Default-checked: autostart at logon is the expected setup for a monitoring app.
-; The task itself is created in [Code] (CreateAutostartTask) — a plain [Run]
-; schtasks entry silently fails on the /TR quoting for paths with spaces.
+; The task itself is created in [Code] (CreateAutostartTask). On upgrades the
+; previous selection is kept, so existing tasks get re-registered.
 Name: "autostart"; \
   Description: "Start {#MyAppName} automatically when Windows starts"; \
   GroupDescription: "Additional options:"
@@ -87,10 +87,6 @@ Filename: "schtasks.exe"; \
   RunOnceId: "RemoveTask"
 
 [Code]
-// On upgrade: if a scheduled task already exists, preserve autostart across the upgrade.
-// The new exe path is the same (same install dir), so the existing task stays valid.
-// No action needed — schtasks /Create /F will overwrite if the user re-checks the box.
-
 // Terminate the running app so its exe can be replaced. The app is a tray app
 // without a visible window, so a graceful close request would go nowhere; it has
 // no unsaved state, so /F is safe. Installer runs elevated, so this works even
@@ -110,20 +106,16 @@ begin
   Result := '';
 end;
 
-// Registers the autostart scheduled task. Built in Pascal so the /TR argument
-// gets the exact quoting the exe path needs: /TR "\"C:\...\PcMqttMonitor.exe\""
-// — the same pattern the app's own ApplyAutoStart (MainWindow.cs) uses, which
-// is proven to work. A [Run] entry can't express this reliably ("" escaping).
+// Registers the autostart scheduled task by running the installed app with
+// --register-autostart, so the task definition lives only in AutoStart.cs.
+// The installer is elevated, so the requireAdministrator exe starts directly.
 procedure CreateAutostartTask();
 var
-  Params: String;
   ResultCode: Integer;
 begin
-  Params := '/Create /F /TN "{#MyAppTaskName}"'
-    + ' /TR "\"' + ExpandConstant('{app}') + '\{#MyAppExeName}\""'
-    + ' /SC ONLOGON /RU "' + GetUserNameString() + '" /RL HIGHEST /DELAY 0000:10';
-  Exec('schtasks.exe', Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Log('schtasks /Create exit code: ' + IntToStr(ResultCode));
+  Exec(ExpandConstant('{app}\{#MyAppExeName}'), '--register-autostart', '',
+    SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Log('--register-autostart exit code: ' + IntToStr(ResultCode));
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);

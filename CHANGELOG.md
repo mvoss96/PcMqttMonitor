@@ -3,6 +3,25 @@
 User-facing changes per release. The release workflow publishes the matching
 section as the GitHub release notes — every tagged version needs a section here.
 
+## v2.9.2 — 2026-10-26
+
+- An unreadable `config.json` is now moved to `config.json.bad` instead of
+  being overwritten with defaults on the next save, so manual edits with a
+  syntax error no longer wipe all settings.
+- While the MQTT broker is unreachable, the app no longer freezes the
+  dashboard and the other outputs for up to 20 seconds per attempt:
+  connecting times out after 5 seconds, retries back off up to 60 seconds,
+  and only the first failure is logged.
+- Home Assistant entities that disappear while the app runs (a sensor or fan
+  unchecked, a drive or network adapter gone) are now removed from HA right
+  away instead of lingering with their last value.
+- Logging off or shutting down Windows now marks the PC offline in Home
+  Assistant immediately instead of after the MQTT keep-alive timeout.
+- The autostart task now also starts on battery power, keeps running when
+  the power cable is unplugged and is no longer subject to Task Scheduler's
+  72-hour run limit. Re-run the installer (or toggle autostart off and on)
+  to update an existing task.
+
 ## v2.9.1 — 2026-09-04
 
 - The app now asks Windows to restart it after hardware-driver crashes that
