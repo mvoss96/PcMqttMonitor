@@ -97,7 +97,7 @@ sealed class Lang
     public string OutHostNotFound { get; init; } = "Host not found";
     public string OutAuthFailed   { get; init; } = "Login failed — check username and password";
     public string OutConnectFailed { get; init; } = "Connection failed: {0}";
-    public string SaveInvalidInput { get; init; } = "Invalid input in Outputs — please correct it";
+    public string SaveInvalidInput { get; init; } = "Invalid input";
     public string OutSendingTo    { get; init; } = "Sending to {0}:{1}";
     public string OutListeningOn  { get; init; } = "Listening on {0}";
     public string OutSendingCom   { get; init; } = "Sending on {0} @ {1} baud";
@@ -147,6 +147,7 @@ sealed class Lang
     public string AboutCheckFailed { get; init; } = "Check failed: {0}";
     public string AboutDownload    { get; init; } = "Download on GitHub";
     public string AboutDeps        { get; init; } = "Uses LibreHardwareMonitor (MPL-2.0) and MQTTnet (MIT)";
+    public string AboutLicense     { get; init; } = "MIT License";
 
     // ── crash dialogs ───────────────────────────────────────────────────────
     public string CrashTitle       { get; init; } = "PC MQTT Monitor — Error";
@@ -182,11 +183,11 @@ sealed class Lang
         StatusStarting       = "Starte…",
         StatusWaitingDrivers = "Warte auf Systemtreiber ({0} s)…",
         StatusOpeningSensors = "Öffne Sensoren…",
-        StatusNoOutputs      = "Keine Ausgänge konfiguriert — nur Sensoranzeige",
+        StatusNoOutputs      = "Keine Outputs konfiguriert — nur Sensoranzeige",
         StatusPublishingTo   = "Sendet an {0}",
         StatusPaused         = "Pausiert",
         StatusConnectingTo   = "Verbinde mit {0}…",
-        StatusDisconnected   = "Getrennt — MQTT-Broker in den Ausgängen konfigurieren",
+        StatusDisconnected   = "Getrennt — MQTT-Broker unter Outputs konfigurieren",
         StatusConnected      = "Verbunden — {0}",
         StatusError          = "Fehler: {0}",
 
@@ -213,7 +214,7 @@ sealed class Lang
         OutHostNotFound = "Host nicht gefunden",
         OutAuthFailed   = "Anmeldung fehlgeschlagen — Benutzer und Passwort prüfen",
         OutConnectFailed = "Verbindung fehlgeschlagen: {0}",
-        SaveInvalidInput = "Ungültige Eingabe in den Ausgängen — bitte korrigieren",
+        SaveInvalidInput = "Ungültige Eingabe",
         OutSendingTo    = "Sendet an {0}:{1}",
         OutListeningOn  = "Lauscht auf Port {0}",
         OutSendingCom   = "Sendet auf {0} @ {1} Baud",
@@ -256,6 +257,7 @@ sealed class Lang
         AboutCheckFailed = "Prüfung fehlgeschlagen: {0}",
         AboutDownload    = "Auf GitHub herunterladen",
         AboutDeps        = "Nutzt LibreHardwareMonitor (MPL-2.0) und MQTTnet (MIT)",
+        AboutLicense     = "MIT-Lizenz",
 
         CrashTitle      = "PC MQTT Monitor — Fehler",
         CrashTitleFatal = "PC MQTT Monitor — Kritischer Fehler",

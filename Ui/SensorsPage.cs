@@ -16,7 +16,7 @@ sealed class SensorsPage : Panel
     readonly Action _markDirty;
     CardPanel _card = null!;
 
-    static readonly int Col0 = Theme.S(16), Col1 = Theme.S(190), RowStep = Theme.S(24);
+    static readonly int Col0 = Theme.S(16), Col1 = Theme.S(196), RowStep = Theme.S(26);
 
     int _y;
     bool _col1;       // next checkbox goes into the second column
@@ -60,7 +60,7 @@ sealed class SensorsPage : Panel
         _col1 = false;
         _card = new CardPanel
         {
-            Location = new Point(Theme.S(16), Theme.S(42)),
+            Location = new Point(Theme.S(16), Theme.PageTop),
             Width = Width - Theme.S(32),
             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
         };

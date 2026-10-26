@@ -10,7 +10,7 @@ sealed class SettingsPage : Panel
 
     readonly InputBox _interval;
     readonly ToggleSwitch _autoStart, _debug, _updateCheck;
-    readonly ComboBox _theme, _language;
+    readonly ChoiceBox _theme, _language;
     bool _autoStartInitial;
 
     static readonly string[] ThemeValues = ["system", "light", "dark"];
@@ -31,7 +31,7 @@ sealed class SettingsPage : Panel
         // Plain text field (no spinner arrows) — validated and clamped on Save.
         _interval = new InputBox();
         _interval.Box.TextAlign = HorizontalAlignment.Center;
-        _interval.Box.Text = config.General.PublishIntervalSeconds.ToString("0.0", CultureInfo.InvariantCulture);
+        _interval.Box.Text = FormatInterval(config.General.PublishIntervalSeconds);
         _interval.Box.TextChanged += (_, _) => markDirty();
         _autoStart   = MakeToggle(markDirty);
         _debug       = MakeToggle(markDirty);
@@ -39,28 +39,20 @@ sealed class SettingsPage : Panel
         _debug.SetChecked(config.General.DebugEnabled);
         _updateCheck.SetChecked(config.General.UpdateCheckEnabled);
 
-        // Standard rendering on purpose — the dark color mode themes the native
-        // ComboBox correctly; FlatStyle/custom colors break its arrow drawing.
-        _theme = new ComboBox
-        {
-            DropDownStyle = ComboBoxStyle.DropDownList,
-            Width = Theme.S(100),
-        };
-        _theme.Items.AddRange([L.T.ThemeSystem, L.T.ThemeLight, L.T.ThemeDark]);
+        _theme = new ChoiceBox([L.T.ThemeSystem, L.T.ThemeLight, L.T.ThemeDark]);
         _theme.SelectedIndex = IndexOr0(ThemeValues, config.General.Theme);
         _theme.SelectedIndexChanged += (_, _) => markDirty();
 
         // Language names stay in their own language — the standard convention.
-        _language = new ComboBox
-        {
-            DropDownStyle = ComboBoxStyle.DropDownList,
-            Width = Theme.S(100),
-        };
-        _language.Items.AddRange([L.T.LangSystem, "English", "Deutsch"]);
+        _language = new ChoiceBox([L.T.LangSystem, "English", "Deutsch"]);
         _language.SelectedIndex = IndexOr0(LangValues, config.General.Language);
         _language.SelectedIndexChanged += (_, _) => markDirty();
 
-        var card1 = new SettingsCard { Location = new Point(Theme.S(16), Theme.S(42)) };
+        // One width for the three right-hand fields so their edges line up.
+        int fieldW = Math.Max(_theme.Width, _language.Width);
+        _theme.Width = _language.Width = _interval.Width = fieldW;
+
+        var card1 = new SettingsCard { Location = new Point(Theme.S(16), Theme.PageTop) };
         card1.AddRow(L.T.SetInterval, L.T.SetIntervalSub, _interval);
         card1.AddRow(L.T.SetTheme, L.T.SetRestartSub, _theme);
         card1.AddRow(L.T.SetLanguage, L.T.SetRestartSub, _language);
@@ -102,7 +94,7 @@ sealed class SettingsPage : Panel
     // Discard edits: reset every control to the saved config.
     public void Revert()
     {
-        _interval.Box.Text = _config.General.PublishIntervalSeconds.ToString("0.0", CultureInfo.InvariantCulture);
+        _interval.Box.Text = FormatInterval(_config.General.PublishIntervalSeconds);
         _debug.SetChecked(_config.General.DebugEnabled);
         _updateCheck.SetChecked(_config.General.UpdateCheckEnabled);
         _autoStart.SetChecked(_autoStartInitial);
@@ -110,10 +102,13 @@ sealed class SettingsPage : Panel
         _language.SelectedIndex = IndexOr0(LangValues, _config.General.Language);
     }
 
-    // Interval as Apply would store it. Accepts both "1.5" and "1,5"; keeps
-    // the current value on garbage input.
+    // "1,0 s" in German, "1.0 s" in English.
+    static string FormatInterval(double seconds) => seconds.ToString("0.0", L.Culture) + " s";
+
+    // Interval as Apply would store it. Accepts "1.5", "1,5" and a trailing
+    // "s"; keeps the current value on garbage input.
     double IntervalValue() =>
-        double.TryParse(_interval.Box.Text.Replace(',', '.'),
+        double.TryParse(_interval.Box.Text.Trim().TrimEnd('s', 'S').Trim().Replace(',', '.'),
             NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds)
             ? Math.Clamp(seconds, 0.5, 3600)
             : _config.General.PublishIntervalSeconds;
@@ -132,7 +127,7 @@ sealed class SettingsPage : Panel
     public bool Apply()
     {
         _config.General.PublishIntervalSeconds = IntervalValue();
-        _interval.Box.Text = _config.General.PublishIntervalSeconds.ToString("0.0", CultureInfo.InvariantCulture);
+        _interval.Box.Text = FormatInterval(_config.General.PublishIntervalSeconds);
         _config.General.DebugEnabled           = _debug.Checked;
         _config.General.UpdateCheckEnabled     = _updateCheck.Checked;
 
@@ -172,7 +167,7 @@ sealed class SettingsPage : Panel
 // vertically centered on the right, thin separators between rows.
 sealed class SettingsCard : CardPanel
 {
-    static readonly int RowH = Theme.S(48);
+    static readonly int RowH = Theme.S(60);
     int _rows;
 
     public void AddRow(string title, string subtitle, Control control)
@@ -181,15 +176,15 @@ sealed class SettingsCard : CardPanel
         var titleLbl = new Label
         {
             Text = title, ForeColor = Theme.Fg, AutoSize = true,
-            Location = new Point(Theme.S(14), top + Theme.S(8))
+            Location = new Point(Theme.S(16), top + Theme.S(11))
         };
         var subLbl = new Label
         {
-            Text = subtitle, ForeColor = Theme.Fg3, Font = Theme.Tiny, AutoSize = true,
-            Location = new Point(Theme.S(14), top + Theme.S(26))
+            Text = subtitle, ForeColor = Theme.Fg2, Font = Theme.Tiny, AutoSize = true,
+            Location = new Point(Theme.S(16), top + Theme.S(31))
         };
         control.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-        control.Location = new Point(Width - control.Width - Theme.S(14), top + (RowH - control.Height) / 2);
+        control.Location = new Point(Width - control.Width - Theme.S(16), top + (RowH - control.Height) / 2);
         Controls.Add(titleLbl);
         Controls.Add(subLbl);
         Controls.Add(control);

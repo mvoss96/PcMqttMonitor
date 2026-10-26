@@ -5,6 +5,16 @@ section as the GitHub release notes — every tagged version needs a section her
 
 ## v2.10.0 — 2026-10-26
 
+- **Windows 11 look:** Segoe UI Variable font and the Windows 11 type sizes,
+  Fluent icons in the sidebar, a Windows 11 style info bar for the pause
+  notice, a save footer with Discard/Save buttons, themed dropdowns for theme
+  and language, and rounded tray menus. Windows 10 falls back to Segoe UI.
+- Dashboard: fan speeds with four digits are no longer cut off, and free
+  drive space above 1 TB is shown in TB.
+- Outputs page: connection errors show a red status, the field labels no
+  longer get cut off ("Benutzername"), and the inputs have Windows 11 borders.
+- Settings: the publish interval is shown with the unit and the decimal
+  separator of the app language ("1,0 s").
 - An unreadable `config.json` is now moved to `config.json.bad` instead of
   being overwritten with defaults on the next save, so manual edits with a
   syntax error no longer wipe all settings.

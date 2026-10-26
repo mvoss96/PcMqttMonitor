@@ -124,7 +124,7 @@ sealed class OutputsPage : Panel
 
     void Relayout()
     {
-        int x = Theme.S(16), w = Width - Theme.S(32), y = Theme.S(42) - _scroll;
+        int x = Theme.S(16), w = Width - Theme.S(32), y = Theme.PageTop - _scroll;
         _title.Top = Theme.S(12) - _scroll;
         foreach (var card in new[] { _mqttCard, _udpCard, _tcpCard, _serialCard })
         {
@@ -238,6 +238,11 @@ sealed class OutputsPage : Panel
         return host.Split('.').Length != 4 || !System.Net.IPAddress.TryParse(host, out _);
     }
 
+    // The sink reports "Connecting to …" through the same text channel as
+    // failure reasons; it is the one non-connected state that is not an error.
+    static bool IsConnecting(string detail) =>
+        detail.StartsWith(L.T.StatusConnectingTo[..L.T.StatusConnectingTo.IndexOf('{')]);
+
     void RefreshStatus()
     {
         // Each TextBox sits inside an InputBox that draws its border.
@@ -245,35 +250,37 @@ sealed class OutputsPage : Panel
         ((InputBox)_udpHost.Parent!).Invalid = IsInvalidIp(_udpHost.Text);
 
         if (!_mqttCard.Toggle.Checked)
-            _mqttCard.SetStatus(L.T.OutDisabled, false);
+            _mqttCard.SetStatus(L.T.OutDisabled, StatusKind.Off);
         else if (string.IsNullOrWhiteSpace(_host.Text))
-            _mqttCard.SetStatus(L.T.OutNoHost, false);
+            _mqttCard.SetStatus(L.T.OutNoHost, StatusKind.Off);
         else if (IsInvalidIp(_host.Text))
-            _mqttCard.SetStatus(L.T.OutInvalidIp, false);
+            _mqttCard.SetStatus(L.T.OutInvalidIp, StatusKind.Error);
         else if (_mqttConnected)
-            _mqttCard.SetStatus(string.Format(L.T.StatusConnected, _mqttDetail), true);
+            _mqttCard.SetStatus(string.Format(L.T.StatusConnected, _mqttDetail), StatusKind.Good);
+        else if (IsConnecting(_mqttDetail))
+            _mqttCard.SetStatus(_mqttDetail, StatusKind.Off);
         else
-            _mqttCard.SetStatus(_mqttDetail.Length > 0 ? _mqttDetail : L.T.OutNotConnected, false);
+            _mqttCard.SetStatus(_mqttDetail.Length > 0 ? _mqttDetail : L.T.OutNotConnected, StatusKind.Error);
 
         if (!_udpCard.Toggle.Checked)
-            _udpCard.SetStatus(L.T.OutDisabled, false);
+            _udpCard.SetStatus(L.T.OutDisabled, StatusKind.Off);
         else if (string.IsNullOrWhiteSpace(_udpHost.Text))
-            _udpCard.SetStatus(L.T.OutNoHost, false);
+            _udpCard.SetStatus(L.T.OutNoHost, StatusKind.Off);
         else if (IsInvalidIp(_udpHost.Text))
-            _udpCard.SetStatus(L.T.OutInvalidIp, false);
+            _udpCard.SetStatus(L.T.OutInvalidIp, StatusKind.Error);
         else
-            _udpCard.SetStatus(string.Format(L.T.OutSendingTo, _udpHost.Text, _udpPort.Text), true);
+            _udpCard.SetStatus(string.Format(L.T.OutSendingTo, _udpHost.Text, _udpPort.Text), StatusKind.Good);
 
         _tcpCard.SetStatus(_tcpCard.Toggle.Checked
             ? string.Format(L.T.OutListeningOn, _tcpPort.Text) : L.T.OutDisabled,
-            _tcpCard.Toggle.Checked);
+            _tcpCard.Toggle.Checked ? StatusKind.Good : StatusKind.Off);
 
         if (!_serialCard.Toggle.Checked)
-            _serialCard.SetStatus(L.T.OutDisabled, false);
+            _serialCard.SetStatus(L.T.OutDisabled, StatusKind.Off);
         else if (string.IsNullOrWhiteSpace(_serialPort.Text))
-            _serialCard.SetStatus(L.T.OutNoComPort, false);
+            _serialCard.SetStatus(L.T.OutNoComPort, StatusKind.Off);
         else
-            _serialCard.SetStatus(string.Format(L.T.OutSendingCom, ExtractComPort(_serialPort.Text), _serialBaud.Text), true);
+            _serialCard.SetStatus(string.Format(L.T.OutSendingCom, ExtractComPort(_serialPort.Text), _serialBaud.Text), StatusKind.Good);
     }
 
     // Write the edited values back into the shared config. Called on Save.
@@ -417,12 +424,19 @@ sealed class OutputsPage : Panel
     }
 }
 
+enum StatusKind { Off, Good, Error }
+
 // A collapsible sink card: fixed header (chevron, name, status dot + text,
 // enable switch), body rows added by the page. Clicking the header toggles.
 sealed class OutputCard : CardPanel
 {
-    static readonly int HeadH = Theme.S(40), RowStep = Theme.S(36),
-                        LabelW = Theme.S(104), BodyPad = Theme.S(8);
+    static readonly int HeadH = Theme.S(48), RowStep = Theme.S(40), BodyPad = Theme.S(8);
+
+    // Label column fits the longest localized field label ("Benutzername").
+    static readonly int LabelW = Math.Max(Theme.S(104),
+        new[] { L.T.FieldHost, L.T.FieldPort, L.T.FieldUsername, L.T.FieldPassword,
+                L.T.FieldTopicRoot, L.T.FieldListenPort, L.T.FieldBaudRate }
+            .Max(t => TextRenderer.MeasureText(t, Theme.Base).Width) + Theme.S(28));
 
     public readonly ToggleSwitch Toggle = new();
     public Action? HeightChanged;
@@ -435,7 +449,8 @@ sealed class OutputCard : CardPanel
     readonly Action _markDirty;
     readonly string _name;
     string _status = "";
-    bool _statusOn, _open, _headHover;
+    StatusKind _statusKind;
+    bool _open, _headHover;
     int _bodyY = HeadH + BodyPad;
 
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
@@ -470,11 +485,11 @@ sealed class OutputCard : CardPanel
         };
     }
 
-    public void SetStatus(string text, bool on)
+    public void SetStatus(string text, StatusKind kind)
     {
-        if (_status == text && _statusOn == on) return;
+        if (_status == text && _statusKind == kind) return;
         _status = text;
-        _statusOn = on;
+        _statusKind = kind;
         Invalidate(new Rectangle(0, 0, Width, HeadH));
     }
 
@@ -518,9 +533,9 @@ sealed class OutputCard : CardPanel
         var box = new FlatCheck { Text = text, Visible = _open };
         box.Checked = value;
         box.CheckedChanged += (_, _) => _markDirty();
-        box.Location = new Point(LabelW + Theme.S(14), _bodyY + Theme.S(2));
+        box.Location = new Point(LabelW + Theme.S(14), _bodyY + Theme.S(3));
         Controls.Add(box);
-        _bodyY += Theme.S(26);
+        _bodyY += Theme.S(28);
         return box;
     }
 
@@ -529,7 +544,7 @@ sealed class OutputCard : CardPanel
         var lbl = new Label
         {
             Text = label, ForeColor = Theme.Fg2, AutoSize = false,
-            Bounds = new Rectangle(Theme.S(14), _bodyY + Theme.S(6), LabelW - Theme.S(14), Theme.S(18)),
+            Bounds = new Rectangle(Theme.S(14), _bodyY + Theme.S(6), LabelW - Theme.S(14), Theme.S(20)),
             Visible = _open,
         };
         control.Location = new Point(LabelW + Theme.S(14), _bodyY);
@@ -572,36 +587,30 @@ sealed class OutputCard : CardPanel
         if (_headHover)
         {
             using var hover = new SolidBrush(Theme.Hover);
-            using var path = Theme.RoundedRect(new RectangleF(1, 1, Width - 2, HeadH - (_open ? 0 : 2)), Theme.SF(6));
+            using var path = Theme.RoundedRect(new RectangleF(1, 1, Width - 2, HeadH - (_open ? 0 : 2)), Theme.SF(7));
             g.FillPath(hover, path);
         }
 
-        // chevron
-        using (var pen = new Pen(Theme.Fg3, Theme.SF(1.5f)) { StartCap = LineCap.Round, EndCap = LineCap.Round })
-        {
-            float cx = Theme.SF(19), cy = HeadH / 2f;
-            float a = Theme.SF(3.5f), b = Theme.SF(2);
-            if (_open)
-            {
-                g.DrawLine(pen, cx - a, cy - b, cx, cy + b);
-                g.DrawLine(pen, cx, cy + b, cx + a, cy - b);
-            }
-            else
-            {
-                g.DrawLine(pen, cx - b, cy - a, cx + b, cy);
-                g.DrawLine(pen, cx + b, cy, cx - b, cy + a);
-            }
-        }
+        TextRenderer.DrawText(g, Theme.Glyph(_open ? NavIcons.ChevronDown : NavIcons.ChevronRight), Theme.IconsSmall,
+            new Rectangle(Theme.S(10), 0, Theme.S(18), HeadH), Theme.Fg2,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
 
-        TextRenderer.DrawText(g, _name, Theme.SemiBold, new Rectangle(Theme.S(30), 0, Theme.S(52), HeadH), Theme.Fg,
+        TextRenderer.DrawText(g, _name, Theme.SemiBold, new Rectangle(Theme.S(34), 0, Theme.S(60), HeadH), Theme.Fg,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
 
-        // status dot + text
-        using (var dot = new SolidBrush(_statusOn ? Theme.Good : Theme.Fg3))
-            g.FillEllipse(dot, Theme.SF(84), HeadH / 2f - Theme.SF(4), Theme.SF(8), Theme.SF(8));
-        int statusX = Theme.S(98);
+        // status dot + text: green when running, red on errors, grey when off
+        var statusColor = _statusKind switch
+        {
+            StatusKind.Good  => Theme.Good,
+            StatusKind.Error => Theme.Crit,
+            _                => Theme.Fg3,
+        };
+        using (var dot = new SolidBrush(statusColor))
+            g.FillEllipse(dot, Theme.SF(98), HeadH / 2f - Theme.SF(4), Theme.SF(8), Theme.SF(8));
+        int statusX = Theme.S(112);
         var statusRect = new Rectangle(statusX, 0, Width - statusX - Toggle.Width - Theme.S(24), HeadH);
-        TextRenderer.DrawText(g, _status, Theme.Small, statusRect, Theme.Fg2,
+        TextRenderer.DrawText(g, _status, Theme.Small, statusRect,
+            _statusKind == StatusKind.Error ? Theme.Crit : Theme.Fg2,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
 
         // separator above the body

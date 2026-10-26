@@ -33,30 +33,48 @@ static class Theme
     public static Color Good,       Warn,     Crit;
     public static Color InputBg,    InputBorder;
     public static Color Scroll,     ScrollHover;
+    public static Color InputBottom;              // unfocused bottom stroke of inputs
+    public static Color ButtonBg,   ButtonHover;  // standard (non-accent) buttons
+    public static Color WarnBg,     WarnIcon;     // warning InfoBar
 
-    // Sizes are the mockup's CSS pixel values, created in Init once the scale
-    // factor is known.
-    public static Font Base       = null!;   // 13px
-    public static Font Small      = null!;   // 11.5px
-    public static Font Tiny       = null!;   // 10.5px
-    public static Font SemiBold   = null!;   // 13px
-    public static Font Title      = null!;   // 16px
+    // Windows 11 type ramp (Body 14, Caption 12, Subtitle 20), created in Init
+    // once the scale factor is known.
+    public static Font Base       = null!;   // 14px Body
+    public static Font Small      = null!;   // 12px Caption
+    public static Font Tiny       = null!;   // 12px Caption — settings subtitles
+    public static Font SemiBold   = null!;   // 14px Body Strong
+    public static Font Title      = null!;   // 20px Subtitle — page titles
     public static Font BigValue   = null!;   // 26px
-    public static Font BigCompact = null!;   // 21px — dashboard half-width cards
-    public static Font GroupHead  = null!;   // 10.5px semibold — sensors page group labels
+    public static Font BigCompact = null!;   // 22px — dashboard half-width cards
+    public static Font GroupHead  = null!;   // 12px semibold — sensors page group labels
+    public static Font Icons      = null!;   // 16px icon glyphs (sidebar, banner)
+    public static Font IconsSmall = null!;   // 12px icon glyphs (chevrons)
+
+    // Content of every page starts below its title at this offset.
+    public static int PageTop => S(52);
 
     public static void Init(float? scaleOverride = null)
     {
         Scale = scaleOverride ?? GetDpiForSystem() / 96f;
 
-        Base       = Px("Segoe UI", 13f);
-        Small      = Px("Segoe UI", 11.5f);
-        Tiny       = Px("Segoe UI", 10.5f);
-        SemiBold   = Px("Segoe UI Semibold", 13f);
-        Title      = Px("Segoe UI Semibold", 16f);
-        BigValue   = Px("Segoe UI Semibold", 26f);
-        BigCompact = Px("Segoe UI Semibold", 21f);
-        GroupHead  = Px("Segoe UI Semibold", 10.5f);
+        // Segoe UI Variable ships with Windows 11. GDI+ only sees its named
+        // instances, under names cut to 31 characters ("…Display Semib").
+        // Windows 10 falls back to Segoe UI and the MDL2 icon font.
+        string text     = Installed("Segoe UI Variable Text", "Segoe UI");
+        string textSemi = Installed("Segoe UI Variable Text Semibold", "Segoe UI Semibold");
+        string display  = Installed("Segoe UI Variable Display Semib", "Segoe UI Semibold");
+        string icons    = Installed("Segoe Fluent Icons", "Segoe MDL2 Assets");
+
+        Base       = Px(text, 14f);
+        Small      = Px(text, 12f);
+        Tiny       = Px(text, 12f);
+        SemiBold   = Px(textSemi, 14f);
+        Title      = Px(display, 20f);
+        BigValue   = Px(display, 26f);
+        BigCompact = Px(display, 22f);
+        GroupHead  = Px(textSemi, 12f);
+        Icons      = Px(icons, 16f);
+        IconsSmall = Px(icons, 12f);
 
 #pragma warning disable WFO5001 // SetColorMode/IsDarkModeEnabled are marked experimental
         Dark = Application.IsDarkModeEnabled;
@@ -78,10 +96,15 @@ static class Theme
             Good        = FromHex("6ccb5f");
             Warn        = FromHex("f0a30a");
             Crit        = FromHex("ff6b5e");
-            InputBg     = FromHex("242529");
+            InputBg     = FromHex("35363b");
             InputBorder = FromHex("4a4b51");
             Scroll      = FromHex("4c4e54");
             ScrollHover = FromHex("5f6167");
+            InputBottom = FromHex("8b8d93");
+            ButtonBg    = FromHex("35363b");
+            ButtonHover = FromHex("3d3e44");
+            WarnBg      = FromHex("433519");
+            WarnIcon    = FromHex("fce100");
         }
         else
         {
@@ -103,11 +126,23 @@ static class Theme
             InputBorder = FromHex("d6d6d9");
             Scroll      = FromHex("c4c6cb");
             ScrollHover = FromHex("a8abb1");
+            InputBottom = FromHex("8a8a8a");
+            ButtonBg    = FromHex("fbfbfb");
+            ButtonHover = FromHex("f3f3f4");
+            WarnBg      = FromHex("fff4ce");
+            WarnIcon    = FromHex("9d5d00");
         }
     }
 
     static Font Px(string family, float designPx) =>
         new(family, SF(designPx), System.Drawing.GraphicsUnit.Pixel);
+
+    // new Font() silently substitutes a default for a missing family, so check first.
+    static string Installed(string family, string fallback) =>
+        FontFamily.Families.Any(f => f.Name == family) ? family : fallback;
+
+    // Single glyph from the icon font, e.g. Glyph(0xE713) for the gear.
+    public static string Glyph(int codePoint) => char.ConvertFromUtf32(codePoint);
 
     // Traffic-light coloring for temperatures — applied to the value text only.
     public static Color TempColor(float? c) =>
