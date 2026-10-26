@@ -3,6 +3,24 @@
 User-facing changes per release. The release workflow publishes the matching
 section as the GitHub release notes — every tagged version needs a section here.
 
+## v2.11.0 — 2026-10-26
+
+- **New UI built with WPF and the Windows 11 Fluent theme**: native Windows 11
+  controls throughout (text fields, dropdowns, check boxes, buttons, scroll
+  bars, tooltips, tray menu), the Mica window background and the Windows
+  accent color.
+- Changing the theme applies right after saving; the app no longer restarts.
+  A language change still restarts it.
+- Sharp on every monitor: the window follows each monitor's scaling instead of
+  being stretched on a second screen with different scaling.
+- Outputs: the cards look like the expandable sections of the Windows 11
+  Settings app; the serial port is a dropdown of the ports present that also
+  accepts a typed port.
+- The tray menu is a Windows 11 menu and follows light/dark mode.
+- Starting the app while it is already running opens the window of the
+  running instance instead of starting a second copy that publishes the same
+  data twice.
+
 ## v2.10.1 — 2026-10-26
 
 - The serial port field on the Outputs page now matches the other inputs:

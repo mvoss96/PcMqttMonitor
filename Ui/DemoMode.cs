@@ -1,22 +1,29 @@
-using System.Drawing;
-using System.Drawing.Imaging;
-using System.Runtime.InteropServices;
-using System.Windows.Forms;
+using System.Globalization;
+using System.Windows;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 
-// Hidden dev mode for CI-generated screenshots:
-//   PcMqttMonitor.exe --screenshots <dir> [--lang en|de] [--theme dark|light] [--scale N] [--scenarios]
-// Renders every page with deterministic demo data (no sensors, no sinks, no
-// tray) and writes one PNG per page, then exits. The screenshots workflow uses
-// this so the README images never go stale — real hardware values would be
-// empty on a CI VM. --scale 2 renders everything at twice the size for
-// high-res README images, independent of the machine's actual DPI.
+// Hidden dev modes, both with deterministic demo data and without sensors,
+// sinks or tray:
+//   PcMqttMonitor.exe --demo [--lang en|de] [--theme system|light|dark]
+//     Opens the window with demo metrics (one new snapshot per second).
+//   PcMqttMonitor.exe --screenshots <dir> [--lang] [--theme] [--scale N] [--scenarios]
+//     Writes one PNG per page (README images, CI) and exits. --scale 2
+//     renders at twice the size; --scenarios adds extra UI states.
+// Saving writes to a throwaway config in %TEMP%, never the real config.json.
 static class DemoMode
 {
-    public static bool TryRun(string[] args)
+    // True in both modes: Save must not register autostart or restart the app.
+    public static bool Active { get; private set; }
+
+    public static bool TryRun(string[] args, Application app)
     {
+        bool demo = args.Contains("--demo");
         int idx = Array.IndexOf(args, "--screenshots");
-        if (idx < 0 || idx + 1 >= args.Length) return false;
-        string dir = args[idx + 1];
+        string? dir = idx >= 0 && idx + 1 < args.Length ? args[idx + 1] : null;
+        if (!demo && dir == null) return false;
+        Active = true;
 
         string Arg(string name)
         {
@@ -24,21 +31,13 @@ static class DemoMode
             return k >= 0 && k + 1 < args.Length ? args[k + 1] : "";
         }
 
-        L.Init(Arg("--lang") is { Length: > 0 } lang ? lang : "en");
-#pragma warning disable WFO5001 // SetColorMode is marked experimental
-        Application.SetColorMode(Arg("--theme").ToLowerInvariant() == "light"
-            ? SystemColorMode.Classic
-            : SystemColorMode.Dark);
-#pragma warning restore WFO5001
-        // Fixed scale 1 by default: identical output on every machine. The
-        // font/layout pipeline runs entirely off Theme.Scale, so the override
-        // works even on a 96-DPI CI runner.
-        float scale = float.TryParse(Arg("--scale"), System.Globalization.NumberStyles.Float,
-            System.Globalization.CultureInfo.InvariantCulture, out var s) && s is >= 1f and <= 4f ? s : 1f;
-        Theme.Init(scale);
+        // Screenshots default to en/dark for identical output everywhere.
+        L.Init(Arg("--lang") is { Length: > 0 } lang ? lang : dir != null ? "en" : "system");
+        var config = DemoConfig();
+        config.General.Theme = Arg("--theme") is { Length: > 0 } theme ? theme : dir != null ? "dark" : "system";
+        MainWindow.ApplyTheme(config.General.Theme);
 
-        // Fan channels normally come from hardware detection — seed the list so
-        // the Sensors page shows its fan checkboxes in the screenshots.
+        // Fan channels normally come from hardware detection.
         SensorService.SeedDetectedFans(
         [
             new SensorService.DetectedFan("fan_1", "Fan #1", 1042, false),
@@ -49,176 +48,161 @@ static class DemoMode
             new SensorService.DetectedFan("gpu_fan_2", "GPU Fan 2", 0, true),
         ]);
 
-        var config = DemoConfig();
-        // A throwaway config path: scenarios press Save, which must never
-        // write the demo settings over the real config.json next to the exe.
-        var window = new MainWindow(Path.Combine(Path.GetTempPath(), "PcMqttMonitor-demo-config.json"), config);
-        window.SetSinkStatus("MQTT", StatusKind.Good, string.Format(L.T.StatusConnected, $"{config.Mqtt.Host}:{config.Mqtt.Port}"));
-
-        // 60 samples so the sparklines show a full, plausible minute.
-        for (int t = 0; t < 60; t++)
-            window.DemoFeed(Snapshot(t));
-
-        // Borderless with an own caption bar: the OS would draw the real title
-        // bar for the monitor's DPI, not for --scale — at scale 2 it stays half
-        // height with tiny text. The drawn caption scales with everything else.
-        window.FormBorderStyle = FormBorderStyle.None;
-        window.Controls.Add(new CaptionBar { Text = window.Text });
-        // Removing the border shrank the window to the former client area —
-        // restore the design size so the pages keep their proportions.
-        // A --scale window can be larger than the screen (CI runs on a small
-        // display), which silently produced cut-off captures: WinForms clamps
-        // Form.Size to the screen's MaxWindowTrackSize, and Windows enforces
-        // the same limit from WM_GETMINMAXINFO. It takes BOTH to get past
-        // that: MaximumSize makes the form report the large size as its max
-        // track size, and raw SetWindowPos (in Shown, below) bypasses the
-        // managed clamp.
-        var size = new Size(Theme.S(500), Theme.S(700));
-        window.MinimumSize = size;
-        window.MaximumSize = size;
-
-        window.StartPosition = FormStartPosition.CenterScreen;
-        window.TopMost = true;   // nothing may cover the window during capture
-
-        Directory.CreateDirectory(dir);
-        window.Shown += async (_, _) =>
+        var window = new MainWindow(Path.Combine(Path.GetTempPath(), "PcMqttMonitor-demo-config.json"), config)
         {
-            SetWindowPos(window.Handle, IntPtr.Zero, 0, 0, size.Width, size.Height,
-                0x0002 | 0x0004 | 0x0010 /* NOMOVE | NOZORDER | NOACTIVATE */);
+            WindowStartupLocation = WindowStartupLocation.CenterScreen,
+        };
+        window.SetSinkStatus("MQTT", StatusKind.Good, string.Format(L.T.StatusConnected, $"{config.Mqtt.Host}:{config.Mqtt.Port}"));
+        int t = 0;
+        for (; t < 60; t++) window.DemoFeed(Snapshot(t));   // a full minute of sparkline
+
+        if (dir == null)
+        {
+            var feed = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+            feed.Tick += (_, _) => window.SetLatestMetrics(Snapshot(t++));
+            feed.Start();
+            // Closing hides the window; in demo mode that ends the app.
+            window.IsVisibleChanged += (_, _) => { if (!window.IsVisible) app.Shutdown(); };
+            window.Show();
+            app.Run();
+            return true;
+        }
+
+        float scale = float.TryParse(Arg("--scale"), NumberStyles.Float, CultureInfo.InvariantCulture, out var s)
+            && s is >= 1f and <= 4f ? s : 1f;
+        Directory.CreateDirectory(dir);
+        window.ContentRendered += async (_, _) =>
+        {
             var pages = new[] { "dashboard", "outputs", "sensors", "settings", "about" };
             for (int p = 0; p < pages.Length; p++)
             {
-                window.DemoSelectPage(p);
-                await Task.Delay(500);   // paint + native combos + About check settle
-                Capture(window, Path.Combine(dir, pages[p] + ".png"));
+                window.SelectPage(p);
+                await Task.Delay(500);   // layout, and the About page's update check
+                Capture(window, Path.Combine(dir, pages[p] + ".png"), scale);
             }
             if (args.Contains("--scenarios"))
-                await RunScenarios(window, dir);
-            Application.Exit();
+                await RunScenarios(window, dir, scale);
+            window.CloseForExit();
+            app.Shutdown();
         };
-        Application.Run(window);
+        window.Show();
+        app.Run();
         return true;
     }
 
     // ── scenarios ─────────────────────────────────────────────────────────────
 
     // --scenarios: extra states for checking UI changes by eye, written as
-    // scenario-*.png next to the page shots. Not used by the CI workflow.
-    static async Task RunScenarios(MainWindow w, string dir)
+    // scenario-*.png next to the page shots.
+    static async Task RunScenarios(MainWindow w, string dir, float scale)
     {
         var outputs = w.DemoOutputs;
         string[] sinks = ["MQTT", "UDP", "TCP", "Serial"];
 
         void OpenOnly(string sink)
         {
-            foreach (var s in sinks) outputs.DemoCard(s).Open = s == sink;
+            foreach (var s in sinks) outputs.DemoCard(s).IsExpanded = s == sink;
         }
 
         async Task Shot(int page, string name)
         {
-            w.DemoSelectPage(page);
+            w.SelectPage(page);
             await Task.Delay(400);
-            Capture(w, Path.Combine(dir, $"scenario-{name}.png"));
+            Capture(w, Path.Combine(dir, $"scenario-{name}.png"), scale);
         }
 
         // Invalid input: red field, red card status, Save disabled.
         OpenOnly("UDP");
-        outputs.DemoCard("UDP").Toggle.Checked = true;
-        outputs.DemoField("udp.host").Text = "192.168.2.255eeee";
+        outputs.DemoCard("UDP").Enabled.IsChecked = true;
+        outputs.DemoSetText("udp.host", "192.168.2.255eeee");
         await Shot(1, "invalid-host");
         w.DemoRevert();
 
         OpenOnly("TCP");
-        outputs.DemoCard("TCP").Toggle.Checked = true;
-        outputs.DemoField("tcp.port").Text = "9871111111";
+        outputs.DemoCard("TCP").Enabled.IsChecked = true;
+        outputs.DemoSetText("tcp.port", "9871111111");
         await Shot(1, "invalid-port");
         w.DemoRevert();
 
-        // Save footer: edit, save, footer hides after the "Saved" flash, edit again.
+        // Save footer: edit, save (footer hides), edit again.
         OpenOnly("Serial");
-        outputs.DemoField("serial.port").Text = "COM8";
+        outputs.DemoSetText("serial.port", "COM8");
         w.DemoSave();
-        await Task.Delay(1500);
-        outputs.DemoField("serial.port").Text = "COM9";
+        await Task.Delay(300);
+        outputs.DemoSetText("serial.port", "COM9");
         await Shot(1, "footer-after-save");
         w.DemoRevert();
 
         // What running sinks report: errors in red, the TCP client count.
         OpenOnly("");
-        outputs.DemoField("udp.host").Text = "gibtsnicht.local";
-        foreach (var s in sinks) outputs.DemoCard(s).Toggle.SetChecked(true);
+        outputs.DemoSetText("udp.host", "gibtsnicht.local");
+        foreach (var s in sinks) outputs.DemoCard(s).Enabled.IsChecked = true;
         w.SetSinkStatus("UDP", StatusKind.Error, string.Format(L.T.OutNotFound, "gibtsnicht.local"));
         w.SetSinkStatus("TCP", StatusKind.Good,
             $"{string.Format(L.T.OutListeningOn, 5556)} · {string.Format(L.T.OutConnectedCount, 2)}");
         w.SetSinkStatus("Serial", StatusKind.Error, string.Format(L.T.OutNotFound, "COM9"));
         await Shot(1, "sink-status");
+        w.DemoRevert();
 
-        // Pause notice on the dashboard.
+        // Pause notice on the dashboard, update notice in title and nav.
         w.SetPauseState(true);
-        await Shot(0, "paused");
+        w.SetUpdateAvailable(new Version(9, 9, 9));
+        await Shot(0, "paused-update");
+        w.SetPauseState(false);
+
+        // The tray path: paused while the window is hidden, then opened.
+        w.Hide();
+        w.SetPauseState(true);
+        await Task.Delay(200);
+        w.Show();
+        await Shot(0, "paused-from-tray");
         w.SetPauseState(false);
     }
 
     // ── capture ───────────────────────────────────────────────────────────────
 
-    // Raw SetWindowPos: not subject to the WinForms MaxWindowTrackSize clamp.
-    [DllImport("user32.dll")]
-    static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int w, int h, uint flags);
+    const double CaptionH = 32;
 
-    // DrawToBitmap (WM_PRINT), NOT PrintWindow/CopyFromScreen: both capture the
-    // DWM surface, which is only screen-sized — a --scale window larger than
-    // the display (the CI runner's is 1024x768) came back with the overflow
-    // area black. WM_PRINT renders straight into our bitmap, independent of
-    // screen size and composition. Borderless window, so the form IS the
-    // visible area — no frame insets to compensate.
-    static void Capture(Form window, string path)
+    // Render the window into a PNG at the given scale: a drawn caption strip
+    // (icon, title, close glyph) above the client area. Rendered from the
+    // visual tree, so the result does not depend on screen size or DPI; the
+    // Mica backdrop is replaced by the theme's solid base color.
+    static void Capture(MainWindow w, string path, float scale)
     {
-        using var bmp = new Bitmap(window.Width, window.Height, PixelFormat.Format32bppArgb);
-        window.DrawToBitmap(bmp, new Rectangle(Point.Empty, window.Size));
-        bmp.Save(path, ImageFormat.Png);
-    }
-
-    // Win11-style caption strip: app icon, title, close glyph — drawn at
-    // Theme.Scale like the rest of the UI. Purely decorative (screenshots).
-    sealed class CaptionBar : Control
-    {
-        public CaptionBar()
+        var root = (FrameworkElement)w.Content;
+        double width = root.ActualWidth, height = root.ActualHeight + CaptionH;
+        var visual = new DrawingVisual();
+        using (var dc = visual.RenderOpen())
         {
-            SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint
-                   | ControlStyles.UserPaint, true);
-            Dock = DockStyle.Top;
-            Height = Theme.S(32);
+            var bg = w.TryFindResource("SolidBackgroundFillColorBaseBrush") as Brush ?? Brushes.Black;
+            var fg = w.TryFindResource("TextFillColorPrimaryBrush") as Brush ?? Brushes.White;
+            dc.DrawRectangle(bg, null, new Rect(0, 0, width, height));
+
+            if (w.Icon != null)
+                dc.DrawImage(w.Icon, new Rect(10, (CaptionH - 16) / 2, 16, 16));
+            double dpi = VisualTreeHelper.GetDpi(w).PixelsPerDip;
+            var title = new FormattedText(w.Title, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+                new Typeface(w.FontFamily, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal), 12, fg, dpi);
+            dc.DrawText(title, new Point(34, (CaptionH - title.Height) / 2));
+            var close = new FormattedText(char.ConvertFromUtf32(0xE8BB), CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+                new Typeface("Segoe Fluent Icons, Segoe MDL2 Assets"), 10, fg, dpi);
+            dc.DrawText(close, new Point(width - 23 - close.Width / 2, (CaptionH - close.Height) / 2));
+
+            dc.DrawRectangle(new VisualBrush(root) { Stretch = Stretch.None, AlignmentX = AlignmentX.Left, AlignmentY = AlignmentY.Top },
+                null, new Rect(0, CaptionH, root.ActualWidth, root.ActualHeight));
         }
-
-        protected override void OnPaint(PaintEventArgs e)
-        {
-            var g = e.Graphics;
-            g.Clear(Theme.WinBg);
-
-            int size = Theme.S(16);
-            using (var sized = new Icon(TrayApp.CreateIcon(), 32, 32))
-            using (var bmp = sized.ToBitmap())
-            {
-                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
-                g.DrawImage(bmp, new Rectangle(Theme.S(10), (Height - size) / 2, size, size));
-            }
-
-            TextRenderer.DrawText(g, Text, Theme.Small,
-                new Rectangle(Theme.S(34), 0, Width - Theme.S(80), Height), Theme.Fg,
-                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
-
-            // close glyph, centered in the standard ~46px-wide hit zone
-            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-            using var pen = new Pen(Theme.Fg, Theme.SF(1f));
-            float cx = Width - Theme.SF(23), cy = Height / 2f, r = Theme.SF(5);
-            g.DrawLine(pen, cx - r, cy - r, cx + r, cy + r);
-            g.DrawLine(pen, cx - r, cy + r, cx + r, cy - r);
-        }
+        var bmp = new RenderTargetBitmap((int)Math.Ceiling(width * scale), (int)Math.Ceiling(height * scale),
+            96 * scale, 96 * scale, PixelFormats.Pbgra32);
+        bmp.Render(visual);
+        var png = new PngBitmapEncoder();
+        png.Frames.Add(BitmapFrame.Create(bmp));
+        using var file = File.Create(path);
+        png.Save(file);
     }
 
     // ── demo data ─────────────────────────────────────────────────────────────
 
-    static AppConfig DemoConfig() => new()
+    internal static AppConfig DemoConfig() => new()
     {
         Mqtt = new MqttConfig
         {
@@ -236,11 +220,11 @@ static class DemoMode
         },
     };
 
-    // Deterministic pseudo-noise — reproducible screenshots, no Random.
+    // Deterministic pseudo-noise: reproducible screenshots, no Random.
     static float Wave(int t, float baseV, float amp, float period) =>
         baseV + amp * MathF.Sin(t / period) + (t * 31 % 7) - 3;
 
-    // The sparklines must LOOK alive: plain low-amplitude waves render as flat
+    // The sparklines must look alive: plain low-amplitude waves render as flat
     // lines on the 0–100 scale. CPU gets load bursts, the GPU a "game
     // launched" ramp in the second half, RAM a slow climb.
     static int CpuLoad(int t) =>
@@ -252,7 +236,7 @@ static class DemoMode
     static int RamLoad(int t) =>
         Math.Clamp((int)(46 + t * 0.35f + Wave(t, 0, 4, 7f)), 5, 95);
 
-    static MetricsSnapshot Snapshot(int t) => new()
+    internal static MetricsSnapshot Snapshot(int t) => new()
     {
         Host = "GAMING-PC",
         Cpu = new CpuMetrics

@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -6,9 +6,14 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
+    <UseWPF>true</UseWPF>
+    <!-- WPF's native DLLs (wpfgfx, PresentationNative) go inside the single-file
+         exe; otherwise they land next to it and the installer, which ships only
+         the exe, produces an app that fails at startup with DllNotFoundException. -->
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>app.ico</ApplicationIcon>
-    <Version>2.10.1</Version>
+    <Version>2.11.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,6 +21,12 @@
     <None Remove="tools\**;tests\**" />
     <!-- The test project calls internal classes (sinks, input rules) directly. -->
     <InternalsVisibleTo Include="PcMqttMonitor.Tests" />
+    <!-- UseWPF drops System.IO from the implicit usings (clash with Shapes.Path).
+         The WinForms namespaces are imported per file instead of globally,
+         so WPF files see no duplicate type names (TextBox, Color, ToolTip...). -->
+    <Using Include="System.IO" />
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
   </ItemGroup>
 
   <ItemGroup>
