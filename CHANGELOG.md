@@ -16,6 +16,10 @@ section as the GitHub release notes — every tagged version needs a section her
   fails. Previously these cards showed green as soon as they were enabled.
 - UDP send errors are logged once instead of every second, and the TCP
   output retries listening every cycle when its port is taken.
+- For a UDP target on the local network, the card shows "No device at …"
+  when no device owns the address (checked every 30 s in the background).
+  Sending continues either way, so a device that comes online later
+  receives data right away.
 - Hosts, ports and the baud rate are checked while typing: an invalid value
   (e.g. port `9871111111` or host `192.168.2.255eeee`) turns the field red
   and blocks saving. Previously it was silently replaced by the old value

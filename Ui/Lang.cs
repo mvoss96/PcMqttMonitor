@@ -100,6 +100,7 @@ sealed class Lang
     public string OutNotConnected { get; init; } = "Not connected";
     public string OutNotActive    { get; init; } = "Not active yet — save to start";
     public string OutConnectedCount { get; init; } = "{0} connected";
+    public string OutNoDevice     { get; init; } = "No device at {0}";
     public string OutInvalidIp    { get; init; } = "Invalid IP address";
     public string OutInvalidPort  { get; init; } = "Invalid port (1–65535)";
     public string OutInvalidBaud  { get; init; } = "Invalid baud rate";
@@ -222,6 +223,7 @@ sealed class Lang
         OutNotConnected = "Nicht verbunden",
         OutNotActive    = "Noch nicht aktiv — speichern zum Starten",
         OutConnectedCount = "{0} verbunden",
+        OutNoDevice     = "Kein Gerät unter {0}",
         OutInvalidIp    = "Ungültige IP-Adresse",
         OutInvalidPort  = "Ungültiger Port (1–65535)",
         OutInvalidBaud  = "Ungültige Baudrate",
