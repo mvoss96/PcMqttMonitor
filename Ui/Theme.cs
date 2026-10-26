@@ -88,9 +88,9 @@ static class Theme
             Fg          = FromHex("f2f2f3");
             Fg2         = FromHex("a8abb1");
             Fg3         = FromHex("7c7f86");
-            Accent      = FromHex("5ec1ff");
+            Accent      = SystemAccent(dark: true) ?? FromHex("5ec1ff");
             AccentSoft  = Color.FromArgb(41, Accent);
-            AccentFg    = FromHex("0d2b41");
+            AccentFg    = Color.Black;
             BarTrack    = FromHex("3d3e44");
             Hover       = FromHex("333438");
             Good        = FromHex("6ccb5f");
@@ -114,7 +114,7 @@ static class Theme
             Fg          = FromHex("1b1c1e");
             Fg2         = FromHex("63666c");
             Fg3        = FromHex("8b8e94");
-            Accent      = FromHex("0067c0");
+            Accent      = SystemAccent(dark: false) ?? FromHex("0067c0");
             AccentSoft  = Color.FromArgb(36, Accent);
             AccentFg    = Color.White;
             BarTrack    = FromHex("e6e7ea");
@@ -140,6 +140,25 @@ static class Theme
     // new Font() silently substitutes a default for a missing family, so check first.
     static string Installed(string family, string fallback) =>
         FontFamily.Families.Any(f => f.Name == family) ? family : fallback;
+
+    // The user's Windows accent color. Windows stores the shades it derives
+    // from it in AccentPalette (8 RGBA entries, lightest first); Windows 11
+    // uses "Light 2" (index 1) in dark mode and "Dark 1" (index 4) in light mode.
+    static Color? SystemAccent(bool dark)
+    {
+        try
+        {
+            using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(
+                @"Software\Microsoft\Windows\CurrentVersion\Explorer\Accent");
+            if (key?.GetValue("AccentPalette") is byte[] p && p.Length >= 32)
+            {
+                int i = (dark ? 1 : 4) * 4;
+                return Color.FromArgb(p[i], p[i + 1], p[i + 2]);
+            }
+        }
+        catch { }
+        return null;
+    }
 
     // Single glyph from the icon font, e.g. Glyph(0xE713) for the gear.
     public static string Glyph(int codePoint) => char.ConvertFromUtf32(codePoint);

@@ -9,6 +9,8 @@ section as the GitHub release notes — every tagged version needs a section her
   Fluent icons in the sidebar, a Windows 11 style info bar for the pause
   notice, a save footer with Discard/Save buttons, themed dropdowns for theme
   and language, and rounded tray menus. Windows 10 falls back to Segoe UI.
+- The accent color (bars, switches, check boxes, Save button) follows the
+  accent color chosen in the Windows settings.
 - Dashboard: fan speeds with four digits are no longer cut off, and free
   drive space above 1 TB is shown in TB.
 - Outputs page: connection errors show a red status, the field labels no
