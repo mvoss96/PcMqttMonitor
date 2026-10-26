@@ -20,7 +20,7 @@ sealed class OutputsPage : Panel
     // TCP fields
     readonly TextBox _tcpPort;
     // Serial fields
-    readonly ComboBox _serialPort;
+    readonly TextBox _serialPort;
     readonly TextBox _serialBaud;
 
     // live MQTT state pushed in from the sink via MainWindow: the broker when
@@ -76,15 +76,8 @@ sealed class OutputsPage : Panel
 
         // ── Serial ──────────────────────────────────────────────────────────
         _serialCard = new OutputCard("Serial", markDirty);
-        _serialPort = _serialCard.AddComboRow(L.T.FieldPort, config.Serial.Port, AvailableComPorts());
-        // Re-enumerate on every open — USB adapters come and go.
-        _serialPort.DropDown += (_, _) =>
-        {
-            var current = _serialPort.Text;
-            _serialPort.Items.Clear();
-            _serialPort.Items.AddRange(AvailableComPorts());
-            _serialPort.Text = current;
-        };
+        // Enumerated on every open — USB adapters come and go.
+        _serialPort = _serialCard.AddSuggestRow(L.T.FieldPort, config.Serial.Port, AvailableComPorts);
         _serialBaud = _serialCard.AddPortRow(L.T.FieldBaudRate, config.Serial.Baud);
         _serialCard.Toggle.SetChecked(config.Serial.Enabled);
 
@@ -387,7 +380,7 @@ sealed class OutputsPage : Panel
     // Dropdown entries like "COM9 — Silicon Labs CP210x USB to UART Bridge":
     // friendly names come from WMI (Win32_PnPEntity), matched to the raw port
     // list; ports without a PnP entry stay plain. "COM2" before "COM10".
-    static object[] AvailableComPorts()
+    static string[] AvailableComPorts()
     {
         var ports = System.IO.Ports.SerialPort.GetPortNames()
             .Distinct()
@@ -411,7 +404,6 @@ sealed class OutputsPage : Panel
 
         return ports
             .Select(p => names.TryGetValue(p, out var n) && n.Length > 0 ? $"{p} — {n}" : p)
-            .Cast<object>()
             .ToArray();
     }
 
@@ -514,18 +506,15 @@ sealed class OutputCard : CardPanel
         return input.Box;
     }
 
-    // Native rendering on purpose — same reason as the theme selector in
-    // SettingsPage: the dark color mode themes the ComboBox correctly, custom
-    // colors break its arrow drawing. Editable so a port that is not currently
-    // plugged in can still be typed.
-    public ComboBox AddComboRow(string label, string value, object[] items)
+    // Text field with a suggestion list (e.g. the COM ports present right now).
+    // Stays editable so a port that is not plugged in can still be typed.
+    public TextBox AddSuggestRow(string label, string value, Func<string[]> suggestions)
     {
-        var combo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDown };
-        combo.Items.AddRange(items);
-        combo.Text = value;
-        combo.TextChanged += (_, _) => _markDirty();
-        AddRow(label, combo, stretch: true);
-        return combo;
+        var input = new InputBox { Suggestions = suggestions };
+        input.Box.Text = value;
+        input.Box.TextChanged += (_, _) => _markDirty();
+        AddRow(label, input, stretch: true);
+        return input.Box;
     }
 
     public FlatCheck AddCheckRow(string text, bool value)

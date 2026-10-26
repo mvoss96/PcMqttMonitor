@@ -90,6 +90,7 @@ sealed class Lang
     public string OutDisabled     { get; init; } = "Disabled";
     public string OutNoHost       { get; init; } = "Not configured — set a host";
     public string OutNoComPort    { get; init; } = "Not configured — set a port (e.g. COM3)";
+    public string NoSuggestions   { get; init; } = "Nothing found";
     public string OutNotConnected { get; init; } = "Not connected";
     public string OutInvalidIp    { get; init; } = "Invalid IP address";
     public string OutUnreachable  { get; init; } = "Not reachable — no response from the broker";
@@ -207,6 +208,7 @@ sealed class Lang
         OutDisabled     = "Deaktiviert",
         OutNoHost       = "Nicht konfiguriert — Host angeben",
         OutNoComPort    = "Nicht konfiguriert — Port angeben (z. B. COM3)",
+        NoSuggestions   = "Nichts gefunden",
         OutNotConnected = "Nicht verbunden",
         OutInvalidIp    = "Ungültige IP-Adresse",
         OutUnreachable  = "Nicht erreichbar — keine Antwort vom Broker",

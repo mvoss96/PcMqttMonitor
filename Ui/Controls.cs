@@ -275,6 +275,20 @@ sealed class InputBox : Control
         set { if (_invalid != value) { _invalid = value; Invalidate(); } }
     }
 
+    // Optional suggestion list: a chevron at the right edge (or F4 / Alt+Down
+    // in the field) opens a menu; picking an entry replaces the text. The
+    // list is fetched on every open. Typing stays possible.
+    Func<string[]>? _suggestions;
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public Func<string[]>? Suggestions
+    {
+        get => _suggestions;
+        set { _suggestions = value; PerformLayout(); Invalidate(); }
+    }
+
+    static readonly int ChevronW = Theme.S(32);
+    bool OnChevron(Point p) => _suggestions != null && p.X >= Width - ChevronW;
+
     public InputBox()
     {
         SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint
@@ -289,16 +303,64 @@ sealed class InputBox : Control
         };
         Box.GotFocus  += (_, _) => Invalidate();
         Box.LostFocus += (_, _) => Invalidate();
+        Box.KeyDown += (_, e) =>
+        {
+            if (_suggestions != null && (e.KeyCode == Keys.F4 || (e.Alt && e.KeyCode == Keys.Down)))
+            {
+                OpenSuggestions();
+                e.Handled = e.SuppressKeyPress = true;
+            }
+        };
         Controls.Add(Box);
         Size = new Size(Theme.S(70), Theme.S(32));
         Cursor = Cursors.IBeam;
-        Click += (_, _) => Box.Focus();
+    }
+
+    protected override void OnMouseClick(MouseEventArgs e)
+    {
+        base.OnMouseClick(e);
+        if (OnChevron(e.Location)) OpenSuggestions();
+        else Box.Focus();
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        Cursor = OnChevron(e.Location) ? Cursors.Hand : Cursors.IBeam;
+        base.OnMouseMove(e);
+    }
+
+    void OpenSuggestions()
+    {
+        var items = _suggestions!();
+        var menu = new ContextMenuStrip();
+        MenuStyle.Apply(menu);
+        menu.MinimumSize = new Size(Width, 0);
+        string current = Box.Text.Trim();
+        foreach (var text in items)
+        {
+            var item = new ToolStripMenuItem(text)
+            {
+                Checked = current.Length > 0 && text.StartsWith(current, StringComparison.OrdinalIgnoreCase),
+            };
+            item.Click += (_, _) =>
+            {
+                Box.Text = text;
+                Box.Focus();
+                Box.SelectionStart = Box.Text.Length;
+            };
+            menu.Items.Add(item);
+        }
+        if (items.Length == 0)
+            menu.Items.Add(new ToolStripMenuItem(L.T.NoSuggestions) { Enabled = false });
+        menu.Closed += (_, _) => BeginInvoke(menu.Dispose);
+        menu.Show(this, new Point(0, Height + Theme.S(2)));
     }
 
     protected override void OnLayout(LayoutEventArgs levent)
     {
         base.OnLayout(levent);
-        Box?.SetBounds(Theme.S(10), (Height - Box.Height) / 2, Width - Theme.S(20), Box.Height);
+        int right = _suggestions != null ? ChevronW : Theme.S(10);
+        Box?.SetBounds(Theme.S(10), (Height - Box.Height) / 2, Width - Theme.S(10) - right, Box.Height);
     }
 
     protected override void OnPaint(PaintEventArgs e)
@@ -322,6 +384,11 @@ sealed class InputBox : Control
         using var bottom = new SolidBrush(_invalid ? Theme.Crit : Box.Focused ? Theme.Accent : Theme.InputBottom);
         g.FillRectangle(bottom, 0, Height - h, Width, h);
         g.Clip = clip;
+
+        if (_suggestions != null)
+            TextRenderer.DrawText(g, Theme.Glyph(NavIcons.ChevronDown), Theme.IconsSmall,
+                new Rectangle(Width - ChevronW, 0, ChevronW, Height), Theme.Fg2,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
     }
 }
 

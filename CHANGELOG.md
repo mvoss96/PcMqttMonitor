@@ -3,6 +3,14 @@
 User-facing changes per release. The release workflow publishes the matching
 section as the GitHub release notes — every tagged version needs a section here.
 
+## v2.10.1 — 2026-10-26
+
+- The serial port field on the Outputs page now matches the other inputs:
+  a Windows 11 text field with a dropdown of the COM ports present right
+  now (click the arrow, or press F4 / Alt+Down). A port that is not plugged
+  in can still be typed.
+- The README screenshots are regenerated automatically for every release.
+
 ## v2.10.0 — 2026-10-26
 
 - **Windows 11 look:** Segoe UI Variable font and the Windows 11 type sizes,
