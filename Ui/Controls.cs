@@ -330,6 +330,15 @@ sealed class InputBox : Control
 {
     public readonly TextBox Box;
 
+    // Red border and bottom edge for a value that cannot be saved.
+    bool _invalid;
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public bool Invalid
+    {
+        get => _invalid;
+        set { if (_invalid != value) { _invalid = value; Invalidate(); } }
+    }
+
     public InputBox()
     {
         SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint
@@ -364,11 +373,11 @@ sealed class InputBox : Control
         var r = new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
         using var path = Theme.RoundedRect(r, Theme.SF(4));
         using var bg = new SolidBrush(Theme.InputBg);
-        using var border = new Pen(Theme.InputBorder);
+        using var border = new Pen(_invalid ? Theme.Crit : Theme.InputBorder);
         g.FillPath(bg, path);
         g.DrawPath(border, path);
         // 2px bottom edge, accent while the field has focus (mockup style)
-        using var bottom = new Pen(Box.Focused ? Theme.Accent : Theme.InputBorder, Theme.SF(2f));
+        using var bottom = new Pen(_invalid ? Theme.Crit : Box.Focused ? Theme.Accent : Theme.InputBorder, Theme.SF(2f));
         g.DrawLine(bottom, Theme.S(4), Height - Theme.SF(1.5f), Width - Theme.S(4), Height - Theme.SF(1.5f));
     }
 }

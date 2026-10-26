@@ -240,6 +240,10 @@ sealed class OutputsPage : Panel
 
     void RefreshStatus()
     {
+        // Each TextBox sits inside an InputBox that draws its border.
+        ((InputBox)_host.Parent!).Invalid    = IsInvalidIp(_host.Text);
+        ((InputBox)_udpHost.Parent!).Invalid = IsInvalidIp(_udpHost.Text);
+
         if (!_mqttCard.Toggle.Checked)
             _mqttCard.SetStatus(L.T.OutDisabled, false);
         else if (string.IsNullOrWhiteSpace(_host.Text))

@@ -16,7 +16,8 @@ section as the GitHub release notes — every tagged version needs a section her
   response from the broker, connection refused, host not found or login
   failed, instead of only "Not connected".
 - MQTT and UDP host fields reject incomplete or invalid IPv4 addresses such as
-  `192.168.2.411` while typing; saving is blocked until they are corrected.
+  `192.168.2.411` while typing: the field turns red and saving is blocked
+  until it is corrected.
 - Home Assistant entities that disappear while the app runs (a sensor or fan
   unchecked, a drive or network adapter gone) are now removed from HA right
   away instead of lingering with their last value.
