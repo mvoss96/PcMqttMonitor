@@ -43,6 +43,8 @@ PrivilegesRequired=admin
 CloseApplications=no
 RestartApplications=no
 UninstallDisplayIcon={app}\{#MyAppExeName}
+; Pick the language from Windows; ask only when no translation matches.
+ShowLanguageDialog=auto
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -71,13 +73,17 @@ Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{commondesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-; Offer to launch the app after install.
+; Fresh install: offer to launch the app. Upgrade: relaunch it automatically.
 ; runascurrentuser: postinstall entries default to the unelevated original user,
 ; whose plain CreateProcess cannot start a requireAdministrator exe (error 740).
 ; The installer is already elevated, so launch from its context instead.
 Filename: "{app}\{#MyAppExeName}"; \
   Description: "Launch {#MyAppName}"; \
-  Flags: nowait postinstall skipifsilent runascurrentuser
+  Flags: nowait postinstall skipifsilent runascurrentuser; \
+  Check: not IsUpgrade
+Filename: "{app}\{#MyAppExeName}"; \
+  Flags: nowait skipifsilent runascurrentuser; \
+  Check: IsUpgrade
 
 [UninstallRun]
 ; Remove the scheduled task on uninstall.
@@ -87,6 +93,29 @@ Filename: "schtasks.exe"; \
   RunOnceId: "RemoveTask"
 
 [Code]
+var
+  Upgrade: Boolean;
+
+// An upgrade when the exe already exists in the fixed install directory.
+function InitializeSetup(): Boolean;
+begin
+  Upgrade := FileExists(ExpandConstant('{autopf}\PcMqttMonitor\{#MyAppExeName}'));
+  Result := True;
+end;
+
+function IsUpgrade(): Boolean;
+begin
+  Result := Upgrade;
+end;
+
+// On upgrades the previous task selection is reused (Inno's UsePreviousTasks),
+// so the selection and confirmation pages are skipped: UAC, progress, Finish.
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := Upgrade and ((PageID = wpSelectDir) or (PageID = wpSelectProgramGroup)
+    or (PageID = wpSelectTasks) or (PageID = wpReady));
+end;
+
 // Terminate the running app so its exe can be replaced. The app is a tray app
 // without a visible window, so a graceful close request would go nowhere; it has
 // no unsaved state, so /F is safe. Installer runs elevated, so this works even

@@ -22,6 +22,9 @@ section as the GitHub release notes — every tagged version needs a section her
   away instead of lingering with their last value.
 - Logging off or shutting down Windows now marks the PC offline in Home
   Assistant immediately instead of after the MQTT keep-alive timeout.
+- Updating needs fewer clicks: when the app is already installed, the
+  installer skips the language, options and confirmation pages, keeps the
+  previous options and restarts the app automatically.
 - The autostart task now also starts on battery power, keeps running when
   the power cable is unplugged and is no longer subject to Task Scheduler's
   72-hour run limit. Re-run the installer (or toggle autostart off and on)
