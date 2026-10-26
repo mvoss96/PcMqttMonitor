@@ -12,6 +12,8 @@ section as the GitHub release notes — every tagged version needs a section her
 - The Serial card shows whether the port is actually usable: "COM9 not
   found" or "in use by another program" in red, instead of "Sending on COM9"
   for a port that does not exist.
+- Fixed: after saving once, the Discard and Save buttons of the save bar
+  could be hidden behind the "Unsaved changes" text on the next edit.
 - The README screenshots are regenerated automatically for every release.
 
 ## v2.10.0 — 2026-10-26

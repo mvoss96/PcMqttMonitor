@@ -470,6 +470,22 @@ sealed class SaveFooter : Control
     public readonly Label Msg;
     public readonly ActionButton Revert, Button;
 
+    // Tracked here instead of reading Button.Visible: Visible also reports
+    // false while the footer itself is hidden, which made OnLayout skip the
+    // buttons and let the message cover them after the footer reappeared.
+    bool _buttonsShown = true;
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public bool ButtonsShown
+    {
+        get => _buttonsShown;
+        set
+        {
+            _buttonsShown = value;
+            Revert.Visible = Button.Visible = value;
+            PerformLayout();
+        }
+    }
+
     public SaveFooter()
     {
         SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint
@@ -488,16 +504,24 @@ sealed class SaveFooter : Control
         Visible = false;
     }
 
+    protected override void OnVisibleChanged(EventArgs e)
+    {
+        base.OnVisibleChanged(e);
+        if (Visible) PerformLayout();
+    }
+
     protected override void OnLayout(LayoutEventArgs levent)
     {
         base.OnLayout(levent);
         int pad = Theme.S(16), x = Width - pad;
-        foreach (var b in new[] { Button, Revert })
+        if (_buttonsShown)
         {
-            if (!b.Visible) continue;
-            x -= b.Width;
-            b.Location = new Point(x, (Height - b.Height) / 2);
-            x -= Theme.S(8);
+            foreach (var b in new[] { Button, Revert })
+            {
+                x -= b.Width;
+                b.Location = new Point(x, (Height - b.Height) / 2);
+                x -= Theme.S(8);
+            }
         }
         // The message takes the space left of the buttons, cut with "…" if longer.
         Msg.Bounds = new Rectangle(pad, (Height - Msg.Height) / 2, Math.Max(0, x - pad), Msg.Height);

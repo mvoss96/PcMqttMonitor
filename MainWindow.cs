@@ -202,9 +202,7 @@ sealed class MainWindow : Form
         _saveBar.Msg.Text = invalid ? L.T.SaveInvalidInput : L.T.UnsavedChanges;
         _saveBar.Msg.ForeColor = invalid ? Theme.Crit : Theme.Fg2;
         _saveBar.Button.Enabled = !invalid;
-        _saveBar.Button.Visible = true;
-        _saveBar.Revert.Visible = true;
-        _saveBar.PerformLayout();
+        _saveBar.ButtonsShown = true;
         _saveBar.Visible = true;
     }
 
@@ -245,9 +243,7 @@ sealed class MainWindow : Form
         _dirty = false;
         _saveBar.Msg.Text = L.T.Saved;
         _saveBar.Msg.ForeColor = Theme.Good;
-        _saveBar.Button.Visible = false;
-        _saveBar.Revert.Visible = false;
-        _saveBar.PerformLayout();
+        _saveBar.ButtonsShown = false;
         _savedFlash.Start();
     }
 
