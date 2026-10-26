@@ -14,8 +14,8 @@ sealed class DashboardView : Control
     // ── layout constants (design values in 96-DPI pixels, scaled once) ────────
     static readonly int PadX = Theme.S(14), PadY = Theme.S(14), CardGap = Theme.S(10);
     static readonly int CardPadX = Theme.S(12), CardPadY = Theme.S(10);
-    static readonly int HeadH = Theme.S(20), BigH = Theme.S(28), BarBlockH = Theme.S(12),
-                        RowH = Theme.S(19), DetailH = Theme.S(18);
+    static readonly int HeadH = Theme.S(22), BigH = Theme.S(30), BarBlockH = Theme.S(12),
+                        RowH = Theme.S(21), DetailH = Theme.S(18);
     static readonly int SparkH = Theme.S(20), SparkGap = Theme.S(6);
     static readonly int ScrollW = Theme.S(10);
 
@@ -228,11 +228,11 @@ sealed class DashboardView : Control
         CardPadY * 2 + HeadH + BigH + BarBlockH + DetailH + SparkGap + SparkH;
 
     static int DrivesHeight(int drives) =>
-        CardPadY * 2 + HeadH + drives * Theme.S(27) - Theme.S(6);
+        CardPadY * 2 + HeadH + drives * Theme.S(29) - Theme.S(6);
 
-    // Per adapter: header (name + IP) 17, rates line 16; 9px between blocks.
+    // Per adapter: header (name + IP) 19, rates line 17; 9px between blocks.
     static int NetworkHeight(int adapters) =>
-        CardPadY * 2 + HeadH + adapters * Theme.S(33) + (adapters - 1) * Theme.S(9);
+        CardPadY * 2 + HeadH + adapters * Theme.S(36) + (adapters - 1) * Theme.S(9);
 
     static int FansHeight(int fans) =>
         CardPadY * 2 + HeadH + fans * RowH;
@@ -242,7 +242,7 @@ sealed class DashboardView : Control
 
     void DrawCardBg(Graphics g, Rectangle r)
     {
-        using var path = Theme.RoundedRect(new RectangleF(r.X + .5f, r.Y + .5f, r.Width - 1, r.Height - 1), Theme.SF(7));
+        using var path = Theme.RoundedRect(new RectangleF(r.X + .5f, r.Y + .5f, r.Width - 1, r.Height - 1), Theme.SF(8));
         using var bg = new SolidBrush(Theme.CardBg);
         using var border = new Pen(Theme.CardBorder);
         g.FillPath(bg, path);
@@ -517,14 +517,14 @@ sealed class DashboardView : Control
             var letter = d.Name.TrimEnd('\\');
             int paren = letter.LastIndexOf('(');
             if (paren >= 0) letter = letter[paren..].Trim('(', ')');
-            int letterW = Theme.S(40), lineH = Theme.S(16);
+            int letterW = Theme.S(40), lineH = Theme.S(18);
             TextRenderer.DrawText(g, letter, Theme.SemiBold, new Rectangle(x, y, letterW, lineH), Theme.Fg,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
             // "82 % · 170 GB free" — the free space matters most day to day;
             // used/total live in the hover tooltip.
             var rightParts = new List<string>();
             if (d.UsedPercent != null) rightParts.Add($"{d.UsedPercent} %");
-            if (d.FreeGb != null) rightParts.Add($"{FmtNum(d.FreeGb, "0")} GB {L.T.DriveFree}");
+            if (d.FreeGb != null) rightParts.Add($"{FmtSize(d.FreeGb.Value)} {L.T.DriveFree}");
             TextRenderer.DrawText(g, rightParts.Count > 0 ? string.Join(" · ", rightParts) : "—", Theme.Small,
                 new Rectangle(x + letterW, y, w - letterW, lineH), Theme.Fg2,
                 TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
@@ -537,7 +537,7 @@ sealed class DashboardView : Control
                 details.Add($"{FmtNum(d.UsedGb)} / {FmtNum(d.TotalGb)} GB");
             if (d.UsedPercent != null)
                 details.Add($"{d.UsedPercent} %");
-            _tipZones.Add((new Rectangle(x, y, w, Theme.S(27)), string.Join(" · ", details)));
+            _tipZones.Add((new Rectangle(x, y, w, Theme.S(29)), string.Join(" · ", details)));
             y += lineH;
             DrawBar(g, x, y + Theme.S(2), w, d.UsedPercent ?? 0);
             y += Theme.S(11);
@@ -563,7 +563,7 @@ sealed class DashboardView : Control
                 using var pen = new Pen(Theme.CardBorder);
                 g.DrawLine(pen, x, y - Theme.S(5), x + w, y - Theme.S(5));
             }
-            int headLineH = Theme.S(17), rateLineH = Theme.S(16);
+            int headLineH = Theme.S(19), rateLineH = Theme.S(17);
             int nameW = Math.Min(TextRenderer.MeasureText(a.Name, Theme.SemiBold).Width + Theme.S(4), w / 2);
             TextRenderer.DrawText(g, a.Name, Theme.SemiBold, new Rectangle(x, y, nameW, headLineH), Theme.Fg,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
@@ -590,13 +590,19 @@ sealed class DashboardView : Control
         int y = card.Y + CardPadY + HeadH;
         foreach (var f in _m!.Fans!)
         {
-            TextRenderer.DrawText(g, f.Name, Theme.Base, new Rectangle(x, y, w / 2, RowH), Theme.Fg,
-                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+            // The value gets the width it needs; the name takes the rest and is
+            // ellipsized. A fixed half/half split clipped four-digit RPM values.
             var parts = new List<string>();
             if (f.Rpm != null) parts.Add($"{FmtNum(f.Rpm, "0")} RPM");
             if (f.Pwm != null) parts.Add($"{FmtNum(f.Pwm, "0")} %");
-            TextRenderer.DrawText(g, parts.Count > 0 ? string.Join(" · ", parts) : "—", Theme.Small,
-                new Rectangle(x + w / 2, y, w - w / 2, RowH), Theme.Fg2,
+            string value = parts.Count > 0 ? string.Join(" · ", parts) : "—";
+            int valueW = Math.Min(w, TextRenderer.MeasureText(value, Theme.Small).Width);
+            int nameW = Math.Max(0, w - valueW - Theme.S(8));
+            TextRenderer.DrawText(g, f.Name, Theme.Base, new Rectangle(x, y, nameW, RowH), Theme.Fg,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+            AddTipIfTruncated(x, y, nameW, f.Name, Theme.Base);
+            TextRenderer.DrawText(g, value, Theme.Small,
+                new Rectangle(x + w - valueW, y, valueW, RowH), Theme.Fg2,
                 TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
             y += RowH;
         }
@@ -629,6 +635,10 @@ sealed class DashboardView : Control
 
     static string? Fmt(float? v, string unit, string fmt = "0.#") =>
         v == null ? null : $"{v.Value.ToString(fmt, L.Culture)} {unit}";
+
+    // "170 GB", or "1,0 TB" from 1024 GB on (the values are binary GB).
+    static string FmtSize(float gb) =>
+        gb >= 1024 ? $"{(gb / 1024f).ToString("0.0", L.Culture)} TB" : $"{gb.ToString("0", L.Culture)} GB";
 
     static string FmtGb(float? mb) =>
         mb == null ? "?" : (mb.Value / 1024f).ToString("0.#", L.Culture);

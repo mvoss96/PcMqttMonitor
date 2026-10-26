@@ -141,7 +141,7 @@ for line in s.makefile():
 
 The TCP server listens on **all interfaces without authentication** — anyone who can reach the port can read the metrics (including IP and MAC addresses). Only enable it on networks you trust.
 
-UDP is fire-and-forget; TCP clients that stop reading are dropped after a short write timeout so they can never stall publishing. The serial sink reopens the port automatically when the device is re-plugged — on a microcontroller, just read lines and `deserializeJson` each one (at 115200 baud a ~800-byte snapshot takes ~70 ms, fine for 1-second intervals).
+UDP is fire-and-forget. With many drives, fans or adapters a snapshot can exceed ~1470 bytes and is then sent as a fragmented datagram, which ESP-IDF/lwIP drops by default (IP reassembly is off) — use TCP or serial for microcontrollers in that case. TCP clients that stop reading are dropped after a short write timeout so they can never stall publishing. The serial sink reopens the port automatically when the device is re-plugged — on a microcontroller, just read lines and `deserializeJson` each one (at 115200 baud a ~800-byte snapshot takes ~70 ms, fine for 1-second intervals).
 
 ## Building from source
 

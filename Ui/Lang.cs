@@ -36,6 +36,7 @@ sealed class Lang
     public string UnsavedChanges { get; init; } = "Unsaved changes";
     public string Saved          { get; init; } = "✓ Saved";
     public string Save           { get; init; } = "Save";
+    public string Discard        { get; init; } = "Discard";
     public string TitleUpdate    { get; init; } = "v{0} available";   // title-bar suffix
 
     public string PausedBanner { get; init; } = "Publishing is paused";
@@ -90,6 +91,13 @@ sealed class Lang
     public string OutNoHost       { get; init; } = "Not configured — set a host";
     public string OutNoComPort    { get; init; } = "Not configured — set a port (e.g. COM3)";
     public string OutNotConnected { get; init; } = "Not connected";
+    public string OutInvalidIp    { get; init; } = "Invalid IP address";
+    public string OutUnreachable  { get; init; } = "Not reachable — no response from the broker";
+    public string OutRefused      { get; init; } = "Connection refused — is a broker running on this port?";
+    public string OutHostNotFound { get; init; } = "Host not found";
+    public string OutAuthFailed   { get; init; } = "Login failed — check username and password";
+    public string OutConnectFailed { get; init; } = "Connection failed: {0}";
+    public string SaveInvalidInput { get; init; } = "Invalid input";
     public string OutSendingTo    { get; init; } = "Sending to {0}:{1}";
     public string OutListeningOn  { get; init; } = "Listening on {0}";
     public string OutSendingCom   { get; init; } = "Sending on {0} @ {1} baud";
@@ -139,6 +147,7 @@ sealed class Lang
     public string AboutCheckFailed { get; init; } = "Check failed: {0}";
     public string AboutDownload    { get; init; } = "Download on GitHub";
     public string AboutDeps        { get; init; } = "Uses LibreHardwareMonitor (MPL-2.0) and MQTTnet (MIT)";
+    public string AboutLicense     { get; init; } = "MIT License";
 
     // ── crash dialogs ───────────────────────────────────────────────────────
     public string CrashTitle       { get; init; } = "PC MQTT Monitor — Error";
@@ -158,6 +167,7 @@ sealed class Lang
         UnsavedChanges = "Ungespeicherte Änderungen",
         Saved          = "✓ Gespeichert",
         Save           = "Speichern",
+        Discard        = "Verwerfen",
         TitleUpdate    = "v{0} verfügbar",
 
         PausedBanner = "Übertragung pausiert",
@@ -173,11 +183,11 @@ sealed class Lang
         StatusStarting       = "Starte…",
         StatusWaitingDrivers = "Warte auf Systemtreiber ({0} s)…",
         StatusOpeningSensors = "Öffne Sensoren…",
-        StatusNoOutputs      = "Keine Ausgänge konfiguriert — nur Sensoranzeige",
+        StatusNoOutputs      = "Keine Outputs konfiguriert — nur Sensoranzeige",
         StatusPublishingTo   = "Sendet an {0}",
         StatusPaused         = "Pausiert",
         StatusConnectingTo   = "Verbinde mit {0}…",
-        StatusDisconnected   = "Getrennt — MQTT-Broker in den Ausgängen konfigurieren",
+        StatusDisconnected   = "Getrennt — MQTT-Broker unter Outputs konfigurieren",
         StatusConnected      = "Verbunden — {0}",
         StatusError          = "Fehler: {0}",
 
@@ -198,6 +208,13 @@ sealed class Lang
         OutNoHost       = "Nicht konfiguriert — Host angeben",
         OutNoComPort    = "Nicht konfiguriert — Port angeben (z. B. COM3)",
         OutNotConnected = "Nicht verbunden",
+        OutInvalidIp    = "Ungültige IP-Adresse",
+        OutUnreachable  = "Nicht erreichbar — keine Antwort vom Broker",
+        OutRefused      = "Verbindung abgelehnt — läuft dort ein Broker auf diesem Port?",
+        OutHostNotFound = "Host nicht gefunden",
+        OutAuthFailed   = "Anmeldung fehlgeschlagen — Benutzer und Passwort prüfen",
+        OutConnectFailed = "Verbindung fehlgeschlagen: {0}",
+        SaveInvalidInput = "Ungültige Eingabe",
         OutSendingTo    = "Sendet an {0}:{1}",
         OutListeningOn  = "Lauscht auf Port {0}",
         OutSendingCom   = "Sendet auf {0} @ {1} Baud",
@@ -240,6 +257,7 @@ sealed class Lang
         AboutCheckFailed = "Prüfung fehlgeschlagen: {0}",
         AboutDownload    = "Auf GitHub herunterladen",
         AboutDeps        = "Nutzt LibreHardwareMonitor (MPL-2.0) und MQTTnet (MIT)",
+        AboutLicense     = "MIT-Lizenz",
 
         CrashTitle      = "PC MQTT Monitor — Fehler",
         CrashTitleFatal = "PC MQTT Monitor — Kritischer Fehler",

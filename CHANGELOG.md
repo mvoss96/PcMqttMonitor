@@ -3,6 +3,48 @@
 User-facing changes per release. The release workflow publishes the matching
 section as the GitHub release notes — every tagged version needs a section here.
 
+## v2.10.0 — 2026-10-26
+
+- **Windows 11 look:** Segoe UI Variable font and the Windows 11 type sizes,
+  Fluent icons in the sidebar, a Windows 11 style info bar for the pause
+  notice, a save footer with Discard/Save buttons, themed dropdowns for theme
+  and language, and rounded tray menus. Windows 10 falls back to Segoe UI.
+- The accent color (bars, switches, check boxes, Save button) follows the
+  accent color chosen in the Windows settings.
+- Dashboard: fan speeds with four digits are no longer cut off, and free
+  drive space above 1 TB is shown in TB.
+- Outputs page: connection errors show a red status, the field labels no
+  longer get cut off ("Benutzername"), and the inputs have Windows 11 borders.
+- Settings: the publish interval is shown with the unit and the decimal
+  separator of the app language ("1,0 s").
+- An unreadable `config.json` is now moved to `config.json.bad` instead of
+  being overwritten with defaults on the next save, so manual edits with a
+  syntax error no longer wipe all settings.
+- While the MQTT broker is unreachable, the app no longer freezes the
+  dashboard and the other outputs for up to 20 seconds per attempt:
+  connecting times out after 5 seconds, retries back off up to 60 seconds,
+  and only the first failure is logged.
+- The MQTT card on the Outputs page now says why a connection failed: no
+  response from the broker, connection refused, host not found or login
+  failed, instead of only "Not connected".
+- MQTT and UDP host fields reject incomplete or invalid IPv4 addresses such as
+  `192.168.2.411` while typing: the field turns red and the Save button is
+  disabled until it is corrected.
+- The save bar disappears again when edits are changed back to the saved
+  values, and a new **Discard** button resets all unsaved edits.
+- Home Assistant entities that disappear while the app runs (a sensor or fan
+  unchecked, a drive or network adapter gone) are now removed from HA right
+  away instead of lingering with their last value.
+- Logging off or shutting down Windows now marks the PC offline in Home
+  Assistant immediately instead of after the MQTT keep-alive timeout.
+- Updating needs fewer clicks: when the app is already installed, the
+  installer skips the language, options and confirmation pages, keeps the
+  previous options and restarts the app automatically.
+- The autostart task now also starts on battery power, keeps running when
+  the power cable is unplugged and is no longer subject to Task Scheduler's
+  72-hour run limit. Re-run the installer (or toggle autostart off and on)
+  to update an existing task.
+
 ## v2.9.1 — 2026-09-04
 
 - The app now asks Windows to restart it after hardware-driver crashes that

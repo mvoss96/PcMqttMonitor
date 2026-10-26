@@ -9,12 +9,14 @@ using System.Windows.Forms;
 sealed class SensorsPage : Panel
 {
     readonly List<(FlatCheck Box, Action<SensorConfig, bool> Setter)> _boxes = new();
+    // Checked state as last loaded from or written to the config, per box.
+    readonly Dictionary<FlatCheck, bool> _saved = new();
     readonly Dictionary<string, FlatCheck> _fanBoxes = new();
     readonly AppConfig _config;
     readonly Action _markDirty;
     CardPanel _card = null!;
 
-    static readonly int Col0 = Theme.S(16), Col1 = Theme.S(190), RowStep = Theme.S(24);
+    static readonly int Col0 = Theme.S(16), Col1 = Theme.S(196), RowStep = Theme.S(26);
 
     int _y;
     bool _col1;       // next checkbox goes into the second column
@@ -53,11 +55,12 @@ sealed class SensorsPage : Panel
         // reusing the old instance would leave stale handlers behind.
         _card?.Dispose();
         _boxes.Clear();
+        _saved.Clear();
         _y = Theme.S(10);
         _col1 = false;
         _card = new CardPanel
         {
-            Location = new Point(Theme.S(16), Theme.S(42)),
+            Location = new Point(Theme.S(16), Theme.PageTop),
             Width = Width - Theme.S(32),
             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
         };
@@ -155,6 +158,7 @@ sealed class SensorsPage : Panel
         box.CheckedChanged += (_, _) => _markDirty();
         _card.Controls.Add(box);
         _boxes.Add((box, setter));
+        _saved[box] = value;
         if (_col1) _y += RowStep;
         _col1 = !_col1;
         return box;
@@ -172,9 +176,17 @@ sealed class SensorsPage : Panel
                 box.Text = FanLabel(fan);
     }
 
+    // Discard edits: the page is built from the saved config anyway.
+    public void Revert() => Build();
+
+    public bool HasChanges => _boxes.Any(b => b.Box.Checked != _saved[b.Box]);
+
     public void Apply()
     {
         foreach (var (box, setter) in _boxes)
+        {
             setter(_config.Sensors, box.Checked);
+            _saved[box] = box.Checked;
+        }
     }
 }

@@ -45,7 +45,7 @@ sealed class AboutPage : Panel
 
         var license = new Label
         {
-            Text = $"© {DateTime.Now.Year} Marcus Voß — MIT License",
+            Text = $"© {DateTime.Now.Year} Marcus Voß — {L.T.AboutLicense}",
             ForeColor = Theme.Fg3, Font = Theme.Small, AutoSize = true
         };
         var deps = new Label

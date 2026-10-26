@@ -2,14 +2,14 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
 
-// Small owner-drawn building blocks shared by the pages: nav button,
-// toggle switch, card panel, rounded pill button.
+// Small owner-drawn building blocks shared by the pages, styled after the
+// Windows 11 (WinUI) controls: nav button, toggle switch, card panel, input,
+// button, choice box, info bar, save footer and the menu renderer.
 
-// One icon button in the 48px sidebar rail. The icon is drawn via a delegate
-// so all glyphs live in NavIcons below and stay plain GDI+ line art.
+// One icon button in the 48px sidebar rail; the icon is a Segoe Fluent Icons glyph.
 sealed class NavButton : Control
 {
-    public Action<Graphics, RectangleF, Color> IconPainter = static (_, _, _) => { };
+    public string Glyph = "";
     bool _active, _hover, _badge;
 
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
@@ -66,7 +66,8 @@ sealed class NavButton : Control
         var iconColor = _active || _hover ? Theme.Fg : Theme.Fg2;
         float icon = Theme.SF(16);
         var box = new RectangleF((Width - icon) / 2f, (Height - icon) / 2f, icon, icon);
-        IconPainter(g, box, iconColor);
+        TextRenderer.DrawText(g, Glyph, Theme.Icons, new Rectangle(0, 0, Width, Height), iconColor,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
 
         if (_badge)
         {
@@ -80,77 +81,12 @@ sealed class NavButton : Control
     }
 }
 
-// The five sidebar glyphs — GDI+ line art mirroring the mockup SVGs. All
-// geometry is in the mockup's 16px design units, multiplied by u so the icons
-// scale with the box (u = 1 at 100% DPI).
+// Segoe Fluent Icons code points used by the UI, plus the app logo.
 static class NavIcons
 {
-    static Pen MakePen(Color c, float u) => new(c, 1.4f * u)
-        { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
-
-    public static void Dashboard(Graphics g, RectangleF b, Color c)
-    {
-        float u = b.Width / 16f, s = 5.4f * u;
-        using var pen = MakePen(c, u);
-        foreach (var (x, y) in new[] { (1.5f, 1.5f), (9.1f, 1.5f), (1.5f, 9.1f), (9.1f, 9.1f) })
-        {
-            using var p = Theme.RoundedRect(new RectangleF(b.X + x * u, b.Y + y * u, s, s), u);
-            g.DrawPath(pen, p);
-        }
-    }
-
-    public static void Outputs(Graphics g, RectangleF b, Color c)
-    {
-        float u = b.Width / 16f;
-        using var pen = MakePen(c, u);
-        float cx = b.X + b.Width / 2, cy = b.Y + b.Height * 0.56f;
-        g.DrawEllipse(pen, cx - 1.6f * u, cy - 1.6f * u, 3.2f * u, 3.2f * u);
-        g.DrawLine(pen, cx, cy + 1.8f * u, cx, b.Bottom);
-        g.DrawArc(pen, cx - 4.6f * u, cy - 4.4f * u, 9.2f * u, 9.2f * u, 215, 110);   // inner arc
-        g.DrawArc(pen, cx - 7.4f * u, cy - 7.4f * u, 14.8f * u, 14.8f * u, 220, 100); // outer arc
-    }
-
-    public static void Sensors(Graphics g, RectangleF b, Color c)
-    {
-        float u = b.Width / 16f;
-        using var pen = MakePen(c, u);
-        var chip = new RectangleF(b.X + 3 * u, b.Y + 3 * u, b.Width - 6 * u, b.Height - 6 * u);
-        using (var p = Theme.RoundedRect(chip, 1.5f * u)) g.DrawPath(pen, p);
-        g.DrawRectangle(pen, b.X + 6.2f * u, b.Y + 6.2f * u, b.Width - 12.4f * u, b.Height - 12.4f * u);
-        foreach (var t in new[] { 0.32f, 0.5f, 0.68f })
-        {
-            float v = b.X + b.Width * t, h = b.Y + b.Height * t;
-            g.DrawLine(pen, v, b.Y, v, b.Y + 2.2f * u);                    // top pins
-            g.DrawLine(pen, v, b.Bottom - 2.2f * u, v, b.Bottom);          // bottom pins
-            g.DrawLine(pen, b.X, h, b.X + 2.2f * u, h);                    // left pins
-            g.DrawLine(pen, b.Right - 2.2f * u, h, b.Right, h);            // right pins
-        }
-    }
-
-    public static void Settings(Graphics g, RectangleF b, Color c)
-    {
-        float u = b.Width / 16f;
-        using var pen = MakePen(c, u);
-        float y1 = b.Y + b.Height * 0.3f, y2 = b.Y + b.Height * 0.7f;
-        g.DrawLine(pen, b.X, y1, b.Right, y1);
-        g.DrawLine(pen, b.X, y2, b.Right, y2);
-        using var knobBg = new SolidBrush(Theme.WinBg);
-        var k1 = new RectangleF(b.X + b.Width * 0.58f - 2.2f * u, y1 - 2.2f * u, 4.4f * u, 4.4f * u);
-        var k2 = new RectangleF(b.X + b.Width * 0.30f - 2.2f * u, y2 - 2.2f * u, 4.4f * u, 4.4f * u);
-        g.FillEllipse(knobBg, k1); g.DrawEllipse(pen, k1);
-        g.FillEllipse(knobBg, k2); g.DrawEllipse(pen, k2);
-    }
-
-    public static void About(Graphics g, RectangleF b, Color c)
-    {
-        float u = b.Width / 16f;
-        using var pen = MakePen(c, u);
-        g.DrawEllipse(pen, b.X + u, b.Y + u, b.Width - 2 * u, b.Height - 2 * u);
-        float cx = b.X + b.Width / 2;
-        g.DrawLine(pen, cx, b.Y + b.Height * 0.45f, cx, b.Y + b.Height * 0.7f);
-        using var dot = new SolidBrush(c);
-        g.FillEllipse(dot, cx - u, b.Y + b.Height * 0.26f, 2f * u, 2f * u);
-    }
+    public const int Dashboard = 0xF0E2, Outputs = 0xE93E, Sensors = 0xE950,
+                     Settings = 0xE713, About = 0xE946,
+                     Warning = 0xE7BA, ChevronDown = 0xE70D, ChevronRight = 0xE76C, Check = 0xE73E;
 
     // The app's signal-bars logo, used on the About page.
     public static void Logo(Graphics g, RectangleF b, Color accent)
@@ -242,7 +178,7 @@ class CardPanel : Panel
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.Clear(Parent?.BackColor ?? Theme.WinBg);
         var r = new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
-        using var path = Theme.RoundedRect(r, Theme.SF(7));
+        using var path = Theme.RoundedRect(r, Theme.SF(8));
         using var bg = new SolidBrush(Theme.CardBg);
         using var border = new Pen(Theme.CardBorder);
         g.FillPath(bg, path);
@@ -323,12 +259,21 @@ sealed class FlatCheck : Control
     }
 }
 
-// A mockup-style input: rounded border, vertically centered text, accent
-// bottom edge while focused. Wraps a borderless TextBox because a bare
-// WinForms TextBox can neither round its corners nor center vertically.
+// Windows 11 text box: 4px rounded border, a stronger 1px bottom stroke, and a
+// 2px accent bottom edge while focused. Wraps a borderless TextBox because a
+// bare WinForms TextBox can neither round its corners nor center vertically.
 sealed class InputBox : Control
 {
     public readonly TextBox Box;
+
+    // Red border and bottom edge for a value that cannot be saved.
+    bool _invalid;
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public bool Invalid
+    {
+        get => _invalid;
+        set { if (_invalid != value) { _invalid = value; Invalidate(); } }
+    }
 
     public InputBox()
     {
@@ -345,7 +290,7 @@ sealed class InputBox : Control
         Box.GotFocus  += (_, _) => Invalidate();
         Box.LostFocus += (_, _) => Invalidate();
         Controls.Add(Box);
-        Size = new Size(Theme.S(70), Theme.S(28));
+        Size = new Size(Theme.S(70), Theme.S(32));
         Cursor = Cursors.IBeam;
         Click += (_, _) => Box.Focus();
     }
@@ -353,7 +298,7 @@ sealed class InputBox : Control
     protected override void OnLayout(LayoutEventArgs levent)
     {
         base.OnLayout(levent);
-        Box?.SetBounds(Theme.S(8), (Height - Box.Height) / 2 + 1, Width - Theme.S(16), Box.Height);
+        Box?.SetBounds(Theme.S(10), (Height - Box.Height) / 2, Width - Theme.S(20), Box.Height);
     }
 
     protected override void OnPaint(PaintEventArgs e)
@@ -364,92 +309,377 @@ sealed class InputBox : Control
         var r = new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
         using var path = Theme.RoundedRect(r, Theme.SF(4));
         using var bg = new SolidBrush(Theme.InputBg);
-        using var border = new Pen(Theme.InputBorder);
+        using var border = new Pen(_invalid ? Theme.Crit : Theme.InputBorder);
         g.FillPath(bg, path);
         g.DrawPath(border, path);
-        // 2px bottom edge, accent while the field has focus (mockup style)
-        using var bottom = new Pen(Box.Focused ? Theme.Accent : Theme.InputBorder, Theme.SF(2f));
-        g.DrawLine(bottom, Theme.S(4), Height - Theme.SF(1.5f), Width - Theme.S(4), Height - Theme.SF(1.5f));
+
+        // Bottom stroke, clipped to the rounded shape: 1px strong stroke at rest,
+        // 2px accent (or red when invalid) while focused or invalid.
+        bool strong = _invalid || Box.Focused;
+        float h = strong ? Theme.SF(2) : Math.Max(1f, Theme.SF(1));
+        var clip = g.Clip;
+        g.SetClip(path);
+        using var bottom = new SolidBrush(_invalid ? Theme.Crit : Box.Focused ? Theme.Accent : Theme.InputBottom);
+        g.FillRectangle(bottom, 0, Height - h, Width, h);
+        g.Clip = clip;
     }
 }
 
-// The floating "unsaved changes" panel. Sizes itself from the ACTUAL child
-// sizes at layout time (never from cached text measurements — those break as
-// soon as DPI scaling resizes the children after creation).
-sealed class SaveBar : CardPanel
-{
-    public readonly Label Msg;
-    public readonly PillButton Button;
-
-    public SaveBar()
-    {
-        Msg = new Label
-        {
-            Text = L.T.UnsavedChanges, AutoSize = true,
-            Font = Theme.Small, ForeColor = Theme.Fg2, BackColor = Theme.CardBg,
-        };
-        Button = new PillButton
-        {
-            Text = L.T.Save,   // "Speichern" needs more room than "Save"
-            Size = new Size(
-                Math.Max(Theme.S(64), TextRenderer.MeasureText(L.T.Save, Theme.SemiBold).Width + Theme.S(24)),
-                Theme.S(26)),
-        };
-        Controls.Add(Msg);
-        Controls.Add(Button);
-        Msg.TextChanged += (_, _) => PerformLayout();
-        Visible = false;
-    }
-
-    // Message on the left, button on the right, bar shrink-wraps both.
-    protected override void OnLayout(LayoutEventArgs levent)
-    {
-        base.OnLayout(levent);
-        int h = Theme.S(42);
-        int x = Theme.S(14);
-        Msg.Location = new Point(x, (h - Msg.Height) / 2);
-        x += Msg.Width + Theme.S(12);
-        if (Button.Visible)
-        {
-            Button.Location = new Point(x, (h - Button.Height) / 2);
-            x += Button.Width;
-        }
-        Size = new Size(x + Theme.S(8), h);
-    }
-}
-
-// Accent-colored rounded button (the save bar's "Save"). Kept deliberately
-// simple: flat fill, hover brightening, no focus chrome beyond the cue.
-sealed class PillButton : Control
+// Windows 11 button: 4px corners, accent fill for the primary action, subtle
+// fill with a border for standard actions, greyed out when disabled. Corners
+// are cleared with BackColor, which follows the parent unless set.
+sealed class ActionButton : Control
 {
     bool _hover;
 
-    public PillButton()
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public bool Accent { get; set; }
+
+    public ActionButton(string text, bool accent)
     {
         SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint
                | ControlStyles.UserPaint, true);
         Cursor = Cursors.Hand;
-        Font = Theme.SemiBold;
+        Font = Theme.Base;
+        Text = text;
+        Accent = accent;
+        // Windows 11 dialog buttons: 32px high, at least 96px wide.
+        Size = new Size(Math.Max(Theme.S(96), TextRenderer.MeasureText(text, Theme.Base).Width + Theme.S(32)),
+                        Theme.S(32));
     }
 
     protected override void OnMouseEnter(EventArgs e) { _hover = true;  Invalidate(); base.OnMouseEnter(e); }
     protected override void OnMouseLeave(EventArgs e) { _hover = false; Invalidate(); base.OnMouseLeave(e); }
     protected override void OnTextChanged(EventArgs e) { Invalidate(); base.OnTextChanged(e); }
+    protected override void OnEnabledChanged(EventArgs e)
+    {
+        Cursor = Enabled ? Cursors.Hand : Cursors.Default;
+        Invalidate();
+        base.OnEnabledChanged(e);
+    }
 
     protected override void OnPaint(PaintEventArgs e)
     {
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.Clear(Parent?.BackColor ?? Theme.CardBg);
+        g.Clear(BackColor);
+
+        Color fill, text;
+        bool border = !Accent;
+        if (!Enabled)
+        {
+            fill = Accent ? Theme.InputBorder : Theme.ButtonBg;
+            text = Theme.Fg3;
+        }
+        else if (Accent)
+        {
+            fill = _hover ? Theme.Mix(Theme.Accent, Theme.Dark ? Color.Black : Color.White, 0.1f) : Theme.Accent;
+            text = Theme.AccentFg;
+        }
+        else
+        {
+            fill = _hover ? Theme.ButtonHover : Theme.ButtonBg;
+            text = Theme.Fg;
+        }
 
         var r = new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
-        using var path = Theme.RoundedRect(r, Theme.SF(5));
-        var bg = Theme.Accent;
-        if (_hover) bg = Theme.Mix(bg, Theme.Dark ? Color.White : Color.Black, 0.08f);
-        using var fill = new SolidBrush(bg);
-        g.FillPath(fill, path);
-
-        TextRenderer.DrawText(g, Text, Font, new Rectangle(0, 0, Width, Height), Theme.AccentFg,
+        using var path = Theme.RoundedRect(r, Theme.SF(4));
+        using var brush = new SolidBrush(fill);
+        g.FillPath(brush, path);
+        if (border)
+        {
+            using var pen = new Pen(Theme.InputBorder);
+            g.DrawPath(pen, path);
+        }
+        TextRenderer.DrawText(g, Text, Font, new Rectangle(0, 0, Width, Height), text,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+    }
+}
+
+// Footer of the content area while there are unsaved changes, laid out like
+// a Windows 11 dialog footer: message left, Discard and Save right.
+sealed class SaveFooter : Control
+{
+    public readonly Label Msg;
+    public readonly ActionButton Revert, Button;
+
+    public SaveFooter()
+    {
+        SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint
+               | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
+        // Children first: setting Height triggers OnLayout, which positions them.
+        Msg = new Label { AutoSize = false, AutoEllipsis = true, Height = Theme.S(22), Font = Theme.Base, ForeColor = Theme.Fg2, BackColor = Theme.CardBg, TextAlign = ContentAlignment.MiddleLeft };
+        Revert = new ActionButton(L.T.Discard, accent: false);
+        Button = new ActionButton(L.T.Save, accent: true);
+        Controls.Add(Msg);
+        Controls.Add(Revert);
+        Controls.Add(Button);
+        Msg.TextChanged += (_, _) => PerformLayout();
+        Dock = DockStyle.Bottom;
+        Height = Theme.S(64);
+        BackColor = Theme.CardBg;
+        Visible = false;
+    }
+
+    protected override void OnLayout(LayoutEventArgs levent)
+    {
+        base.OnLayout(levent);
+        int pad = Theme.S(16), x = Width - pad;
+        foreach (var b in new[] { Button, Revert })
+        {
+            if (!b.Visible) continue;
+            x -= b.Width;
+            b.Location = new Point(x, (Height - b.Height) / 2);
+            x -= Theme.S(8);
+        }
+        // The message takes the space left of the buttons, cut with "…" if longer.
+        Msg.Bounds = new Rectangle(pad, (Height - Msg.Height) / 2, Math.Max(0, x - pad), Msg.Height);
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        e.Graphics.Clear(Theme.CardBg);
+        using var pen = new Pen(Theme.CardBorder);
+        e.Graphics.DrawLine(pen, 0, 0, Width, 0);
+    }
+}
+
+// Windows 11 warning InfoBar: tinted rounded box with a warning glyph, a
+// message and one action button. Inset so it lines up with the dashboard cards.
+sealed class InfoBar : Control
+{
+    public readonly ActionButton Action;
+    readonly string _message;
+    static readonly int Inset = Theme.S(14);
+
+    public InfoBar(string message, string action)
+    {
+        SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint
+               | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
+        _message = message;
+        // Child first: setting Height triggers OnLayout, which positions it.
+        Action = new ActionButton(action, accent: false) { BackColor = Theme.WarnBg };
+        Controls.Add(Action);
+        Dock = DockStyle.Top;
+        Height = Inset + Theme.S(52);
+        BackColor = Theme.WinBg;
+    }
+
+    RectangleF Box => new(Inset + 0.5f, Inset + 0.5f, Width - 2 * Inset - 1, Height - Inset - 1);
+
+    protected override void OnLayout(LayoutEventArgs levent)
+    {
+        base.OnLayout(levent);
+        Action.Location = new Point(Width - Inset - Theme.S(10) - Action.Width,
+            Inset + (Height - Inset - Action.Height) / 2);
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.Clear(Theme.WinBg);
+        var box = Box;
+        using (var path = Theme.RoundedRect(box, Theme.SF(8)))
+        using (var fill = new SolidBrush(Theme.WarnBg))
+        using (var pen = new Pen(Theme.CardBorder))
+        {
+            g.FillPath(fill, path);
+            g.DrawPath(pen, path);
+        }
+        var row = new Rectangle((int)box.X, (int)box.Y, (int)box.Width, (int)box.Height);
+        TextRenderer.DrawText(g, Theme.Glyph(NavIcons.Warning), Theme.Icons,
+            new Rectangle(row.X + Theme.S(14), row.Y, Theme.S(18), row.Height), Theme.WarnIcon,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+        int textX = row.X + Theme.S(42);
+        TextRenderer.DrawText(g, _message, Theme.Base,
+            new Rectangle(textX, row.Y, Action.Left - textX - Theme.S(8), row.Height), Theme.Fg,
+            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+    }
+}
+
+// Windows 11 style combo box for a fixed list: drawn like an InputBox with a
+// chevron, opens a menu of the choices. Replaces the native ComboBox, whose
+// frame cannot be themed.
+sealed class ChoiceBox : Control
+{
+    readonly string[] _items;
+    int _selected;
+    bool _hover;
+
+    public event EventHandler? SelectedIndexChanged;
+
+    public ChoiceBox(string[] items)
+    {
+        SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint
+               | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
+        SetStyle(ControlStyles.Selectable, true);
+        TabStop = true;
+        _items = items;
+        Font = Theme.Base;
+        Cursor = Cursors.Hand;
+        int textW = items.Max(i => TextRenderer.MeasureText(i, Theme.Base).Width);
+        Size = new Size(Math.Max(Theme.S(120), textW + Theme.S(48)), Theme.S(32));
+    }
+
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public int SelectedIndex
+    {
+        get => _selected;
+        set
+        {
+            if (value == _selected) return;
+            _selected = value;
+            Invalidate();
+            SelectedIndexChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    protected override void OnMouseEnter(EventArgs e) { _hover = true;  Invalidate(); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { _hover = false; Invalidate(); base.OnMouseLeave(e); }
+
+    protected override void OnMouseDown(MouseEventArgs e) { Focus(); base.OnMouseDown(e); }
+    protected override void OnGotFocus(EventArgs e)  { Invalidate(); base.OnGotFocus(e); }
+    protected override void OnLostFocus(EventArgs e) { Invalidate(); base.OnLostFocus(e); }
+    protected override void OnClick(EventArgs e) { base.OnClick(e); OpenMenu(); }
+
+    // Up/Down reach OnKeyDown instead of moving the focus to the next control.
+    protected override bool IsInputKey(Keys keyData) =>
+        (keyData & Keys.KeyCode) is Keys.Up or Keys.Down || base.IsInputKey(keyData);
+
+    // Keyboard like a native ComboBox: Space, Enter, F4 or Alt+Down open the
+    // list; Up/Down change the selection directly.
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        if (e.KeyCode is Keys.Space or Keys.Enter or Keys.F4 || (e.Alt && e.KeyCode == Keys.Down))
+        {
+            OpenMenu();
+            e.Handled = true;
+        }
+        else if (e.KeyCode == Keys.Up)
+        {
+            SelectedIndex = Math.Max(0, _selected - 1);
+            e.Handled = true;
+        }
+        else if (e.KeyCode == Keys.Down)
+        {
+            SelectedIndex = Math.Min(_items.Length - 1, _selected + 1);
+            e.Handled = true;
+        }
+        base.OnKeyDown(e);
+    }
+
+    void OpenMenu()
+    {
+        var menu = new ContextMenuStrip();
+        MenuStyle.Apply(menu);
+        menu.MinimumSize = new Size(Width, 0);
+        for (int i = 0; i < _items.Length; i++)
+        {
+            int index = i;
+            var item = new ToolStripMenuItem(_items[i]) { Checked = i == _selected };
+            item.Click += (_, _) => SelectedIndex = index;
+            menu.Items.Add(item);
+        }
+        menu.Closed += (_, _) => BeginInvoke(menu.Dispose);
+        menu.Show(this, new Point(0, Height + Theme.S(2)));
+        menu.Items[_selected].Select();   // arrow keys and Enter start at the current choice
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.Clear(BackColor);
+        var r = new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
+        using var path = Theme.RoundedRect(r, Theme.SF(4));
+        using var bg = new SolidBrush(_hover ? Theme.ButtonHover : Theme.ButtonBg);
+        using var border = new Pen(Theme.InputBorder);
+        g.FillPath(bg, path);
+        g.DrawPath(border, path);
+        if (Focused)
+        {
+            // Keyboard focus: 2px accent bottom edge, like a focused InputBox.
+            var clip = g.Clip;
+            g.SetClip(path);
+            using var accent = new SolidBrush(Theme.Accent);
+            g.FillRectangle(accent, 0, Height - Theme.SF(2), Width, Theme.SF(2));
+            g.Clip = clip;
+        }
+
+        int chevronW = Theme.S(32);
+        TextRenderer.DrawText(g, _items[_selected], Font,
+            new Rectangle(Theme.S(10), 0, Width - Theme.S(10) - chevronW, Height), Theme.Fg,
+            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+        TextRenderer.DrawText(g, Theme.Glyph(NavIcons.ChevronDown), Theme.IconsSmall,
+            new Rectangle(Width - chevronW, 0, chevronW, Height), Theme.Fg2,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+    }
+}
+
+// Shared look for popup menus (tray menu, ChoiceBox): Windows 11 rounded
+// window corners via DWM, roomier items, rounded hover highlight and an
+// accent check glyph.
+static class MenuStyle
+{
+    [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
+    static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+    const int DWMWA_WINDOW_CORNER_PREFERENCE = 33, DWMWCP_ROUND = 2;
+
+    public static void Apply(ToolStripDropDownMenu menu, bool checkMargin = true)
+    {
+        menu.Renderer = new Renderer();
+        menu.Font = Theme.Base;
+        menu.Padding = new Padding(Theme.S(4));
+        menu.ShowImageMargin = false;
+        menu.ShowCheckMargin = checkMargin;
+        // Windows 10 ignores the attribute and keeps square corners.
+        menu.HandleCreated += (_, _) =>
+        {
+            int round = DWMWCP_ROUND;
+            DwmSetWindowAttribute(menu.Handle, DWMWA_WINDOW_CORNER_PREFERENCE, ref round, sizeof(int));
+        };
+        menu.ItemAdded += (_, e) => e.Item!.Padding = new Padding(Theme.S(2), Theme.S(5), Theme.S(2), Theme.S(5));
+    }
+
+    sealed class Renderer() : ToolStripProfessionalRenderer(new Colors())
+    {
+        protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
+        {
+            if (!e.Item.Selected || !e.Item.Enabled) return;
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            var r = new RectangleF(Theme.SF(2), Theme.SF(1), e.Item.Width - Theme.SF(4), e.Item.Height - Theme.SF(2));
+            using var path = Theme.RoundedRect(r, Theme.SF(4));
+            using var brush = new SolidBrush(Theme.Hover);
+            e.Graphics.FillPath(brush, path);
+        }
+
+        // DWM draws the border of the rounded window; a square one would poke out.
+        protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e) { }
+
+        protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
+        {
+            e.TextColor = e.Item.Enabled ? Theme.Fg : Theme.Fg3;
+            base.OnRenderItemText(e);
+        }
+
+        protected override void OnRenderItemCheck(ToolStripItemImageRenderEventArgs e)
+        {
+            TextRenderer.DrawText(e.Graphics, Theme.Glyph(NavIcons.Check), Theme.IconsSmall, e.ImageRectangle,
+                Theme.Accent, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+        }
+    }
+
+    sealed class Colors : ProfessionalColorTable
+    {
+        public override Color ToolStripDropDownBackground => Theme.CardBg;
+        public override Color ImageMarginGradientBegin    => Theme.CardBg;
+        public override Color ImageMarginGradientMiddle   => Theme.CardBg;
+        public override Color ImageMarginGradientEnd      => Theme.CardBg;
+        public override Color MenuBorder                  => Theme.CardBorder;
+        public override Color MenuItemBorder              => Color.Transparent;
+        public override Color MenuItemSelected            => Theme.Hover;
+        public override Color SeparatorDark               => Theme.CardBorder;
+        public override Color SeparatorLight              => Theme.CardBg;
     }
 }

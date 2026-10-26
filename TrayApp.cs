@@ -49,15 +49,9 @@ sealed class TrayApp : ApplicationContext
         _window.PauseChangeRequested = SetPaused;
 
         // The notify-icon menu does not follow Application.SetColorMode —
-        // give it the app palette via a custom color table.
-        var menu = new ContextMenuStrip
-        {
-            Renderer = new ToolStripProfessionalRenderer(new TrayMenuColors()) { RoundedEdges = false },
-            ShowImageMargin = false,
-            ForeColor = Theme.Fg,
-            BackColor = Theme.CardBg,
-            Font = Theme.Base,
-        };
+        // MenuStyle gives it the app palette and Windows 11 shape.
+        var menu = new ContextMenuStrip { ForeColor = Theme.Fg, BackColor = Theme.CardBg };
+        MenuStyle.Apply(menu, checkMargin: false);
         menu.Opening += (_, _) => statusItem.Text = _statusText;
         menu.Items.Add(statusItem);
         menu.Items.Add(new ToolStripSeparator());
@@ -143,8 +137,8 @@ sealed class TrayApp : ApplicationContext
     }
 
     // Called from the MQTT loop thread to update the connection indicator in the Settings tab.
-    public void SetConnectionStatus(bool connected, string broker)
-        => _window.SetConnectionStatus(connected, broker);
+    public void SetConnectionStatus(bool connected, string detail)
+        => _window.SetConnectionStatus(connected, detail);
 
     // Called from the MQTT loop thread with the latest sensor snapshot.
     public void UpdateSnapshot(SensorSnapshot snapshot)
@@ -233,21 +227,6 @@ sealed class TrayApp : ApplicationContext
         g.FillRectangle(wb, x + barW + gap, y, barW, barH);
 
         return bmp;
-    }
-
-    // App palette for the tray menu: card background, hover highlight,
-    // themed separators and border.
-    sealed class TrayMenuColors : ProfessionalColorTable
-    {
-        public override Color ToolStripDropDownBackground => Theme.CardBg;
-        public override Color ImageMarginGradientBegin    => Theme.CardBg;
-        public override Color ImageMarginGradientMiddle   => Theme.CardBg;
-        public override Color ImageMarginGradientEnd      => Theme.CardBg;
-        public override Color MenuBorder                  => Theme.CardBorder;
-        public override Color MenuItemBorder              => Color.Transparent;
-        public override Color MenuItemSelected            => Theme.Hover;
-        public override Color SeparatorDark               => Theme.CardBorder;
-        public override Color SeparatorLight              => Theme.CardBg;
     }
 
     protected override void Dispose(bool disposing)

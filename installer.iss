@@ -1,5 +1,5 @@
 #define MyAppName "PC MQTT Monitor"
-#define MyAppVersion "2.9.1"
+#define MyAppVersion "2.10.0"
 #define MyAppPublisher "mvoss"
 #define MyAppExeName "PcMqttMonitor.exe"
 #define MyAppTaskName "PcMqttMonitor"
@@ -43,6 +43,8 @@ PrivilegesRequired=admin
 CloseApplications=no
 RestartApplications=no
 UninstallDisplayIcon={app}\{#MyAppExeName}
+; Pick the language from Windows; ask only when no translation matches.
+ShowLanguageDialog=auto
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -50,8 +52,8 @@ Name: "german";  MessagesFile: "compiler:Languages\German.isl"
 
 [Tasks]
 ; Default-checked: autostart at logon is the expected setup for a monitoring app.
-; The task itself is created in [Code] (CreateAutostartTask) — a plain [Run]
-; schtasks entry silently fails on the /TR quoting for paths with spaces.
+; The task itself is created in [Code] (CreateAutostartTask). On upgrades the
+; previous selection is kept, so existing tasks get re-registered.
 Name: "autostart"; \
   Description: "Start {#MyAppName} automatically when Windows starts"; \
   GroupDescription: "Additional options:"
@@ -71,13 +73,17 @@ Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{commondesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-; Offer to launch the app after install.
+; Fresh install: offer to launch the app. Upgrade: relaunch it automatically.
 ; runascurrentuser: postinstall entries default to the unelevated original user,
 ; whose plain CreateProcess cannot start a requireAdministrator exe (error 740).
 ; The installer is already elevated, so launch from its context instead.
 Filename: "{app}\{#MyAppExeName}"; \
   Description: "Launch {#MyAppName}"; \
-  Flags: nowait postinstall skipifsilent runascurrentuser
+  Flags: nowait postinstall skipifsilent runascurrentuser; \
+  Check: not IsUpgrade
+Filename: "{app}\{#MyAppExeName}"; \
+  Flags: nowait skipifsilent runascurrentuser; \
+  Check: IsUpgrade
 
 [UninstallRun]
 ; Remove the scheduled task on uninstall.
@@ -87,9 +93,28 @@ Filename: "schtasks.exe"; \
   RunOnceId: "RemoveTask"
 
 [Code]
-// On upgrade: if a scheduled task already exists, preserve autostart across the upgrade.
-// The new exe path is the same (same install dir), so the existing task stays valid.
-// No action needed — schtasks /Create /F will overwrite if the user re-checks the box.
+var
+  Upgrade: Boolean;
+
+// An upgrade when the exe already exists in the fixed install directory.
+function InitializeSetup(): Boolean;
+begin
+  Upgrade := FileExists(ExpandConstant('{autopf}\PcMqttMonitor\{#MyAppExeName}'));
+  Result := True;
+end;
+
+function IsUpgrade(): Boolean;
+begin
+  Result := Upgrade;
+end;
+
+// On upgrades the previous task selection is reused (Inno's UsePreviousTasks),
+// so the selection and confirmation pages are skipped: UAC, progress, Finish.
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := Upgrade and ((PageID = wpSelectDir) or (PageID = wpSelectProgramGroup)
+    or (PageID = wpSelectTasks) or (PageID = wpReady));
+end;
 
 // Terminate the running app so its exe can be replaced. The app is a tray app
 // without a visible window, so a graceful close request would go nowhere; it has
@@ -110,20 +135,16 @@ begin
   Result := '';
 end;
 
-// Registers the autostart scheduled task. Built in Pascal so the /TR argument
-// gets the exact quoting the exe path needs: /TR "\"C:\...\PcMqttMonitor.exe\""
-// — the same pattern the app's own ApplyAutoStart (MainWindow.cs) uses, which
-// is proven to work. A [Run] entry can't express this reliably ("" escaping).
+// Registers the autostart scheduled task by running the installed app with
+// --register-autostart, so the task definition lives only in AutoStart.cs.
+// The installer is elevated, so the requireAdministrator exe starts directly.
 procedure CreateAutostartTask();
 var
-  Params: String;
   ResultCode: Integer;
 begin
-  Params := '/Create /F /TN "{#MyAppTaskName}"'
-    + ' /TR "\"' + ExpandConstant('{app}') + '\{#MyAppExeName}\""'
-    + ' /SC ONLOGON /RU "' + GetUserNameString() + '" /RL HIGHEST /DELAY 0000:10';
-  Exec('schtasks.exe', Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Log('schtasks /Create exit code: ' + IntToStr(ResultCode));
+  Exec(ExpandConstant('{app}\{#MyAppExeName}'), '--register-autostart', '',
+    SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Log('--register-autostart exit code: ' + IntToStr(ResultCode));
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);

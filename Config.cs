@@ -19,7 +19,10 @@ static class ConfigLoader
         }
         catch (Exception ex)
         {
-            AppLog.Write($"[error] config.json unreadable, using defaults: {ex.Message}");
+            // Move the broken file aside: the next save would otherwise
+            // overwrite it with defaults and the user's settings would be lost.
+            try { File.Move(path, path + ".bad", overwrite: true); } catch { }
+            AppLog.Write($"[error] config.json unreadable, moved to config.json.bad, using defaults: {ex.Message}");
             return new AppConfig();
         }
 

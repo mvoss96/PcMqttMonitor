@@ -2,10 +2,9 @@ using System.Drawing;
 using System.Windows.Forms;
 
 // The main window: a 48px icon sidebar (Dashboard / Outputs / Sensors /
-// Settings / About), one page visible at a time, a floating save panel that
-// appears bottom-right only while there are unsaved changes, and an "update
-// available" pill that jumps to the About page. Saving applies live — sinks
-// are rebuilt via Program.RequestSinksReload, never an app restart.
+// Settings / About), one page visible at a time, and a save footer below the
+// page only while there are unsaved changes. Saving applies live — sinks are
+// rebuilt via Program.RequestSinksReload, never an app restart.
 sealed class MainWindow : Form
 {
     readonly string _configPath;
@@ -21,13 +20,13 @@ sealed class MainWindow : Form
     readonly SettingsPage _settings;
     readonly AboutPage _about;
 
-    readonly Panel _pauseBanner;
+    readonly InfoBar _pauseBanner;
     public Action<bool>? PauseChangeRequested;   // set by TrayApp (central pause switch)
 
-    // floating save panel
-    readonly SaveBar _saveBar;
+    // save footer
+    readonly SaveFooter _saveBar;
     readonly System.Windows.Forms.Timer _savedFlash = new() { Interval = 1200 };
-    bool _dirty, _outputsDirty;
+    bool _dirty;
 
     // Update notification: title-bar text suffix + accent badge on the About
     // nav icon — no extra chrome inside the window (see SetUpdateAvailable).
@@ -64,14 +63,15 @@ sealed class MainWindow : Form
         _content = new Panel { Dock = DockStyle.Fill, BackColor = Theme.WinBg };
 
         _dashboard = new DashboardView { Dock = DockStyle.Fill };
-        _pauseBanner = MakePauseBanner();
+        _pauseBanner = new InfoBar(L.T.PausedBanner, L.T.Resume) { Visible = false };
+        _pauseBanner.Action.Click += (_, _) => PauseChangeRequested?.Invoke(false);
         var dashboardHost = new Panel { Dock = DockStyle.Fill, BackColor = Theme.WinBg };
         dashboardHost.Controls.Add(_dashboard);
         dashboardHost.Controls.Add(_pauseBanner);   // added after Fill so Top wins
 
-        _outputs  = new OutputsPage(config, () => MarkDirty(outputs: true)) { Dock = DockStyle.Fill };
-        _sensors  = new SensorsPage(config, () => MarkDirty()) { Dock = DockStyle.Fill };
-        _settings = new SettingsPage(config, () => MarkDirty()) { Dock = DockStyle.Fill };
+        _outputs  = new OutputsPage(config, UpdateSaveBar) { Dock = DockStyle.Fill };
+        _sensors  = new SensorsPage(config, UpdateSaveBar) { Dock = DockStyle.Fill };
+        _settings = new SettingsPage(config, UpdateSaveBar) { Dock = DockStyle.Fill };
         _about    = new AboutPage(v => SetUpdateAvailable(v)) { Dock = DockStyle.Fill };
 
         _pages = [dashboardHost, _outputs, _sensors, _settings, _about];
@@ -90,7 +90,7 @@ sealed class MainWindow : Form
         };
 
         var tips = new ToolTip { InitialDelay = 400, ReshowDelay = 100 };
-        (string Tip, Action<Graphics, RectangleF, Color> Icon)[] navDefs =
+        (string Tip, int Icon)[] navDefs =
         [
             (L.T.NavDashboard, NavIcons.Dashboard),
             (L.T.NavOutputs,   NavIcons.Outputs),
@@ -104,7 +104,7 @@ sealed class MainWindow : Form
             int index = i;
             var btn = new NavButton
             {
-                IconPainter = navDefs[i].Icon,
+                Glyph = Theme.Glyph(navDefs[i].Icon),
                 Location = new Point(0, Theme.S(8) + i * Theme.S(39)),
             };
             btn.Click += (_, _) => SelectPage(index);
@@ -116,15 +116,12 @@ sealed class MainWindow : Form
         Controls.Add(_content);
         Controls.Add(sidebar);   // added after Fill so Left wins
 
-        // ── floating save panel (bottom-right, only while dirty) ────────────
-        _saveBar = new SaveBar();
+        // ── save footer (below the page, only while dirty) ─────────────────
+        _saveBar = new SaveFooter();
         _saveBar.Button.Click += (_, _) => Save();
-        _saveBar.SizeChanged += (_, _) => PositionSaveBar();
-        Controls.Add(_saveBar);
-        _saveBar.BringToFront();
+        _saveBar.Revert.Click += (_, _) => Revert();
+        _content.Controls.Add(_saveBar);   // added after the Fill pages so Bottom wins
         _savedFlash.Tick += (_, _) => { _savedFlash.Stop(); if (!_dirty) _saveBar.Visible = false; };
-
-        Resize += (_, _) => PositionSaveBar();
 
         SelectPage(0);
 
@@ -189,21 +186,45 @@ sealed class MainWindow : Form
 
     // ── dirty / save ──────────────────────────────────────────────────────────
 
-    void MarkDirty(bool outputs = false)
+    // Called on every edit. The bar shows only while some page differs from
+    // the saved config, so changing a value and changing it back hides it.
+    void UpdateSaveBar()
     {
-        _dirty = true;
-        _outputsDirty |= outputs;
+        _dirty = _outputs.HasChanges || _sensors.HasChanges || _settings.HasChanges;
+        if (!_dirty)
+        {
+            if (!_savedFlash.Enabled) _saveBar.Visible = false;
+            return;
+        }
         _savedFlash.Stop();
-        _saveBar.Msg.Text = L.T.UnsavedChanges;
-        _saveBar.Msg.ForeColor = Theme.Fg2;
+        // Invalid input disables Save; the red field on the Outputs page shows which one.
+        bool invalid = _outputs.HasInvalidInput;
+        _saveBar.Msg.Text = invalid ? L.T.SaveInvalidInput : L.T.UnsavedChanges;
+        _saveBar.Msg.ForeColor = invalid ? Theme.Crit : Theme.Fg2;
+        _saveBar.Button.Enabled = !invalid;
         _saveBar.Button.Visible = true;
+        _saveBar.Revert.Visible = true;
         _saveBar.PerformLayout();
-        PositionSaveBar();
         _saveBar.Visible = true;
+    }
+
+    // Discard all unsaved edits on every page.
+    void Revert()
+    {
+        _outputs.Revert();
+        _sensors.Revert();
+        _settings.Revert();
+        UpdateSaveBar();
     }
 
     void Save()
     {
+        if (_outputs.HasInvalidInput)
+            return;
+
+        // Output settings need a sink rebuild; general/sensor settings apply
+        // live through the shared config object.
+        bool outputsChanged = _outputs.HasChanges;
         _outputs.Apply();
         _sensors.Apply();
         bool needsRestart = _settings.Apply();
@@ -218,24 +239,17 @@ sealed class MainWindow : Form
             return;
         }
 
-        // Output settings need a sink rebuild; general/sensor settings apply
-        // live through the shared config object.
-        if (_outputsDirty)
+        if (outputsChanged)
             Program.RequestSinksReload();
 
         _dirty = false;
-        _outputsDirty = false;
         _saveBar.Msg.Text = L.T.Saved;
         _saveBar.Msg.ForeColor = Theme.Good;
         _saveBar.Button.Visible = false;
+        _saveBar.Revert.Visible = false;
         _saveBar.PerformLayout();
-        PositionSaveBar();
         _savedFlash.Start();
     }
-
-    void PositionSaveBar() => _saveBar.Location = new Point(
-        ClientSize.Width - _saveBar.Width - Theme.S(12),
-        ClientSize.Height - _saveBar.Height - Theme.S(12));
 
     // ── update pill ───────────────────────────────────────────────────────────
 
@@ -278,10 +292,10 @@ sealed class MainWindow : Form
     }
 
     // Called from the MQTT sink (any thread) — feeds the Outputs page status line.
-    public void SetConnectionStatus(bool connected, string broker)
+    public void SetConnectionStatus(bool connected, string detail)
     {
         if (!IsHandleCreated) return;
-        BeginInvoke(() => _outputs.SetMqttStatus(connected, broker));
+        BeginInvoke(() => _outputs.SetMqttStatus(connected, detail));
     }
 
     // Called by TrayApp's central pause switch. UI thread only.
@@ -291,39 +305,6 @@ sealed class MainWindow : Form
     {
         _dashboardActive = Visible && _pages[0].Visible;
         _sensorsActive   = Visible && _pages[2].Visible;
-    }
-
-    Panel MakePauseBanner()
-    {
-        var banner = new Panel
-        {
-            Dock = DockStyle.Top,
-            Height = Theme.S(36),
-            BackColor = Theme.Dark ? Color.FromArgb(74, 59, 18) : Color.FromArgb(255, 244, 199),
-            Visible = false,
-        };
-        var label = new Label
-        {
-            Text = L.T.PausedBanner,
-            AutoSize = true,
-            ForeColor = Theme.Dark ? Color.FromArgb(240, 216, 137) : Color.FromArgb(102, 77, 3),
-            Location = new Point(Theme.S(14), Theme.S(10)),
-        };
-        var resume = new Button
-        {
-            Text = L.T.Resume, AutoSize = true,
-            FlatStyle = FlatStyle.Flat,
-            ForeColor = label.ForeColor,
-            Anchor = AnchorStyles.Top | AnchorStyles.Right,
-        };
-        resume.FlatAppearance.BorderColor = label.ForeColor;
-        resume.Click += (_, _) => PauseChangeRequested?.Invoke(false);
-        banner.Controls.Add(label);
-        banner.Controls.Add(resume);
-        banner.Resize += (_, _) => resume.Location = new Point(
-            banner.ClientSize.Width - resume.Width - Theme.S(12),
-            (banner.ClientSize.Height - resume.Height) / 2);
-        return banner;
     }
 
     protected override void OnVisibleChanged(EventArgs e)

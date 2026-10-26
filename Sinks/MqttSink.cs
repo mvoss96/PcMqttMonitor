@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.IO;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using MQTTnet;
@@ -13,7 +14,9 @@ sealed class MqttSink : IMetricsSink
     readonly MqttConfig _config;
     readonly Action<string> _log;
     readonly Action<string> _setStatus;               // tray context-menu status line
-    readonly Action<bool, string> _setConnectionStatus; // status dot in the Settings tab
+    // Outputs card status: (true, broker) when connected, otherwise (false, text)
+    // with "connecting…" or the failure reason; "" means plain "not connected".
+    readonly Action<bool, string> _setConnectionStatus;
     readonly MqttClientFactory _factory = new();
     readonly IMqttClient _client;
     readonly MqttClientOptions _options;
@@ -25,14 +28,21 @@ sealed class MqttSink : IMetricsSink
     string _discoveryFingerprint = "";
     bool _needsDiscoverySync = true;
 
-    // Stale-component cleanup: the advertised set of the PREVIOUS app run,
-    // persisted next to the exe. Components that no longer exist (hardware
-    // swapped, drive gone, fan unchecked) are removed from HA via a one-time
-    // empty-config tombstone and their retained state topics are cleared —
-    // otherwise they linger in HA showing their last value forever.
-    readonly Dictionary<string, string> _advertised = LoadAdvertised();
+    // Stale-component cleanup: the last advertised component set, persisted
+    // next to the exe (at startup: the set of the previous app run).
+    // Components that no longer exist (hardware swapped, drive gone, sensor or
+    // fan unchecked) are removed from HA via a one-time empty-config tombstone
+    // and their retained state topics are cleared — otherwise they linger in
+    // HA showing their last value forever.
+    Dictionary<string, string> _advertised = LoadAdvertised();
     bool _cleanupDone;
     int _cycles;
+
+    // Reconnect backoff: while the broker is unreachable, attempts are spaced
+    // 5 s, 10 s, 20 s ... up to 60 s apart, and only the first failure is logged.
+    DateTime _nextConnectAttempt = DateTime.MinValue;
+    TimeSpan _retryDelay = TimeSpan.Zero;
+    bool _connectFailureLogged;
 
     public string Name => "MQTT";
 
@@ -59,6 +69,9 @@ sealed class MqttSink : IMetricsSink
             .WithTcpServer(config.Host, config.Port)
             .WithCredentials(config.Username, config.Password)
             .WithClientId($"pcmqtt-{HostInfo.Id}")
+            // Bounds the MQTT handshake and acks; the TCP connect itself is
+            // bounded in PublishAsync.
+            .WithTimeout(TimeSpan.FromSeconds(5))
             // LWT: if the connection dies without a clean disconnect (crash, power
             // loss), the broker publishes "offline" on our behalf once the
             // keep-alive times out — subscribers always learn we are gone.
@@ -75,25 +88,49 @@ sealed class MqttSink : IMetricsSink
     {
         _cycles++;
 
-        // Connect/reconnect if needed — one attempt per cycle, non-blocking.
+        // Connect/reconnect if needed — at most one attempt per cycle, spaced by the backoff.
         if (!_client.IsConnected)
         {
+            if (DateTime.UtcNow < _nextConnectAttempt)
+                return;
             try
             {
-                _log($"Connecting to {_config.Host}:{_config.Port}...");
-                _setStatus(string.Format(L.T.StatusConnectingTo, $"{_config.Host}:{_config.Port}"));
-                await _client.ConnectAsync(_options, ct);
+                var connecting = string.Format(L.T.StatusConnectingTo, $"{_config.Host}:{_config.Port}");
+                // During retries the Outputs card keeps showing the failure reason.
+                if (!_connectFailureLogged)
+                {
+                    _log($"Connecting to {_config.Host}:{_config.Port}...");
+                    _setConnectionStatus(false, connecting);
+                }
+                _setStatus(connecting);
+                // WithTimeout alone does not bound the TCP connect (still ~21 s to
+                // an unreachable host), so cancel the attempt after 5 s here.
+                using (var connectCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
+                {
+                    connectCts.CancelAfter(TimeSpan.FromSeconds(5));
+                    await _client.ConnectAsync(_options, connectCts.Token);
+                }
                 _log("MQTT connected.");
                 _setConnectionStatus(true, $"{_config.Host}:{_config.Port}");
+                _retryDelay = TimeSpan.Zero;
+                _connectFailureLogged = false;
                 await PublishAvailabilityAsync(online: true, ct);
                 _needsDiscoverySync = true;
             }
-            catch (OperationCanceledException) { throw; }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
             catch (Exception ex)
             {
-                _log($"[error] Connection failed: {ex.Message}");
+                _retryDelay = _retryDelay == TimeSpan.Zero
+                    ? TimeSpan.FromSeconds(5)
+                    : TimeSpan.FromSeconds(Math.Min(_retryDelay.TotalSeconds * 2, 60));
+                _nextConnectAttempt = DateTime.UtcNow + _retryDelay;
+                if (!_connectFailureLogged)
+                {
+                    _log($"[error] Connection failed: {ex.Message} — retrying with backoff, further failures not logged.");
+                    _connectFailureLogged = true;
+                }
                 _setStatus(L.T.StatusDisconnected);
-                _setConnectionStatus(false, "");
+                _setConnectionStatus(false, FailureText(ex));
                 return;
             }
         }
@@ -115,6 +152,28 @@ sealed class MqttSink : IMetricsSink
         }
     }
 
+    // User-facing reason for a failed connect, shown on the Outputs card.
+    // MQTTnet 5 reports a rejected CONNECT only through the message text,
+    // which contains the result code name (e.g. "BadUserNameOrPassword").
+    static string FailureText(Exception ex)
+    {
+        if (ex is OperationCanceledException)   // our 5 s connect timeout
+            return L.T.OutUnreachable;
+        for (var e = ex; e != null; e = e.InnerException)
+        {
+            if (e is SocketException se)
+                return se.SocketErrorCode switch
+                {
+                    SocketError.ConnectionRefused => L.T.OutRefused,
+                    SocketError.HostNotFound or SocketError.NoData or SocketError.TryAgain => L.T.OutHostNotFound,
+                    _ => L.T.OutUnreachable,
+                };
+        }
+        if (ex.Message.Contains("BadUserNameOrPassword") || ex.Message.Contains("NotAuthorized"))
+            return L.T.OutAuthFailed;
+        return string.Format(L.T.OutConnectFailed, ex.Message);
+    }
+
     // Pause/resume: reflect the transition on the availability topic while the
     // connection is up, so HA shows the PC as unavailable while paused.
     public async Task SetOnlineAsync(bool online, CancellationToken ct)
@@ -129,17 +188,19 @@ sealed class MqttSink : IMetricsSink
         {
             bool want = _config.HaDiscoveryEnabled;
             var fingerprint = HaDiscovery.Fingerprint(metrics);
-            // The stale-component cleanup runs once, deliberately from the
-            // SECOND cycle on: the first snapshot has no network rates yet and
-            // would wrongly tombstone their entities.
-            bool cleanupPending = want && !_cleanupDone && _cycles >= 2;
+            // Components that vanished since the last publish (or since the
+            // previous app run) are removed from the SECOND cycle on: the first
+            // snapshot has no network rates yet and would wrongly tombstone
+            // their entities. The first such cycle forces a publish once.
+            bool canRemove = _cycles >= 2;
+            bool cleanupPending = want && canRemove && !_cleanupDone;
             if (_needsDiscoverySync || want != _discoveryActive
                 || (want && fingerprint != _discoveryFingerprint) || cleanupPending)
             {
                 if (want)
                 {
                     var current = HaDiscovery.ComponentTopics(metrics, _config.TopicRoot, HostInfo.Id);
-                    var removed = cleanupPending
+                    var removed = canRemove
                         ? _advertised.Where(kv => !current.ContainsKey(kv.Key)).ToList()
                         : new List<KeyValuePair<string, string>>();
                     await HaDiscovery.PublishConfigAsync(
@@ -152,8 +213,12 @@ sealed class MqttSink : IMetricsSink
                     if (removed.Count > 0)
                         _log($"HA discovery: cleaned up stale components: {string.Join(", ", removed.Select(kv => kv.Key))}");
                     _log("HA discovery config published.");
-                    if (cleanupPending) _cleanupDone = true;
-                    if (_cleanupDone) SaveAdvertised(current);
+                    if (canRemove)
+                    {
+                        _cleanupDone = true;
+                        _advertised = current;
+                        SaveAdvertised(current);
+                    }
                 }
                 else
                 {
