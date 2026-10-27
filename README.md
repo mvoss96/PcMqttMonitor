@@ -37,6 +37,7 @@ Sensors are read via [LibreHardwareMonitor](https://github.com/LibreHardwareMoni
   - **UDP**: one compact JSON datagram per snapshot to a fixed host:port
   - **TCP**: the app listens on a port and streams line-delimited JSON to every connected client
   - **Serial**: line-delimited JSON to a COM port (e.g. an ESP32 status display)
+- **Tray icon with a live value** (optional): CPU/GPU load or temperature, RAM load as a number, or CPU and GPU load as two bars
 - **Modern tray UI**: icon sidebar with dashboard (cards, live bars, 60-second sparklines), outputs, sensor toggles, settings and about pages; light/dark/system theme
 - **Two languages**: English and German — follows Windows by default, switchable in Settings (MQTT topics, payloads and HA entity names always stay English)
 - **Live apply**: changed settings take effect immediately — outputs are rebuilt on the fly, no app restart

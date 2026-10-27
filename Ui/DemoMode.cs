@@ -157,6 +157,33 @@ static class DemoMode
         w.Show();
         await Shot(0, "paused-from-tray");
         w.SetPauseState(false);
+
+        TrayIconSheet(Path.Combine(dir, "scenario-tray-icons.png"));
+    }
+
+    // Every tray icon mode at 16, 24 and 32 px (100/150/200 % scaling), each
+    // shown magnified and at real size, on a dark taskbar color.
+    static void TrayIconSheet(string path)
+    {
+        var m = Snapshot(59);
+        m.Cpu!.TempC = 84;   // shows the hot color
+        int[] sizes = [16, 24, 32];
+        const int zoom = 4, cell = 32 * zoom + 48;
+        using var sheet = new System.Drawing.Bitmap(cell * sizes.Length + 8, cell * TrayIcon.Modes.Length + 8);
+        using var g = System.Drawing.Graphics.FromImage(sheet);
+        g.Clear(System.Drawing.Color.FromArgb(28, 28, 28));
+        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+        g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
+        for (int r = 0; r < TrayIcon.Modes.Length; r++)
+            for (int c = 0; c < sizes.Length; c++)
+            {
+                using var icon = TrayIcon.Render(m, TrayIcon.Modes[r], sizes[c]);
+                if (icon == null) continue;
+                int x = 8 + c * cell, y = 8 + r * cell;
+                g.DrawImage(icon, x, y, sizes[c] * zoom, sizes[c] * zoom);
+                g.DrawImage(icon, x + sizes[c] * zoom + 8, y, sizes[c], sizes[c]);
+            }
+        sheet.Save(path, System.Drawing.Imaging.ImageFormat.Png);
     }
 
     // ── capture ───────────────────────────────────────────────────────────────

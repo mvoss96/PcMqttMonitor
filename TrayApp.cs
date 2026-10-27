@@ -15,6 +15,9 @@ sealed class TrayApp : IDisposable
     readonly MainWindow _window;
     readonly Icon _normalIcon;
     readonly Icon _pausedIcon;
+    readonly AppConfig _config;
+    Icon? _valueIcon;          // the current number/bars icon, if any
+    string? _valueKey;         // what _valueIcon shows; unchanged key = no redraw
     readonly ContextMenu _menu = new() { Placement = PlacementMode.MousePoint };
     readonly MenuItem _statusItem = new() { IsEnabled = false };
     readonly MenuItem _pauseItem = new() { Header = L.T.TrayPause };
@@ -27,6 +30,7 @@ sealed class TrayApp : IDisposable
 
     public TrayApp(CancellationTokenSource shutdown, string configPath, AppConfig config)
     {
+        _config = config;
         _window = new MainWindow(configPath, config) { PauseChangeRequested = SetPaused };
 
         _normalIcon = CreateIcon();
@@ -130,7 +134,7 @@ sealed class TrayApp : IDisposable
     {
         _paused          = paused;
         _pauseItem.Header = paused ? L.T.TrayResume : L.T.TrayPause;
-        _tray.Icon       = paused ? _pausedIcon : _normalIcon;
+        _tray.Icon       = paused ? _pausedIcon : _valueIcon ?? _normalIcon;
         _window.SetPauseState(paused);
     }
 
@@ -152,6 +156,31 @@ sealed class TrayApp : IDisposable
         var tooltip = BuildTooltipText(snapshot.Metrics, _paused);
         _tray.Text = tooltip.Length > 127 ? tooltip[..127] : tooltip;
         _window.SetLatestMetrics(snapshot.Metrics);
+        _window.Dispatcher.BeginInvoke(() => UpdateValueIcon(snapshot.Metrics));
+    }
+
+    // Shows the value chosen in Settings (GeneralConfig.TrayIcon) as the tray
+    // icon; the logo when "logo" is chosen or the value is unavailable, the
+    // paused logo while paused. UI thread only.
+    void UpdateValueIcon(MetricsSnapshot m)
+    {
+        string mode = _config.General.TrayIcon;
+        string key = mode == TrayIcon.LoadBars
+            ? $"{mode}|{m.Cpu?.Load}|{m.Gpu?.Load}"
+            : $"{mode}|{TrayIcon.Value(m, mode)}";
+        if (key == _valueKey) return;
+        _valueKey = key;
+
+        var old = _valueIcon;
+        _valueIcon = null;
+        using (var bmp = TrayIcon.Render(m, mode, Forms.SystemInformation.SmallIconSize.Width))
+            if (bmp != null) _valueIcon = Icon.FromHandle(bmp.GetHicon());
+        if (!_paused) _tray.Icon = _valueIcon ?? _normalIcon;
+        if (old != null)
+        {
+            TrayIcon.DestroyIcon(old.Handle);
+            old.Dispose();
+        }
     }
 
     // Short single-line summary for the native tray tooltip.
@@ -238,6 +267,7 @@ sealed class TrayApp : IDisposable
     public void Dispose()
     {
         _tray.Dispose();
+        if (_valueIcon != null) TrayIcon.DestroyIcon(_valueIcon.Handle);
         _normalIcon.Dispose();
         _pausedIcon.Dispose();
     }
