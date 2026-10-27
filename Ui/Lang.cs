@@ -75,6 +75,9 @@ sealed class Lang
     public string RowHost     { get; init; } = "Host";
     public string RowOs       { get; init; } = "OS";
     public string RowBoard    { get; init; } = "Board";
+    public string RowBattery  { get; init; } = "Battery";
+    public string BatteryOnAc { get; init; } = "plugged in";
+    public string BatteryOnDc { get; init; } = "on battery";
 
     // ── outputs page ────────────────────────────────────────────────────────
     public string OutputsTitle    { get; init; } = "Outputs";
@@ -130,6 +133,7 @@ sealed class Lang
     public string SensorDrives     { get; init; } = "Drives";
     public string SensorUptime     { get; init; } = "Uptime";
     public string SensorIdle       { get; init; } = "Idle time";
+    public string SensorBattery    { get; init; } = "Battery (laptops)";
 
     // ── settings page ───────────────────────────────────────────────────────
     public string SettingsTitle    { get; init; } = "Settings";
@@ -218,6 +222,9 @@ sealed class Lang
         RowUptime   = "Laufzeit",
         RowIdle     = "Leerlauf",
         RowBoard    = "Board",
+        RowBattery  = "Akku",
+        BatteryOnAc = "am Netz",
+        BatteryOnDc = "Akkubetrieb",
 
         FieldUsername   = "Benutzername",
         FieldPassword   = "Passwort",
@@ -264,6 +271,7 @@ sealed class Lang
         SensorDrives     = "Laufwerke",
         SensorUptime     = "Laufzeit",
         SensorIdle       = "Leerlaufzeit",
+        SensorBattery    = "Akku (Laptops)",
 
         SettingsTitle    = "Einstellungen",
         SetInterval      = "Sendeintervall",

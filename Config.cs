@@ -79,7 +79,8 @@ sealed class GeneralConfig
     public bool UpdateCheckEnabled { get; set; } = true;
     // Tray icon content: "logo", or a live value ("cpu_load", "cpu_temp",
     // "gpu_load", "gpu_temp", "ram_load", "load_bars", "temp_bars"); see TrayIcon.
-    public string TrayIcon { get; set; } = "logo";
+    // Default: CPU and GPU load as two bars.
+    public string TrayIcon { get; set; } = "load_bars";
 }
 
 // Each sink CLONES its config section at construction: on Save the UI writes
@@ -159,6 +160,7 @@ sealed class SensorConfig
     public bool Drives { get; set; } = true;
     public bool Uptime { get; set; } = true;
     public bool Idle { get; set; } = true;
+    public bool Battery { get; set; } = true;
     public bool NetworkUpload { get; set; } = true;
     public bool NetworkDownload { get; set; } = true;
 }

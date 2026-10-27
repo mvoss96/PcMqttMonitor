@@ -253,6 +253,7 @@ sealed class SensorService : IDisposable
 
         var uptimeSec = _config.Uptime ? (int?)(Environment.TickCount64 / 1000) : null;
         var idleSec = _config.Idle ? ReadIdleSeconds() : null;
+        var battery = _config.Battery ? ReadBattery() : null;
 
         // The one-line console summary is only ever seen with --console — skip
         // the string building entirely otherwise.
@@ -298,7 +299,8 @@ sealed class SensorService : IDisposable
             Network = adapters is { Count: > 0 } ? adapters : null,
             Fans = fans is { Count: > 0 } ? fans : null,
             // Always present: OS version is static, uptime and idle time optional.
-            System = new SystemMetrics { UptimeSec = uptimeSec, IdleSec = idleSec, OsVersion = OsVersionString }
+            System = new SystemMetrics { UptimeSec = uptimeSec, IdleSec = idleSec, OsVersion = OsVersionString },
+            Battery = battery,
         };
 
         var summary = summaryParts.Count > 0 ? string.Join(" || ", summaryParts) : string.Empty;
@@ -915,6 +917,34 @@ sealed class SensorService : IDisposable
 
     [DllImport("user32.dll")]
     static extern bool GetLastInputInfo(ref LastInputInfo plii);
+
+    // Charge level and mains power from Windows; null without a battery.
+    static BatteryMetrics? ReadBattery() =>
+        GetSystemPowerStatus(out var s) ? Battery(s.ACLineStatus, s.BatteryFlag, s.BatteryLifePercent) : null;
+
+    // Raw SYSTEM_POWER_STATUS fields: 255 means unknown, battery flag 128
+    // means "no system battery" (desktops).
+    internal static BatteryMetrics? Battery(byte acLine, byte batteryFlag, byte percent)
+    {
+        if (batteryFlag == 128) return null;
+        int? level = percent <= 100 ? percent : null;
+        bool? onAc = acLine switch { 0 => false, 1 => true, _ => null };
+        return level == null && onAc == null ? null : new BatteryMetrics { Level = level, OnAcPower = onAc };
+    }
+
+    [DllImport("kernel32.dll")]
+    static extern bool GetSystemPowerStatus(out SystemPowerStatus status);
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct SystemPowerStatus
+    {
+        public byte ACLineStatus;
+        public byte BatteryFlag;
+        public byte BatteryLifePercent;
+        public byte SystemStatusFlag;
+        public int BatteryLifeTime;
+        public int BatteryFullLifeTime;
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     struct LastInputInfo

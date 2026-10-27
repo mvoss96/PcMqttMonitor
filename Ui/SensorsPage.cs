@@ -87,6 +87,7 @@ sealed class SensorsPage : UserControl
         Add(L.T.SensorDrives, s.Drives,          (c, v) => c.Drives = v);
         Add(L.T.SensorUptime, s.Uptime,          (c, v) => c.Uptime = v);
         Add(L.T.SensorIdle,   s.Idle,            (c, v) => c.Idle = v);
+        Add(L.T.SensorBattery, s.Battery,        (c, v) => c.Battery = v);
     }
 
     // Group heading with a rule to its right, then a two-column grid.

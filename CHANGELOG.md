@@ -3,6 +3,16 @@
 User-facing changes per release. The release workflow publishes the matching
 section as the GitHub release notes — every tagged version needs a section here.
 
+## v2.15.0 — 2026-10-27
+
+- **Battery on laptops**: charge level and whether the laptop is plugged in,
+  on the dashboard, as MQTT topics (`battery/level`, `battery/ac`) and in
+  Home Assistant ("Battery" and "AC Power"). PCs without a battery show and
+  send nothing. Can be turned off on the Sensors page.
+- New installations show CPU and GPU load as two bars in the tray icon by
+  default. Existing installations keep their choice; it can be changed under
+  Settings → Tray icon.
+
 ## v2.14.0 — 2026-10-27
 
 - **Windows on ARM**: the app runs with the sensors available there. CPU

@@ -290,12 +290,13 @@ sealed class DashboardPage : UserControl
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition());
-        string[] labels = [L.T.RowUptime, L.T.RowIdle, L.T.RowHost, L.T.RowOs, L.T.RowBoard];
+        string[] labels = [L.T.RowUptime, L.T.RowIdle, L.T.RowHost, L.T.RowOs, L.T.RowBoard, L.T.RowBattery];
         var values = new TextBlock[labels.Length];
+        var labelBlocks = new TextBlock[labels.Length];
         for (int i = 0; i < labels.Length; i++)
         {
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            var label = new TextBlock { Text = labels[i], Margin = new Thickness(0, 2, 12, 0) };
+            var label = labelBlocks[i] = new TextBlock { Text = labels[i], Margin = new Thickness(0, 2, 12, 0) };
             label.SetResourceReference(TextBlock.ForegroundProperty, "TextFillColorSecondaryBrush");
             values[i] = new TextBlock { TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 2, 0, 0) };
             TipWhenTrimmed(values[i]);
@@ -313,6 +314,15 @@ sealed class DashboardPage : UserControl
             values[2].Text = m.Host;
             values[3].Text = m.System?.OsVersion ?? "—";
             values[4].Text = m.Motherboard?.Name ?? "—";
+            // Battery row only on PCs with a battery: "87 % · plugged in".
+            var b = m.Battery;
+            labelBlocks[5].Visibility = values[5].Visibility = b == null ? Visibility.Collapsed : Visibility.Visible;
+            if (b != null)
+                values[5].Text = string.Join(" · ", new[]
+                {
+                    b.Level is { } level ? $"{level} %" : null,
+                    b.OnAcPower is { } ac ? (ac ? L.T.BatteryOnAc : L.T.BatteryOnDc) : null,
+                }.Where(p => p != null));
         });
         return card;
     }
