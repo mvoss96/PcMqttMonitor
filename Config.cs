@@ -70,13 +70,16 @@ sealed class GeneralConfig
     public double PublishIntervalSeconds { get; set; } = 1.0;
     public bool DebugEnabled { get; set; } = false;
     // UI color mode: "system" (follow Windows), "light" or "dark".
-    // Applied at startup; changing it in Settings restarts the app.
+    // Applies right after Save.
     public string Theme { get; set; } = "system";
     // UI language: "system" (follow Windows), "en" or "de". Restart to apply.
     public string Language { get; set; } = "system";
     // Daily check against GitHub releases; shows a tray notification when a
     // newer version exists. Notify-only — never downloads or installs anything.
     public bool UpdateCheckEnabled { get; set; } = true;
+    // Tray icon content: "logo", or a live value ("cpu_load", "cpu_temp",
+    // "gpu_load", "gpu_temp", "ram_load", "load_bars", "temp_bars"); see TrayIcon.
+    public string TrayIcon { get; set; } = "logo";
 }
 
 // Each sink CLONES its config section at construction: on Save the UI writes
@@ -152,6 +155,7 @@ sealed class SensorConfig
     public Dictionary<string, bool> FanChannels { get; set; } = new();
     public bool Drives { get; set; } = true;
     public bool Uptime { get; set; } = true;
+    public bool Idle { get; set; } = true;
     public bool NetworkUpload { get; set; } = true;
     public bool NetworkDownload { get; set; } = true;
 }

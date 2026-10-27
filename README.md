@@ -30,13 +30,14 @@ Sensors are read via [LibreHardwareMonitor](https://github.com/LibreHardwareMoni
 
 ## Features
 
-- **Hardware metrics**: CPU load/temperature/package power/core voltage, GPU load/temperature/power/fan/VRAM, RAM usage, drive usage, network up/download, uptime
+- **Hardware metrics**: CPU load/temperature/package power/core voltage, GPU load/temperature/power/fan/VRAM, RAM usage, drive usage, network up/download, uptime, idle time since the last keyboard/mouse input
 - **Multiple outputs** ("sinks"), each independently switchable:
   - **MQTT** with availability topic + Last Will, retained values, optional TLS and auth
   - **Home Assistant MQTT Discovery** (opt-in): all sensors appear automatically as one HA device
   - **UDP**: one compact JSON datagram per snapshot to a fixed host:port
   - **TCP**: the app listens on a port and streams line-delimited JSON to every connected client
   - **Serial**: line-delimited JSON to a COM port (e.g. an ESP32 status display)
+- **Tray icon with a live value** (optional): CPU/GPU load or temperature, RAM load as a number, or CPU and GPU load or temperature as two bars
 - **Modern tray UI**: icon sidebar with dashboard (cards, live bars, 60-second sparklines), outputs, sensor toggles, settings and about pages; light/dark/system theme
 - **Two languages**: English and German — follows Windows by default, switchable in Settings (MQTT topics, payloads and HA entity names always stay English)
 - **Live apply**: changed settings take effect immediately — outputs are rebuilt on the fly, no app restart
@@ -107,6 +108,7 @@ pc/myhost/net/ethernet/down   345.6
 pc/myhost/net/ethernet/ip     192.168.1.23
 pc/myhost/net/ethernet/mac    a4:bb:6d:3f:12:9c
 pc/myhost/system/uptime       86400              (seconds)
+pc/myhost/system/idle         42                 (seconds since the last keyboard/mouse input)
 ...
 ```
 

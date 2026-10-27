@@ -71,6 +71,7 @@ sealed class Lang
     public string CardSystem  { get; init; } = "System";
     public string DriveFree   { get; init; } = "free";   // "170 GB free"
     public string RowUptime   { get; init; } = "Uptime";
+    public string RowIdle     { get; init; } = "Idle";
     public string RowHost     { get; init; } = "Host";
     public string RowOs       { get; init; } = "OS";
     public string RowBoard    { get; init; } = "Board";
@@ -126,6 +127,7 @@ sealed class Lang
     public string SensorBoard      { get; init; } = "Motherboard";
     public string SensorDrives     { get; init; } = "Drives";
     public string SensorUptime     { get; init; } = "Uptime";
+    public string SensorIdle       { get; init; } = "Idle time";
 
     // ── settings page ───────────────────────────────────────────────────────
     public string SettingsTitle    { get; init; } = "Settings";
@@ -134,6 +136,16 @@ sealed class Lang
     public string SetTheme         { get; init; } = "Theme";
     public string SetRestartSub    { get; init; } = "Changing restarts the app";
     public string SetThemeLiveSub  { get; init; } = "Applies right after saving";
+    public string SetTrayIcon      { get; init; } = "Tray icon";
+    public string SetTrayIconSub   { get; init; } = "Logo or a live value";
+    public string TrayLogo         { get; init; } = "Logo";
+    public string TrayCpuLoad      { get; init; } = "CPU load";
+    public string TrayCpuTemp      { get; init; } = "CPU temp.";
+    public string TrayGpuLoad      { get; init; } = "GPU load";
+    public string TrayGpuTemp      { get; init; } = "GPU temp.";
+    public string TrayRamLoad      { get; init; } = "RAM load";
+    public string TrayLoadBars     { get; init; } = "Load bars";
+    public string TrayTempBars     { get; init; } = "Temp. bars";
     public string SetLanguage      { get; init; } = "Language";
     public string SetAutostart     { get; init; } = "Start with Windows";
     public string SetAutostartSub  { get; init; } = "Scheduled task with highest privileges";
@@ -202,6 +214,7 @@ sealed class Lang
         CardFans    = "Lüfter",
         DriveFree   = "frei",
         RowUptime   = "Laufzeit",
+        RowIdle     = "Leerlauf",
         RowBoard    = "Board",
 
         FieldUsername   = "Benutzername",
@@ -246,6 +259,7 @@ sealed class Lang
         SensorBoard      = "Mainboard",
         SensorDrives     = "Laufwerke",
         SensorUptime     = "Laufzeit",
+        SensorIdle       = "Leerlaufzeit",
 
         SettingsTitle    = "Einstellungen",
         SetInterval      = "Sendeintervall",
@@ -253,6 +267,15 @@ sealed class Lang
         SetTheme         = "Design",
         SetRestartSub    = "Änderung startet die App neu",
         SetThemeLiveSub  = "Gilt sofort nach dem Speichern",
+        SetTrayIcon      = "Tray-Symbol",
+        SetTrayIconSub   = "Logo oder ein Live-Wert",
+        TrayCpuLoad      = "CPU-Last",
+        TrayCpuTemp      = "CPU-Temp.",
+        TrayGpuLoad      = "GPU-Last",
+        TrayGpuTemp      = "GPU-Temp.",
+        TrayRamLoad      = "RAM-Last",
+        TrayLoadBars     = "Last-Balken",
+        TrayTempBars     = "Temp.-Balken",
         SetLanguage      = "Sprache",
         SetAutostart     = "Mit Windows starten",
         SetAutostartSub  = "Geplante Aufgabe mit höchsten Rechten",

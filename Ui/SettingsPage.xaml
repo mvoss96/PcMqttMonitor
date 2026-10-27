@@ -49,6 +49,14 @@
                     </DockPanel>
                     <Border Style="{StaticResource RowSep}"/>
                     <DockPanel Style="{StaticResource Row}">
+                        <ComboBox x:Name="TrayChoice" Style="{StaticResource Choice}"/>
+                        <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
+                            <TextBlock Text="{Binding SetTrayIcon}"/>
+                            <TextBlock Text="{Binding SetTrayIconSub}" Style="{StaticResource Sub}"/>
+                        </StackPanel>
+                    </DockPanel>
+                    <Border Style="{StaticResource RowSep}"/>
+                    <DockPanel Style="{StaticResource Row}">
                         <CheckBox x:Name="AutoStartSwitch" Style="{StaticResource RowSwitch}"/>
                         <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
                             <TextBlock Text="{Binding SetAutostart}"/>

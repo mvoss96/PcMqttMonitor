@@ -55,6 +55,7 @@ static class MetricTable
         new("ram_total",      "RAM Total",         "ram/total",      "GB",    "data_size",   "0.#",   m => m.Ram?.TotalGb),
         // Network is per-adapter (dynamic count) and special-cased like drives.
         new("uptime",         "Uptime",            "system/uptime",  "s",     "duration",    "0",     m => m.System?.UptimeSec),
+        new("idle",           "Idle Time",         "system/idle",    "s",     "duration",    "0",     m => m.System?.IdleSec),
     ];
 }
 
@@ -91,6 +92,8 @@ sealed class FanMetrics
 sealed class SystemMetrics
 {
     public int? UptimeSec { get; set; }
+    // Seconds since the last keyboard or mouse input in the user session.
+    public int? IdleSec { get; set; }
     // e.g. "Windows 11 Pro 24H2" — static, read once at startup.
     public string? OsVersion { get; set; }
 }
