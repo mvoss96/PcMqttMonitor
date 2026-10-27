@@ -49,9 +49,12 @@ sealed class SensorService : IDisposable
 
     // LibreHardwareMonitor's CPU detection runs the x86 CPUID instruction and
     // throws on Windows on ARM. Without its CPU support the rest may still
-    // work, so the next attempt leaves the CPU out, and the last one opens
-    // nothing. RAM, drives, network and system values come from Windows APIs
-    // and the CPU load has a fallback, so the app keeps publishing either way.
+    // work, so the next attempt leaves the CPU out. If that fails too, LHM
+    // stays closed: Open initializes SMBIOS and its drivers regardless of the
+    // enabled hardware, so a third attempt could throw again. A closed
+    // Computer has no hardware. RAM, drives, network and system values come
+    // from Windows APIs and the CPU load has a fallback, so the app keeps
+    // publishing either way.
     public void Open()
     {
         if (!TryOpen())
@@ -62,7 +65,6 @@ sealed class SensorService : IDisposable
             else
             {
                 _computer = NewComputer(cpu: false, rest: false);
-                _computer.Open();
                 Degraded = "LibreHardwareMonitor failed; running with Windows values only";
             }
         }

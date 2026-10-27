@@ -25,7 +25,9 @@ static class Probe
             {
                 IsCpuEnabled = true, IsGpuEnabled = true, IsMemoryEnabled = true,
                 IsMotherboardEnabled = true, IsStorageEnabled = true, IsNetworkEnabled = true,
-                IsControllerEnabled = true, IsBatteryEnabled = true,
+                // No controllers: LHM's Heatmaster detection opens CP210x
+                // COM ports (also used by ESP32 boards) and writes to them.
+                IsBatteryEnabled = true,
             };
             computer.Open();
             try

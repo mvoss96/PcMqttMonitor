@@ -58,12 +58,13 @@ class Program
         // Config lives next to the exe — Program Files when installed (works because
         // the app always runs elevated), or bin\Release during development. Survives
         // upgrades because the installer only replaces the exe, never config.json.
-        var configPath = Path.Combine(AppContext.BaseDirectory, "config.json");
-        var config = ConfigLoader.Load(configPath);
-
         // Hidden diagnostic mode: dump what the sensors provide and exit.
+        // Before the config load, which may rename a broken config.json.
         if (Probe.TryRun(args))
             return;
+
+        var configPath = Path.Combine(AppContext.BaseDirectory, "config.json");
+        var config = ConfigLoader.Load(configPath);
 
         // Language before any UI is built; changing it restarts the app.
         L.Init(config.General.Language);
