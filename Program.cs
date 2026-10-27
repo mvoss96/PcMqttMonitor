@@ -61,6 +61,10 @@ class Program
         var configPath = Path.Combine(AppContext.BaseDirectory, "config.json");
         var config = ConfigLoader.Load(configPath);
 
+        // Hidden diagnostic mode: dump what the sensors provide and exit.
+        if (Probe.TryRun(args))
+            return;
+
         // Language before any UI is built; changing it restarts the app.
         L.Init(config.General.Language);
 
