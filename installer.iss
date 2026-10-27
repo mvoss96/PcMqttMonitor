@@ -157,7 +157,12 @@ begin
 #ifdef ForceRuntime
   Result := False;  // ISCC /DForceRuntime: test the download path
 #else
-  Result := FindFirst(ExpandConstant('{commonpf64}\dotnet\shared\Microsoft.WindowsDesktop.App\10.*'), FindRec);
+  // On ARM64 Windows the x64 runtime this win-x64 exe needs lives in its own
+  // folder (dotnet\x64); dotnet\shared there holds the ARM64 runtime.
+  if IsArm64() then
+    Result := FindFirst(ExpandConstant('{commonpf64}\dotnet\x64\shared\Microsoft.WindowsDesktop.App\10.*'), FindRec)
+  else
+    Result := FindFirst(ExpandConstant('{commonpf64}\dotnet\shared\Microsoft.WindowsDesktop.App\10.*'), FindRec);
   if Result then
     FindClose(FindRec);
 #endif
