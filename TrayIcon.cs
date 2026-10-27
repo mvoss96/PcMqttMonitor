@@ -22,8 +22,9 @@ static class TrayIcon
     const float BarMinC = 30, BarMaxC = 100;
 
     // The number to show for a numeric mode: at most two digits (100 % is
-    // shown as 99), Hot for temperatures from 80 °C. Null when the mode is
-    // not numeric or the value is not available.
+    // shown as 99), Hot for temperatures from 80 °C. Hot follows the shown
+    // (rounded) number, so a displayed "80" is always red. Null when the mode
+    // is not numeric or the value is not available.
     internal static (string Text, bool Hot)? Value(MetricsSnapshot m, string? mode)
     {
         float? v = mode switch
@@ -37,20 +38,22 @@ static class TrayIcon
         };
         if (v == null) return null;
         int n = Math.Clamp((int)MathF.Round(v.Value), 0, 99);
-        bool hot = mode is CpuTemp or GpuTemp && v.Value >= HotTempC;
+        bool hot = mode is CpuTemp or GpuTemp && n >= HotTempC;
         return (n.ToString(), hot);
     }
 
     // Bar height for a temperature, 0 at 30 °C to 1 at 100 °C.
     internal static float TempFraction(float c) => Math.Clamp((c - BarMinC) / (BarMaxC - BarMinC), 0, 1);
 
-    // Everything the icon depends on: the icon is redrawn only when this changes.
-    internal static string Key(MetricsSnapshot m, string? mode) => mode switch
+    // Everything the icon depends on: the icon is redrawn only when this
+    // changes. Temperature bars are drawn from the rounded values, so the key
+    // covers their color thresholds; the taskbar theme sets the text color.
+    internal static string Key(MetricsSnapshot m, string? mode) => (mode switch
     {
         LoadBars => $"{mode}|{m.Cpu?.Load}|{m.Gpu?.Load}",
         TempBars => $"{mode}|{Round(m.Cpu?.TempC)}|{Round(m.Gpu?.TempC)}",
         _ => $"{mode}|{Value(m, mode)}",
-    };
+    }) + (TaskbarIsLight() ? "|light" : "|dark");
 
     static int? Round(float? v) => v == null ? null : (int)MathF.Round(v.Value);
 
@@ -69,13 +72,13 @@ static class TrayIcon
         if (mode == TempBars)
         {
             if (m.Cpu?.TempC == null && m.Gpu?.TempC == null) return null;
-            return Bars(size, light, TempBar(m.Cpu?.TempC, light), TempBar(m.Gpu?.TempC, light));
+            return Bars(size, light, TempBar(Round(m.Cpu?.TempC), light), TempBar(Round(m.Gpu?.TempC), light));
         }
         if (Value(m, mode) is not { } value) return null;
         return Number(size, value.Text, value.Hot ? TempColor(HotTempC, light) : light ? Color.Black : Color.White);
     }
 
-    static (float, Color) TempBar(float? c, bool light) =>
+    static (float, Color) TempBar(int? c, bool light) =>
         c == null ? (0, Color.Transparent) : (TempFraction(c.Value), TempColor(c.Value, light));
 
     // Green below 60 °C, yellow below 80 °C, red from 80 °C; darker shades
