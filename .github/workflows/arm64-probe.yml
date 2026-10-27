@@ -1,0 +1,46 @@
+name: ARM64 probe
+
+# What the app sees on Windows on ARM: runs --probe (all LibreHardwareMonitor
+# hardware and sensors plus the app's own snapshot) for a native ARM64 build
+# and for the x64 build under emulation, and renders the UI once.
+# Manual, or on pushes to the test branch.
+on:
+  workflow_dispatch:
+  push:
+    branches: [test/arm64-probe]
+
+jobs:
+  probe:
+    runs-on: windows-11-arm
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      # Self-contained here, so the x64 build does not need an x64 runtime
+      # on the ARM runner.
+      - name: Publish ARM64 and x64
+        run: |
+          dotnet publish PcMqttMonitor.csproj -c Release -r win-arm64 -p:SelfContained=true -p:PublishSingleFile=true -o arm64
+          dotnet publish PcMqttMonitor.csproj -c Release -r win-x64 -p:SelfContained=true -p:PublishSingleFile=true -o x64
+
+      - name: Probe
+        run: |
+          New-Item -ItemType Directory out | Out-Null
+          foreach ($arch in 'arm64', 'x64') {
+            $p = Start-Process "$arch/PcMqttMonitor.exe" -ArgumentList '--probe', "out/probe-$arch.txt" -Wait -PassThru
+            "== $arch exit code $($p.ExitCode)"
+            if (Test-Path "out/probe-$arch.txt") { Get-Content "out/probe-$arch.txt" } else { "no output file" }
+            Get-ChildItem $arch -Filter crash.log | ForEach-Object { Get-Content $_.FullName }
+          }
+
+      - name: Render UI (ARM64)
+        run: Start-Process arm64/PcMqttMonitor.exe -ArgumentList '--screenshots', 'out/ui-arm64', '--scenarios' -Wait
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: arm64-probe
+          path: out/

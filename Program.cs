@@ -58,6 +58,11 @@ class Program
         // Config lives next to the exe — Program Files when installed (works because
         // the app always runs elevated), or bin\Release during development. Survives
         // upgrades because the installer only replaces the exe, never config.json.
+        // Hidden diagnostic mode: dump what the sensors provide and exit.
+        // Before the config load, which may rename a broken config.json.
+        if (Probe.TryRun(args))
+            return;
+
         var configPath = Path.Combine(AppContext.BaseDirectory, "config.json");
         var config = ConfigLoader.Load(configPath);
 
@@ -197,6 +202,8 @@ class Program
             message => { if (config.General.DebugEnabled) LogDebug(message); },
             buildSummary: consoleAttached);
         sensors.Open();
+        if (sensors.Degraded is { } degraded)
+            Log($"[warn] {degraded}.");
         Log("Sensors ready.");
 
         // Newly detected fan channels got their enabled-default assigned in

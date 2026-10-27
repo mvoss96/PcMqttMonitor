@@ -3,6 +3,20 @@
 User-facing changes per release. The release workflow publishes the matching
 section as the GitHub release notes — every tagged version needs a section here.
 
+## v2.14.0 — 2026-10-27
+
+- **Windows on ARM**: the app runs with the sensors available there. CPU
+  load now also comes from Windows itself when LibreHardwareMonitor provides
+  none, and the CPU name from the Windows registry. RAM, drives, network,
+  uptime, idle time, all outputs and notifications work; CPU temperature and
+  power and GPU values stay unavailable on these chips.
+- If LibreHardwareMonitor fails to open (as on ARM), the app keeps running
+  with the values Windows provides instead of stopping its background loop,
+  so MQTT, the outputs and notifications keep working. The log says which
+  part was turned off.
+- No empty CPU or GPU card and no empty Home Assistant values when the PC
+  has no such hardware or it is not detected.
+
 ## v2.13.0 — 2026-10-27
 
 - **Notifications from Home Assistant**: messages published to

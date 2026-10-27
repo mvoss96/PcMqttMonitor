@@ -7,7 +7,7 @@ using LibreHardwareMonitor.Hardware;
 // Encapsulates all sensor discovery, reading, formatting, and metric construction.
 sealed class SensorService : IDisposable
 {
-    readonly Computer _computer;
+    Computer _computer;
     readonly SensorConfig _config;
     readonly Action<string>? _log;
     readonly bool _buildSummary;
@@ -16,6 +16,13 @@ sealed class SensorService : IDisposable
     IHardware? _gpu;
     IHardware? _memory;
     IHardware? _motherboard;
+
+    // Set by Open when LibreHardwareMonitor could not be opened completely:
+    // what was turned off, for the log.
+    public string? Degraded { get; private set; }
+
+    // GetSystemTimes totals of the previous cycle, for the CPU load fallback.
+    (ulong Idle, ulong Busy)? _lastCpuTimes;
 
     // Static RAM module info (WMI), read once in Open.
     string? _ramType;
@@ -29,18 +36,38 @@ sealed class SensorService : IDisposable
         _config = config ?? new SensorConfig();
         _log = log;
         _buildSummary = buildSummary;
-        _computer = new Computer
-        {
-            IsCpuEnabled = true,
-            IsGpuEnabled = true,
-            IsMemoryEnabled = true,
-            IsMotherboardEnabled = true,
-        };
+        _computer = NewComputer(cpu: true, rest: true);
     }
 
+    static Computer NewComputer(bool cpu, bool rest) => new()
+    {
+        IsCpuEnabled = cpu,
+        IsGpuEnabled = rest,
+        IsMemoryEnabled = rest,
+        IsMotherboardEnabled = rest,
+    };
+
+    // LibreHardwareMonitor's CPU detection runs the x86 CPUID instruction and
+    // throws on Windows on ARM. Without its CPU support the rest may still
+    // work, so the next attempt leaves the CPU out. If that fails too, LHM
+    // stays closed: Open initializes SMBIOS and its drivers regardless of the
+    // enabled hardware, so a third attempt could throw again. A closed
+    // Computer has no hardware. RAM, drives, network and system values come
+    // from Windows APIs and the CPU load has a fallback, so the app keeps
+    // publishing either way.
     public void Open()
     {
-        _computer.Open();
+        if (!TryOpen())
+        {
+            _computer = NewComputer(cpu: false, rest: true);
+            if (TryOpen())
+                Degraded = "LibreHardwareMonitor CPU support failed; running without it";
+            else
+            {
+                _computer = NewComputer(cpu: false, rest: false);
+                Degraded = "LibreHardwareMonitor failed; running with Windows values only";
+            }
+        }
         _cpu = _computer.Hardware.FirstOrDefault(h => h.HardwareType == HardwareType.Cpu);
         // Prefer a discrete GPU: on hybrid systems (Intel iGPU + NVIDIA/AMD dGPU)
         // plain FirstOrDefault picks whichever LHM enumerates first — which can be
@@ -55,6 +82,21 @@ sealed class SensorService : IDisposable
         _motherboard = _computer.Hardware.FirstOrDefault(h => h.HardwareType == HardwareType.Motherboard);
         ReadRamModuleInfo();
         DetectFanChannels();
+    }
+
+    bool TryOpen()
+    {
+        try
+        {
+            _computer.Open();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log($"LibreHardwareMonitor open failed: {ex.Message}");
+            try { _computer.Close(); } catch { }
+            return false;
+        }
     }
 
     // All fan channels the hardware exposes (spinning or not) — the Sensors
@@ -148,7 +190,10 @@ sealed class SensorService : IDisposable
             UpdateHardwareTree(hardware);
         }
 
-        var rawCpuLoad = FindSensorValue(_cpu, SensorType.Load, "CPU Total");
+        // Windows' own CPU load when LibreHardwareMonitor has none (no CPU
+        // support, e.g. on ARM). Sampled every cycle to keep the delta fresh.
+        var windowsCpuLoad = CpuLoadFromWindows();
+        var rawCpuLoad = FindSensorValue(_cpu, SensorType.Load, "CPU Total") ?? windowsCpuLoad;
         var rawCpuTemp = FindSensorValue(_cpu, SensorType.Temperature, "Core (Tctl/Tdie)")
             ?? FindFirstSensorValue(_cpu, SensorType.Temperature);
 
@@ -189,7 +234,7 @@ sealed class SensorService : IDisposable
         var gpuMemUsed = _config.GpuMemoryUsed ? rawGpuMemUsed : null;
         var gpuMemTotal = _config.GpuMemoryTotal ? rawGpuMemTotal : null;
 
-        var cpuName = _cpu?.Name ?? "CPU";
+        var cpuName = _cpu?.Name ?? CpuNameFromWindows() ?? "CPU";
         var gpuName = _gpu?.Name ?? "GPU";
         var motherboardName = _config.MotherboardName ? _motherboard?.Name : null;
         var driveMetrics = _config.Drives ? CollectDriveMetrics() : new List<StorageMetrics>();
@@ -241,8 +286,12 @@ sealed class SensorService : IDisposable
         {
             TimestampUtc = DateTime.UtcNow,
             Host = Environment.MachineName,
-            Cpu = BuildCpuMetrics(cpuName, cpuLoad, cpuTemp, cpuPackagePower, cpuCoreVoltage),
-            Gpu = BuildGpuMetrics(gpuName, gpuLoad, gpuTemp, gpuBoardPower, gpuMemLoad, gpuMemUsed, gpuMemTotal),
+            // No entry without data: an empty "CPU"/"GPU" would show as an
+            // empty dashboard card and name the HA device model "CPU".
+            Cpu = _cpu != null || cpuLoad != null
+                ? BuildCpuMetrics(cpuName, cpuLoad, cpuTemp, cpuPackagePower, cpuCoreVoltage) : null,
+            Gpu = _gpu != null
+                ? BuildGpuMetrics(gpuName, gpuLoad, gpuTemp, gpuBoardPower, gpuMemLoad, gpuMemUsed, gpuMemTotal) : null,
             Ram = BuildRamMetrics(ramLoad, ramUsed, ramTotal),
             Motherboard = BuildMotherboardMetrics(motherboardName),
             Drives = driveMetrics.Count > 0 ? driveMetrics : null,
@@ -380,6 +429,37 @@ sealed class SensorService : IDisposable
     {
         _computer.Close();
     }
+
+    // Busy share of all CPU time since the previous call, in percent; null on
+    // the first call. Kernel time includes idle time.
+    float? CpuLoadFromWindows()
+    {
+        if (!GetSystemTimes(out var idle, out var kernel, out var user)) return null;
+        var now = (Idle: idle, Busy: kernel - idle + user);
+        var last = _lastCpuTimes;
+        _lastCpuTimes = now;
+        return last is { } l ? CpuLoad(l.Idle, l.Busy, now.Idle, now.Busy) : null;
+    }
+
+    internal static float? CpuLoad(ulong idle0, ulong busy0, ulong idle1, ulong busy1)
+    {
+        ulong idle = idle1 - idle0, busy = busy1 - busy0;
+        return idle + busy == 0 ? null : 100f * busy / (idle + busy);
+    }
+
+    // e.g. "Snapdragon(R) X Elite - X1E78100 - Qualcomm(R) Oryon(TM) CPU".
+    static string? CpuNameFromWindows()
+    {
+        try
+        {
+            using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"HARDWARE\DESCRIPTION\System\CentralProcessor\0");
+            return (key?.GetValue("ProcessorNameString") as string)?.Trim() is { Length: > 0 } name ? name : null;
+        }
+        catch { return null; }
+    }
+
+    [DllImport("kernel32.dll")]
+    static extern bool GetSystemTimes(out ulong idleTime, out ulong kernelTime, out ulong userTime);
 
     void Log(string message)
     {
