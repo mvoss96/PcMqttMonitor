@@ -41,8 +41,8 @@ jobs:
           $Matches[1].Trim() | Set-Content release-notes.md
           Get-Content release-notes.md
 
-      - name: Publish self-contained exe
-        run: dotnet publish PcMqttMonitor.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
+      - name: Publish exe
+        run: dotnet publish PcMqttMonitor.csproj -c Release -r win-x64 -p:PublishSingleFile=true -o publish
 
       - name: Compile installer
         run: '& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer.iss'

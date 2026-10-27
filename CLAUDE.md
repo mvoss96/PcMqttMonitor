@@ -14,8 +14,8 @@ Use minor version bumps (`1.x.0`) for larger feature additions.
 Deployment goes through the Inno Setup installer (install location: `C:\Program Files\PcMqttMonitor`):
 
 ```powershell
-# 1. Publish self-contained single-file exe into publish\
-dotnet publish PcMqttMonitor.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
+# 1. Publish the single-file exe (framework-dependent, see csproj) into publish\
+dotnet publish PcMqttMonitor.csproj -c Release -r win-x64 -p:PublishSingleFile=true -o publish
 
 # 2. Compile the installer
 & "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" installer.iss
@@ -94,6 +94,7 @@ git tag v1.x.y && git push origin main --tags
 - **Elevation is genuinely required**: without admin, LHM cannot load its Ring0 driver — CPU temp and package power silently read 0 and voltages show VID defaults instead of measurements (verified empirically). GPU (NVAPI), RAM, drives and network work unelevated, but CPU metrics are core functionality.
 - **Autostart**: Windows Task Scheduler (`schtasks /RL HIGHEST /SC ONLOGON`) — not the registry Run key, because `requireAdministrator` apps are silently skipped there.
 - **Settings apply**: one Save for all pages. Output changes rebuild the sinks (`Program.RequestSinksReload`), the theme switches live; only a language change restarts the app (`Program.Restart`).
-- **UI framework**: WPF with the built-in Fluent theme (Windows 11 controls, Mica, live light/dark), not WinUI 3: WPF ships with .NET (single-file exe, unchanged installer), runs elevated without restrictions and renders off-screen for CI screenshots. `IncludeNativeLibrariesForSelfExtract` puts WPF's native DLLs into the single-file exe; without it the installed exe crashes at startup. The WinForms namespaces are not global usings, so WPF and WinForms type names never clash.
+- **UI framework**: WPF with the built-in Fluent theme (Windows 11 controls, Mica, live light/dark), not WinUI 3: WPF ships with .NET (single-file exe, unchanged installer), runs elevated without restrictions and renders off-screen for CI screenshots. The WinForms namespaces are not global usings, so WPF and WinForms type names never clash.
+- **Framework-dependent publish** (`SelfContained=false` in the csproj): the exe is ~5 MB and the installer ~3 MB; `installer.iss` downloads and installs the .NET 10 Desktop Runtime from Microsoft when `C:\Program Files\dotnet\shared\Microsoft.WindowsDesktop.App\10.*` is missing, in `PrepareToInstall` so upgrades (which skip the Ready page) get it too. Compile with `ISCC /DForceRuntime installer.iss` to test the download path on a PC that has the runtime.
 - **Hardware crashes**: LibreHardwareMonitor background threads can crash on driver updates or at boot. The `AppDomain.UnhandledException` handler detects these and auto-restarts. All crashes are logged to `crash.log` next to the exe.
 - **Startup delay**: if system uptime < 30s, wait for storage drivers to settle before opening sensors.

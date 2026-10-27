@@ -7,13 +7,17 @@
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <UseWPF>true</UseWPF>
-    <!-- WPF's native DLLs (wpfgfx, PresentationNative) go inside the single-file
-         exe; otherwise they land next to it and the installer, which ships only
-         the exe, produces an app that fails at startup with DllNotFoundException. -->
+    <!-- Framework-dependent: the .NET 10 Desktop Runtime comes from the system
+         (the installer downloads it when missing), so the exe is ~5 MB instead
+         of ~160 MB. Set here rather than on the command line so a publish never
+         picks up a self-contained build left in obj. -->
+    <SelfContained>false</SelfContained>
+    <!-- Native DLLs of the packages (Mono.Posix helpers) go inside the
+         single-file exe; the installer ships only the exe. -->
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>app.ico</ApplicationIcon>
-    <Version>2.12.0</Version>
+    <Version>2.12.1</Version>
   </PropertyGroup>
 
   <ItemGroup>
