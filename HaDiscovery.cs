@@ -8,12 +8,16 @@ using MQTTnet.Protocol;
 // Home Assistant MQTT discovery — DEVICE-BASED format (HA 2024.11+):
 // one retained JSON on homeassistant/device/<id>/config describes the device
 // ("dev"), the publishing app ("o", mandatory) and every sensor as a component
-// under "cmps" (each with platform "p": "sensor"). An empty retained payload on
-// the same topic removes the whole device from HA.
+// under "cmps" (platform "p": "sensor"), plus a "notify" component when
+// notifications are on. An empty retained payload on the same topic removes
+// the whole device from HA.
 // Spec: https://www.home-assistant.io/integrations/mqtt/#device-discovery-payload
 static class HaDiscovery
 {
     static string ConfigTopic(string host) => $"homeassistant/device/pcmqtt_{host}/config";
+
+    // Component id of the notify entity; the only component that is not a sensor.
+    const string NotifyId = "notify";
 
     // Which components the current snapshot would advertise — when this changes
     // (sensor toggled, drive plugged/removed), the config must be republished.
@@ -23,8 +27,8 @@ static class HaDiscovery
     // after startup has no rates yet (they need a previous byte count), so the
     // first discovery goes out without the rate entities — the fingerprint must
     // change once they appear, or they would never be advertised.
-    public static string Fingerprint(MetricsSnapshot m) =>
-        string.Join(",", MetricTable.All.Where(d => d.Get(m) != null).Select(d => d.Id))
+    public static string Fingerprint(MetricsSnapshot m, bool notify) =>
+        notify + "|" + string.Join(",", MetricTable.All.Where(d => d.Get(m) != null).Select(d => d.Id))
         + "|" + string.Join(",", m.Drives?.Select(d => d.Name) ?? [])
         + "|" + string.Join(",", m.Network?.Select(a => $"{a.Name}:{a.UploadKbps != null}:{a.DownloadKbps != null}") ?? [])
         + "|" + string.Join(",", m.Fans?.Select(f => f.Id) ?? []);
@@ -32,12 +36,18 @@ static class HaDiscovery
     // Component id → full state topic of everything the given snapshot would
     // advertise. MqttSink persists this to detect components that vanished
     // between app runs (hardware swapped, drive gone, fan unchecked).
-    public static Dictionary<string, string> ComponentTopics(MetricsSnapshot m, string topicRoot, string host)
+    // The notify entity has no state topic; its command topic stands in (it is
+    // never retained, so clearing it on removal is harmless).
+    public static Dictionary<string, string> ComponentTopics(MetricsSnapshot m, bool notify, string topicRoot, string host)
     {
         var baseTopic = $"{topicRoot}/{host}";
-        return BuildComponents(m, baseTopic).ToDictionary(
+        return BuildComponents(m, notify, baseTopic).ToDictionary(
             kv => kv.Key,
-            kv => (string)((Dictionary<string, object>)kv.Value)["state_topic"]);
+            kv =>
+            {
+                var c = (Dictionary<string, object>)kv.Value;
+                return (string)(c.TryGetValue("state_topic", out var t) ? t : c["command_topic"]);
+            });
     }
 
     // removedComponentIds: components advertised in an earlier run that no
@@ -45,7 +55,7 @@ static class HaDiscovery
     // once with an empty config (just the platform key), followed by a config
     // that omits them entirely.
     public static async Task PublishConfigAsync(
-        IMqttClient client, string topicRoot, string host, MetricsSnapshot metrics,
+        IMqttClient client, string topicRoot, string host, MetricsSnapshot metrics, bool notify,
         string version, string brokerHost, int brokerPort,
         IReadOnlyCollection<string> removedComponentIds,
         CancellationToken cancellationToken)
@@ -65,7 +75,7 @@ static class HaDiscovery
         if (PrimaryMac(brokerHost, brokerPort) is { } mac)
             dev["cns"] = new[] { new[] { "mac", mac } };
 
-        var cmps = BuildComponents(metrics, baseTopic);
+        var cmps = BuildComponents(metrics, notify, baseTopic);
 
         Dictionary<string, object> Payload() => new()
         {
@@ -85,7 +95,7 @@ static class HaDiscovery
         if (tombstones.Count > 0)
         {
             foreach (var id in tombstones)
-                cmps[id] = new Dictionary<string, object> { ["p"] = "sensor" };
+                cmps[id] = new Dictionary<string, object> { ["p"] = id == NotifyId ? "notify" : "sensor" };
             await PublishRetainedAsync(client, ConfigTopic(host),
                 JsonSerializer.Serialize(Payload()), cancellationToken);
             foreach (var id in tombstones)
@@ -144,9 +154,20 @@ static class HaDiscovery
     // Mirrors MqttSink's subtopic publishing via the shared MetricTable: a
     // component is advertised exactly when its scalar subtopic is being
     // published (metric present in the snapshot).
-    static Dictionary<string, object> BuildComponents(MetricsSnapshot m, string baseTopic)
+    static Dictionary<string, object> BuildComponents(MetricsSnapshot m, bool notify, string baseTopic)
     {
         var cmps = new Dictionary<string, object>();
+
+        // HA's notify.send_message on this entity publishes the message text
+        // to the command topic (MqttSink shows it as a Windows notification).
+        if (notify)
+            cmps[NotifyId] = new Dictionary<string, object>
+            {
+                ["p"] = "notify",
+                ["name"] = "Notification",
+                ["command_topic"] = $"{baseTopic}/notify",
+                ["unique_id"] = $"pcmqtt_{HostInfo.Id}_notify",
+            };
 
         void Sensor(string id, string name, string subTopic, string? unit, string? deviceClass)
         {

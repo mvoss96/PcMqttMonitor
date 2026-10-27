@@ -85,6 +85,7 @@ sealed class Lang
     public string FieldTopicRoot  { get; init; } = "Topic root";
     public string FieldUseTls     { get; init; } = "Use TLS (typically port 8883)";
     public string FieldDiscovery  { get; init; } = "Home Assistant MQTT Discovery";
+    public string FieldNotifications { get; init; } = "Notifications from HA";
     public string FieldListenPort { get; init; } = "Listen port";
     public string FieldBaudRate   { get; init; } = "Baud rate";
     public string OutDisabled     { get; init; } = "Disabled";
@@ -221,6 +222,7 @@ sealed class Lang
         FieldPassword   = "Passwort",
         FieldTopicRoot  = "Root-Topic",
         FieldUseTls     = "TLS verwenden (üblich: Port 8883)",
+        FieldNotifications = "Benachrichtigungen von HA",
         FieldListenPort = "Port",
         FieldBaudRate   = "Baudrate",
         OutDisabled     = "Deaktiviert",

@@ -23,6 +23,7 @@ sealed class TrayApp : IDisposable
     readonly MenuItem _pauseItem = new() { Header = L.T.TrayPause };
     MenuItem? _updateItem;
     Version? _notifiedUpdate;
+    bool _updateBalloonShown;   // the last balloon was the update notice
     volatile string _statusText = L.T.StatusStarting;
     volatile bool _paused;
 
@@ -62,7 +63,7 @@ sealed class TrayApp : IDisposable
         // The only balloon this app shows is the update notification.
         _tray.BalloonTipClicked += (_, _) =>
         {
-            if (_notifiedUpdate != null) OpenReleasesPage();
+            if (_updateBalloonShown) OpenReleasesPage();
         };
     }
 
@@ -110,6 +111,22 @@ sealed class TrayApp : IDisposable
             _tray.BalloonTipTitle = "PC MQTT Monitor";
             _tray.BalloonTipText  = string.Format(L.T.BalloonUpdate, version.ToString(3));
             _tray.BalloonTipIcon  = Forms.ToolTipIcon.Info;
+            _updateBalloonShown = true;
+            _tray.ShowBalloonTip(10_000);
+        });
+    }
+
+    // Any thread: a message from Home Assistant (MqttSink). Windows shows a
+    // tray balloon as a regular notification and keeps it in the
+    // notification center.
+    public void ShowNotification(Notification n)
+    {
+        _window.Dispatcher.BeginInvoke(() =>
+        {
+            _tray.BalloonTipTitle = n.Title;
+            _tray.BalloonTipText  = n.Message;
+            _tray.BalloonTipIcon  = Forms.ToolTipIcon.None;
+            _updateBalloonShown = false;
             _tray.ShowBalloonTip(10_000);
         });
     }

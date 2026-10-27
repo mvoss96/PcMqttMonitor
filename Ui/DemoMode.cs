@@ -133,6 +133,12 @@ static class DemoMode
         await Shot(1, "footer-after-save");
         w.DemoRevert();
 
+        // The tallest card with the save footer: must fit without scrolling.
+        OpenOnly("MQTT");
+        outputs.DemoSetText("mqtt.host", "192.168.1.11");
+        await Shot(1, "footer-mqtt-open");
+        w.DemoRevert();
+
         // What running sinks report: errors in red, the TCP client count.
         OpenOnly("");
         outputs.DemoSetText("udp.host", "gibtsnicht.local");

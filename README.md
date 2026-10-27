@@ -37,6 +37,7 @@ Sensors are read via [LibreHardwareMonitor](https://github.com/LibreHardwareMoni
   - **UDP**: one compact JSON datagram per snapshot to a fixed host:port
   - **TCP**: the app listens on a port and streams line-delimited JSON to every connected client
   - **Serial**: line-delimited JSON to a COM port (e.g. an ESP32 status display)
+- **Notifications from Home Assistant**: messages sent to the PC over MQTT appear as Windows notifications, with a notify entity in HA
 - **Tray icon with a live value** (optional): CPU/GPU load or temperature, RAM load as a number, or CPU and GPU load or temperature as two bars
 - **Modern tray UI**: icon sidebar with dashboard (cards, live bars, 60-second sparklines), outputs, sensor toggles, settings and about pages; light/dark/system theme
 - **Two languages**: English and German — follows Windows by default, switchable in Settings (MQTT topics, payloads and HA entity names always stay English)
@@ -118,6 +119,29 @@ When Home Assistant discovery is enabled, a retained device-discovery config is 
   <img src="docs/home-assistant.png" width="420" alt="Home Assistant device page">
 </p>
 
+### Notifications from Home Assistant
+
+With **Notifications from HA** checked in the MQTT card (on by default), the app listens on `pc/<host>/notify` and shows every message as a Windows notification. With discovery enabled, the PC also gets a notify entity in Home Assistant:
+
+```yaml
+action: notify.send_message
+target:
+  entity_id: notify.<pc>_notification
+data:
+  message: The washing machine is done
+```
+
+HA's MQTT notify entity sends only the message text, so the notification title is "Home Assistant". For a title of your own, publish JSON to the topic instead:
+
+```yaml
+action: mqtt.publish
+data:
+  topic: pc/<host>/notify
+  payload: '{"title": "Washing machine", "message": "Done"}'
+```
+
+Retained messages are ignored, so an old message is never shown again after a reconnect. The app shows text only; there are no links or buttons, and nothing is executed.
+
 ## UDP / TCP / Serial streams
 
 All stream sinks send the same compact JSON object as the MQTT `status` topic — one object per datagram (UDP) or per line (TCP and serial):
@@ -150,8 +174,8 @@ UDP is fire-and-forget. With many drives, fans or adapters a snapshot can exceed
 Requires the .NET 10 SDK and (for the installer) [Inno Setup 6](https://jrsoftware.org/isinfo.php).
 
 ```powershell
-# Self-contained single-file exe
-dotnet publish PcMqttMonitor.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
+# Single-file exe; needs the .NET 10 Desktop Runtime (the installer downloads it if missing)
+dotnet publish PcMqttMonitor.csproj -c Release -r win-x64 -p:PublishSingleFile=true -o publish
 
 # Installer (optional)
 & "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" installer.iss
