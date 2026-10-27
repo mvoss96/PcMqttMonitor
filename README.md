@@ -30,7 +30,7 @@ Sensors are read via [LibreHardwareMonitor](https://github.com/LibreHardwareMoni
 
 ## Features
 
-- **Hardware metrics**: CPU load/temperature/package power/core voltage, GPU load/temperature/power/fan/VRAM, RAM usage, drive usage, network up/download, uptime, idle time since the last keyboard/mouse input
+- **Hardware metrics**: CPU load/temperature/package power/core voltage, GPU load/temperature/power/fan/VRAM, RAM usage, drive usage, network up/download, uptime, idle time since the last keyboard/mouse input, battery level and mains power on laptops
 - **Multiple outputs** ("sinks"), each independently switchable:
   - **MQTT** with availability topic + Last Will, retained values, optional TLS and auth
   - **Home Assistant MQTT Discovery** (opt-in): all sensors appear automatically as one HA device
@@ -113,6 +113,8 @@ pc/myhost/net/ethernet/ip     192.168.1.23
 pc/myhost/net/ethernet/mac    a4:bb:6d:3f:12:9c
 pc/myhost/system/uptime       86400              (seconds)
 pc/myhost/system/idle         42                 (seconds since the last keyboard/mouse input)
+pc/myhost/battery/level       87                 (laptops only; charge in %)
+pc/myhost/battery/ac          ON                 (laptops only; ON = plugged in)
 ...
 ```
 

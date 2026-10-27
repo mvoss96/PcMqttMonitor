@@ -9,15 +9,18 @@ using MQTTnet.Protocol;
 // one retained JSON on homeassistant/device/<id>/config describes the device
 // ("dev"), the publishing app ("o", mandatory) and every sensor as a component
 // under "cmps" (platform "p": "sensor"), plus a "notify" component when
-// notifications are on. An empty retained payload on the same topic removes
+// notifications are on and a "binary_sensor" for mains power on laptops. An empty retained payload on the same topic removes
 // the whole device from HA.
 // Spec: https://www.home-assistant.io/integrations/mqtt/#device-discovery-payload
 static class HaDiscovery
 {
     static string ConfigTopic(string host) => $"homeassistant/device/pcmqtt_{host}/config";
 
-    // Component id of the notify entity; the only component that is not a sensor.
-    const string NotifyId = "notify";
+    // Component ids of the entities that are not sensors.
+    const string NotifyId = "notify", AcPowerId = "battery_ac";
+
+    static string Platform(string id) =>
+        id == NotifyId ? "notify" : id == AcPowerId ? "binary_sensor" : "sensor";
 
     // Which components the current snapshot would advertise — when this changes
     // (sensor toggled, drive plugged/removed), the config must be republished.
@@ -31,7 +34,8 @@ static class HaDiscovery
         notify + "|" + string.Join(",", MetricTable.All.Where(d => d.Get(m) != null).Select(d => d.Id))
         + "|" + string.Join(",", m.Drives?.Select(d => d.Name) ?? [])
         + "|" + string.Join(",", m.Network?.Select(a => $"{a.Name}:{a.UploadKbps != null}:{a.DownloadKbps != null}") ?? [])
-        + "|" + string.Join(",", m.Fans?.Select(f => f.Id) ?? []);
+        + "|" + string.Join(",", m.Fans?.Select(f => f.Id) ?? [])
+        + "|" + (m.Battery?.OnAcPower != null);
 
     // Component id → full state topic of everything the given snapshot would
     // advertise. MqttSink persists this to detect components that vanished
@@ -95,7 +99,7 @@ static class HaDiscovery
         if (tombstones.Count > 0)
         {
             foreach (var id in tombstones)
-                cmps[id] = new Dictionary<string, object> { ["p"] = id == NotifyId ? "notify" : "sensor" };
+                cmps[id] = new Dictionary<string, object> { ["p"] = Platform(id) };
             await PublishRetainedAsync(client, ConfigTopic(host),
                 JsonSerializer.Serialize(Payload()), cancellationToken);
             foreach (var id in tombstones)
@@ -187,6 +191,17 @@ static class HaDiscovery
         foreach (var def in MetricTable.All)
             if (def.Get(m) != null)
                 Sensor(def.Id, def.Name, def.SubTopic, def.Unit, def.DeviceClass);
+
+        // Mains power (laptops): ON/OFF payloads, shown as plugged in/unplugged.
+        if (m.Battery?.OnAcPower != null)
+            cmps[AcPowerId] = new Dictionary<string, object>
+            {
+                ["p"] = "binary_sensor",
+                ["name"] = "AC Power",
+                ["state_topic"] = $"{baseTopic}/battery/ac",
+                ["unique_id"] = $"pcmqtt_{HostInfo.Id}_{AcPowerId}",
+                ["device_class"] = "plug",
+            };
 
         // Drives: dynamic count — mirrors MqttSink's drives special case.
         // Letter-keyed like the topics, so entity identity survives drives

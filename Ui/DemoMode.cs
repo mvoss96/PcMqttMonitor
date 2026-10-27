@@ -164,6 +164,12 @@ static class DemoMode
         await Shot(0, "paused-from-tray");
         w.SetPauseState(false);
 
+        // A laptop: battery row in the System card.
+        var laptop = Snapshot(40);
+        laptop.Battery = new BatteryMetrics { Level = 87, OnAcPower = false };
+        w.SetLatestMetrics(laptop);
+        await Shot(0, "battery");
+
         TrayIconSheet(Path.Combine(dir, "scenario-tray-icons.png"));
     }
 

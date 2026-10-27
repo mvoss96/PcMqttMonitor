@@ -160,6 +160,7 @@ sealed class SensorConfig
     public bool Drives { get; set; } = true;
     public bool Uptime { get; set; } = true;
     public bool Idle { get; set; } = true;
+    public bool Battery { get; set; } = true;
     public bool NetworkUpload { get; set; } = true;
     public bool NetworkDownload { get; set; } = true;
 }

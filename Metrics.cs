@@ -56,6 +56,9 @@ static class MetricTable
         // Network is per-adapter (dynamic count) and special-cased like drives.
         new("uptime",         "Uptime",            "system/uptime",  "s",     "duration",    "0",     m => m.System?.UptimeSec),
         new("idle",           "Idle Time",         "system/idle",    "s",     "duration",    "0",     m => m.System?.IdleSec),
+        // Mains power is an on/off value: published as battery/ac and
+        // advertised as a binary sensor by HaDiscovery, not in this table.
+        new("battery_level",  "Battery",           "battery/level",  "%",     "battery",     "0",     m => m.Battery?.Level),
     ];
 }
 
@@ -75,6 +78,14 @@ sealed class MetricsSnapshot
     public List<NetworkAdapterMetrics>? Network { get; set; }
     public List<FanMetrics>? Fans { get; set; }
     public SystemMetrics? System { get; set; }
+    // Null on PCs without a battery.
+    public BatteryMetrics? Battery { get; set; }
+}
+
+sealed class BatteryMetrics
+{
+    public int? Level { get; set; }        // charge in %
+    public bool? OnAcPower { get; set; }   // plugged in
 }
 
 // One entry per SPINNING fan (motherboard headers + GPU): headers without a

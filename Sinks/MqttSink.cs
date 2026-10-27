@@ -320,6 +320,10 @@ sealed class MqttSink : IMetricsSink
                 value.Value.ToString(def.Format, CultureInfo.InvariantCulture)));
         }
 
+        // Mains power as ON/OFF, the default payloads of HA's binary sensor.
+        if (m.Battery?.OnAcPower is { } ac)
+            messages.Add(($"{baseTopic}/battery/ac", ac ? "ON" : "OFF"));
+
         // Drives: dynamic count and a string payload — deliberately not in the
         // table. Keyed by drive letter, not index: plugging or removing a drive
         // must never shift another drive's topics.
