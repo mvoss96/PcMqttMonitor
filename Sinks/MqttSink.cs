@@ -16,6 +16,9 @@ sealed class MqttSink : IMetricsSink
     readonly Action<string> _setStatus;   // tray context-menu status line
     readonly SinkStatus _status;          // Outputs card
     readonly Action<Notification> _notify;
+    // The broker accepted the notify subscription on the current connection;
+    // only then is the HA notify entity advertised.
+    bool _notifyActive;
     readonly MqttClientFactory _factory = new();
     readonly IMqttClient _client;
     readonly MqttClientOptions _options;
@@ -84,11 +87,25 @@ sealed class MqttSink : IMetricsSink
     }
 
     // The broker forgets subscriptions of a clean session, so this runs after
-    // every connect.
-    Task SubscribeNotifyAsync(CancellationToken ct) =>
-        _client.SubscribeAsync(_factory.CreateSubscribeOptionsBuilder()
+    // every connect. A broker rejects a subscription in the SUBACK (e.g. an
+    // account that may only publish) without an exception, so the result
+    // decides whether notifications work.
+    async Task SubscribeNotifyAsync(string broker, CancellationToken ct)
+    {
+        var result = await _client.SubscribeAsync(_factory.CreateSubscribeOptionsBuilder()
             .WithTopicFilter(NotifyTopic(_config.TopicRoot, HostInfo.Id), MqttQualityOfServiceLevel.AtLeastOnce)
             .Build(), ct);
+        var code = result.Items.FirstOrDefault()?.ResultCode;
+        _notifyActive = Granted(code);
+        if (_notifyActive) return;
+        _log($"[error] The broker rejected the notify subscription ({code}); notifications are off.");
+        _status.Ok($"{string.Format(L.T.StatusConnected, broker)} · {L.T.OutNotifyRejected}");
+    }
+
+    internal static bool Granted(MqttClientSubscribeResultCode? code) =>
+        code is MqttClientSubscribeResultCode.GrantedQoS0
+             or MqttClientSubscribeResultCode.GrantedQoS1
+             or MqttClientSubscribeResultCode.GrantedQoS2;
 
     static MqttClientOptions BuildOptions(MqttClientFactory factory, MqttConfig config)
     {
@@ -142,8 +159,9 @@ sealed class MqttSink : IMetricsSink
                 _status.Ok(string.Format(L.T.StatusConnected, broker));
                 _retryDelay = TimeSpan.Zero;
                 await PublishAvailabilityAsync(online: true, ct);
+                _notifyActive = false;
                 if (_config.NotificationsEnabled)
-                    await SubscribeNotifyAsync(ct);
+                    await SubscribeNotifyAsync(broker, ct);
                 _needsDiscoverySync = true;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
@@ -189,7 +207,7 @@ sealed class MqttSink : IMetricsSink
         try
         {
             bool want = _config.HaDiscoveryEnabled;
-            bool notify = _config.NotificationsEnabled;
+            bool notify = _config.NotificationsEnabled && _notifyActive;
             var fingerprint = HaDiscovery.Fingerprint(metrics, notify);
             // Components that vanished since the last publish (or since the
             // previous app run) are removed from the SECOND cycle on: the first

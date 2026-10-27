@@ -37,6 +37,14 @@ public class NotificationTests
         Assert.EndsWith("…", n.Message);
     }
 
+    // SUBACK codes: only the granted ones mean messages will arrive.
+    [Theory]
+    [InlineData(MQTTnet.MqttClientSubscribeResultCode.GrantedQoS1, true)]
+    [InlineData(MQTTnet.MqttClientSubscribeResultCode.NotAuthorized, false)]
+    [InlineData(MQTTnet.MqttClientSubscribeResultCode.UnspecifiedError, false)]
+    public void SubscriptionGranted(MQTTnet.MqttClientSubscribeResultCode code, bool granted) =>
+        Assert.Equal(granted, MqttSink.Granted(code));
+
     [Fact]
     public void DiscoveryAdvertisesTheNotifyEntityOnlyWhenEnabled()
     {
