@@ -39,6 +39,7 @@ static class Probe
         {
             using var sensors = new SensorService(new SensorConfig(), buildSummary: false);
             sensors.Open();
+            report.AppendLine($"Degraded: {sensors.Degraded ?? "no"}");
             sensors.ReadSnapshot();
             Thread.Sleep(1000);
             var snapshot = sensors.ReadSnapshot();

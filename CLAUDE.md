@@ -42,6 +42,9 @@ dotnet bin\Release\net10.0-windows\PcMqttMonitor.dll --screenshots <dir> --lang 
 
 # Interactive demo window (demo data, no sensors, no sinks) to click through the UI
 dotnet bin\Release\net10.0-windows\PcMqttMonitor.dll --demo --lang de
+
+# What the sensors provide on this machine (all LHM hardware/sensors + the app's snapshot)
+dotnet bin\Release\net10.0-windows\PcMqttMonitor.dll --probe <file>
 ```
 
 Add a scenario in `DemoMode.RunScenarios` for every new UI state. Never open real COM ports in tests (a port open can reset an attached ESP32).
@@ -74,6 +77,8 @@ git tag v1.x.y && git push origin main --tags
   ARP check of local targets for the card), `TcpSink` (line-delimited JSON server),
   `SerialSink` (line-delimited JSON on a COM port, lazy open/reopen); `SinkStatus` reports
   each sink's state to its Outputs card and logs failures once
+- `Probe.cs` — `--probe <file>`: dumps all LibreHardwareMonitor hardware and sensors plus the app's
+  snapshot; `.github/workflows/arm64-probe.yml` runs it on GitHub's Windows-on-ARM runner (manual)
 - `Ui/DemoMode.cs` — `--demo` (interactive demo window), `--screenshots` (README images, CI)
   and `--scenarios` (extra UI states); renders via `RenderTargetBitmap`, so `--scale` works
   on any screen size
@@ -96,5 +101,6 @@ git tag v1.x.y && git push origin main --tags
 - **Settings apply**: one Save for all pages. Output changes rebuild the sinks (`Program.RequestSinksReload`), the theme switches live; only a language change restarts the app (`Program.Restart`).
 - **UI framework**: WPF with the built-in Fluent theme (Windows 11 controls, Mica, live light/dark), not WinUI 3: WPF ships with .NET (single-file exe, unchanged installer), runs elevated without restrictions and renders off-screen for CI screenshots. The WinForms namespaces are not global usings, so WPF and WinForms type names never clash.
 - **Framework-dependent publish** (`SelfContained=false` in the csproj): the exe is ~5 MB and the installer ~3 MB; `installer.iss` downloads and installs the .NET 10 Desktop Runtime from Microsoft when `C:\Program Files\dotnet\shared\Microsoft.WindowsDesktop.App\10.*` is missing, in `PrepareToInstall` so upgrades (which skip the Ready page) get it too. Compile with `ISCC /DForceRuntime installer.iss` to test the download path on a PC that has the runtime.
+- **Degraded sensors**: `SensorService.Open` retries without LHM's CPU support, then without LHM, when opening throws (LHM's CPUID crashes on ARM64). CPU load falls back to `GetSystemTimes`, the CPU name to the registry; RAM, drives, network and system values come from Windows APIs anyway. A CPU/GPU entry is only built when there is data. On Windows on ARM the shipped x64 build runs under emulation; a native ARM64 build only gains less overhead.
 - **Hardware crashes**: LibreHardwareMonitor background threads can crash on driver updates or at boot. The `AppDomain.UnhandledException` handler detects these and auto-restarts. All crashes are logged to `crash.log` next to the exe.
 - **Startup delay**: if system uptime < 30s, wait for storage drivers to settle before opening sensors.

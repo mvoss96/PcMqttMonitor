@@ -52,6 +52,9 @@ Download the latest `PcMqttMonitorSetup-x.y.z.exe` from the [releases page](http
 - installs to `C:\Program Files\PcMqttMonitor`
 - optionally registers autostart at logon (via Task Scheduler, elevated)
 - preserves your `config.json` across upgrades
+- downloads the .NET 10 Desktop Runtime from Microsoft if it is not installed yet
+
+**Windows on ARM** (e.g. Snapdragon laptops): the app runs under Windows' x64 emulation with fewer sensors. CPU load, RAM, drives, network, uptime and idle time work, as do all outputs and notifications; CPU temperature/power and GPU values are not available, because LibreHardwareMonitor does not support these chips.
 
 > **Upgrading from 1.x**: the 2.0 config schema is sectioned and not backwards compatible. The app starts with defaults; re-enter your broker settings once in the Outputs page (or port your old `config.json` by hand, see below).
 

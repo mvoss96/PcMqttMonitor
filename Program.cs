@@ -201,6 +201,8 @@ class Program
             message => { if (config.General.DebugEnabled) LogDebug(message); },
             buildSummary: consoleAttached);
         sensors.Open();
+        if (sensors.Degraded is { } degraded)
+            Log($"[warn] {degraded}.");
         Log("Sensors ready.");
 
         // Newly detected fan channels got their enabled-default assigned in
