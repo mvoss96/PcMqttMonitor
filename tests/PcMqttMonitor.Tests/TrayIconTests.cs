@@ -25,6 +25,14 @@ public class TrayIconTests
     [InlineData("unknown")]
     public void NoNumber(string mode) => Assert.Null(TrayIcon.Value(Snapshot(), mode));
 
+    [Theory]
+    [InlineData(20f, 0f)]      // below the scale: empty
+    [InlineData(65f, 0.5f)]
+    [InlineData(100f, 1f)]
+    [InlineData(110f, 1f)]     // above the scale: full
+    public void TempBarHeight(float tempC, float fraction) =>
+        Assert.Equal(fraction, TrayIcon.TempFraction(tempC), 3);
+
     [Fact]
     public void MissingValueKeepsTheLogo() =>
         Assert.Null(TrayIcon.Value(new MetricsSnapshot(), "cpu_temp"));

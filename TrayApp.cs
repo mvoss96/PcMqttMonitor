@@ -165,9 +165,7 @@ sealed class TrayApp : IDisposable
     void UpdateValueIcon(MetricsSnapshot m)
     {
         string mode = _config.General.TrayIcon;
-        string key = mode == TrayIcon.LoadBars
-            ? $"{mode}|{m.Cpu?.Load}|{m.Gpu?.Load}"
-            : $"{mode}|{TrayIcon.Value(m, mode)}";
+        string key = TrayIcon.Key(m, mode);
         if (key == _valueKey) return;
         _valueKey = key;
 

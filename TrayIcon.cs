@@ -1,6 +1,5 @@
 using System.Drawing;
 using System.Drawing.Drawing2D;
-using System.Drawing.Text;
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
 
@@ -10,12 +9,17 @@ static class TrayIcon
 {
     public const string Logo = "logo", CpuLoad = "cpu_load", CpuTemp = "cpu_temp",
                         GpuLoad = "gpu_load", GpuTemp = "gpu_temp", RamLoad = "ram_load",
-                        LoadBars = "load_bars";
+                        LoadBars = "load_bars", TempBars = "temp_bars";
 
     // Order of the Settings dropdown.
-    public static readonly string[] Modes = [Logo, CpuLoad, CpuTemp, GpuLoad, GpuTemp, RamLoad, LoadBars];
+    public static readonly string[] Modes = [Logo, CpuLoad, CpuTemp, GpuLoad, GpuTemp, RamLoad, LoadBars, TempBars];
 
-    const float HotTempC = 80;   // same threshold as the dashboard's red
+    // Same thresholds as the dashboard's temperature colors.
+    const float WarmTempC = 60, HotTempC = 80;
+
+    // Temperature bars run from empty at 30 °C to full at 100 °C: a PC is
+    // hardly ever cooler, and CPUs throttle at about 95–100 °C.
+    const float BarMinC = 30, BarMaxC = 100;
 
     // The number to show for a numeric mode: at most two digits (100 % is
     // shown as 99), Hot for temperatures from 80 °C. Null when the mode is
@@ -37,6 +41,19 @@ static class TrayIcon
         return (n.ToString(), hot);
     }
 
+    // Bar height for a temperature, 0 at 30 °C to 1 at 100 °C.
+    internal static float TempFraction(float c) => Math.Clamp((c - BarMinC) / (BarMaxC - BarMinC), 0, 1);
+
+    // Everything the icon depends on: the icon is redrawn only when this changes.
+    internal static string Key(MetricsSnapshot m, string? mode) => mode switch
+    {
+        LoadBars => $"{mode}|{m.Cpu?.Load}|{m.Gpu?.Load}",
+        TempBars => $"{mode}|{Round(m.Cpu?.TempC)}|{Round(m.Gpu?.TempC)}",
+        _ => $"{mode}|{Value(m, mode)}",
+    };
+
+    static int? Round(float? v) => v == null ? null : (int)MathF.Round(v.Value);
+
     // Square icon bitmap at the tray's icon size. Returns null when the mode
     // has nothing to show, so the caller keeps the logo.
     public static Bitmap? Render(MetricsSnapshot m, string? mode, int size)
@@ -45,13 +62,28 @@ static class TrayIcon
         if (mode == LoadBars)
         {
             if (m.Cpu?.Load == null && m.Gpu?.Load == null) return null;
-            return Bars(size, m.Cpu?.Load ?? 0, m.Gpu?.Load ?? 0, light);
+            var cpu = light ? Color.FromArgb(0, 103, 192) : Color.FromArgb(96, 205, 255);
+            var gpu = light ? Color.FromArgb(202, 80, 16) : Color.FromArgb(255, 170, 40);
+            return Bars(size, light, ((m.Cpu?.Load ?? 0) / 100f, cpu), ((m.Gpu?.Load ?? 0) / 100f, gpu));
+        }
+        if (mode == TempBars)
+        {
+            if (m.Cpu?.TempC == null && m.Gpu?.TempC == null) return null;
+            return Bars(size, light, TempBar(m.Cpu?.TempC, light), TempBar(m.Gpu?.TempC, light));
         }
         if (Value(m, mode) is not { } value) return null;
-        var color = value.Hot ? (light ? Color.FromArgb(196, 43, 28) : Color.FromArgb(255, 99, 88))
-                              : (light ? Color.Black : Color.White);
-        return Number(size, value.Text, color);
+        return Number(size, value.Text, value.Hot ? TempColor(HotTempC, light) : light ? Color.Black : Color.White);
     }
+
+    static (float, Color) TempBar(float? c, bool light) =>
+        c == null ? (0, Color.Transparent) : (TempFraction(c.Value), TempColor(c.Value, light));
+
+    // Green below 60 °C, yellow below 80 °C, red from 80 °C; darker shades
+    // on a light taskbar.
+    static Color TempColor(float c, bool light) =>
+        c >= HotTempC  ? (light ? Color.FromArgb(196, 43, 28) : Color.FromArgb(255, 99, 88))
+        : c >= WarmTempC ? (light ? Color.FromArgb(157, 93, 0) : Color.FromArgb(252, 225, 0))
+        :                  (light ? Color.FromArgb(15, 123, 15) : Color.FromArgb(108, 203, 95));
 
     // The digits as an outline stretched to fill the icon: the largest
     // possible glyphs at 16 px, independent of the font's own proportions.
@@ -74,20 +106,20 @@ static class TrayIcon
         return bmp;
     }
 
-    // Two vertical bars: CPU load (blue) and GPU load (orange), 0–100 %.
-    static Bitmap Bars(int size, float cpu, float gpu, bool light)
+    // Two vertical bars on a faint track, left and right; each filled from
+    // the bottom by its fraction (0–1).
+    static Bitmap Bars(int size, bool light, (float Fraction, Color Color) left, (float Fraction, Color Color) right)
     {
         var bmp = new Bitmap(size, size);
         using var g = Graphics.FromImage(bmp);
         int w = (int)MathF.Round(size * 0.4f);
         using var track = new SolidBrush(light ? Color.FromArgb(60, 0, 0, 0) : Color.FromArgb(70, 255, 255, 255));
-        using var cpuBrush = new SolidBrush(light ? Color.FromArgb(0, 103, 192) : Color.FromArgb(96, 205, 255));
-        using var gpuBrush = new SolidBrush(light ? Color.FromArgb(202, 80, 16) : Color.FromArgb(255, 170, 40));
-        foreach (var (x, load, brush) in new[] { (0, cpu, cpuBrush), (size - w, gpu, gpuBrush) })
+        foreach (var (x, bar) in new[] { (0, left), (size - w, right) })
         {
             g.FillRectangle(track, x, 0, w, size);
-            int h = (int)MathF.Round(size * Math.Clamp(load, 0, 100) / 100f);
-            g.FillRectangle(brush, x, size - h, w, h);
+            int h = (int)MathF.Round(size * Math.Clamp(bar.Fraction, 0, 1));
+            using var fill = new SolidBrush(bar.Color);
+            g.FillRectangle(fill, x, size - h, w, h);
         }
         return bmp;
     }

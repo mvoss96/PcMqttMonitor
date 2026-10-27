@@ -144,7 +144,8 @@ sealed class Lang
     public string TrayGpuLoad      { get; init; } = "GPU load";
     public string TrayGpuTemp      { get; init; } = "GPU temp.";
     public string TrayRamLoad      { get; init; } = "RAM load";
-    public string TrayLoadBars     { get; init; } = "CPU + GPU bars";
+    public string TrayLoadBars     { get; init; } = "Load bars";
+    public string TrayTempBars     { get; init; } = "Temp. bars";
     public string SetLanguage      { get; init; } = "Language";
     public string SetAutostart     { get; init; } = "Start with Windows";
     public string SetAutostartSub  { get; init; } = "Scheduled task with highest privileges";
@@ -273,7 +274,8 @@ sealed class Lang
         TrayGpuLoad      = "GPU-Last",
         TrayGpuTemp      = "GPU-Temp.",
         TrayRamLoad      = "RAM-Last",
-        TrayLoadBars     = "CPU+GPU-Balken",
+        TrayLoadBars     = "Last-Balken",
+        TrayTempBars     = "Temp.-Balken",
         SetLanguage      = "Sprache",
         SetAutostart     = "Mit Windows starten",
         SetAutostartSub  = "Geplante Aufgabe mit höchsten Rechten",

@@ -12,8 +12,10 @@ section as the GitHub release notes — every tagged version needs a section her
   turned off on the Sensors page.
 - **Live value in the tray icon**: Settings → Tray icon shows CPU load, CPU
   or GPU temperature, GPU load or RAM load as a number instead of the logo
-  (temperatures turn red from 80 °C), or CPU and GPU load as two bars. Black
-  or white to match the taskbar; the logo with the pause badge while paused.
+  (temperatures turn red from 80 °C), or CPU and GPU as two bars: load bars,
+  or temperature bars from 30 to 100 °C in green, yellow (from 60 °C) and red
+  (from 80 °C). Black or white to match the taskbar; the logo with the pause
+  badge while paused.
 
 ## v2.11.0 — 2026-10-26
 
