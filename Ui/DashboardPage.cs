@@ -290,7 +290,7 @@ sealed class DashboardPage : UserControl
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition());
-        string[] labels = [L.T.RowUptime, L.T.RowHost, L.T.RowOs, L.T.RowBoard];
+        string[] labels = [L.T.RowUptime, L.T.RowIdle, L.T.RowHost, L.T.RowOs, L.T.RowBoard];
         var values = new TextBlock[labels.Length];
         for (int i = 0; i < labels.Length; i++)
         {
@@ -308,10 +308,11 @@ sealed class DashboardPage : UserControl
         body.Children.Add(grid);
         _updates.Add(m =>
         {
-            values[0].Text = Format.Uptime(m.System?.UptimeSec);
-            values[1].Text = m.Host;
-            values[2].Text = m.System?.OsVersion ?? "—";
-            values[3].Text = m.Motherboard?.Name ?? "—";
+            values[0].Text = Format.Duration(m.System?.UptimeSec);
+            values[1].Text = Format.Duration(m.System?.IdleSec);
+            values[2].Text = m.Host;
+            values[3].Text = m.System?.OsVersion ?? "—";
+            values[4].Text = m.Motherboard?.Name ?? "—";
         });
         return card;
     }

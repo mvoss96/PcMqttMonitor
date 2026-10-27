@@ -290,6 +290,7 @@ static class DemoMode
         System = new SystemMetrics
         {
             UptimeSec = 2 * 86400 + 8 * 3600 + 40 * 60,
+            IdleSec = 4,
             OsVersion = "Windows 11 Pro 24H2",
         },
     };

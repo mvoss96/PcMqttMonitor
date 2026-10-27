@@ -22,7 +22,8 @@ static class Format
         : kbps.Value >= 1024 ? $"{(kbps.Value / 1024f).ToString("0.##", L.Culture)} MB/s"
         : $"{kbps.Value.ToString("0.#", L.Culture)} KB/s";
 
-    internal static string Uptime(int? sec)
+    // "2d 8h 40m", "3h 12m" or "4m 10s"; used for uptime and idle time.
+    internal static string Duration(int? sec)
     {
         if (sec == null) return "—";
         var t = TimeSpan.FromSeconds(sec.Value);

@@ -71,6 +71,7 @@ sealed class Lang
     public string CardSystem  { get; init; } = "System";
     public string DriveFree   { get; init; } = "free";   // "170 GB free"
     public string RowUptime   { get; init; } = "Uptime";
+    public string RowIdle     { get; init; } = "Idle";
     public string RowHost     { get; init; } = "Host";
     public string RowOs       { get; init; } = "OS";
     public string RowBoard    { get; init; } = "Board";
@@ -126,6 +127,7 @@ sealed class Lang
     public string SensorBoard      { get; init; } = "Motherboard";
     public string SensorDrives     { get; init; } = "Drives";
     public string SensorUptime     { get; init; } = "Uptime";
+    public string SensorIdle       { get; init; } = "Idle time";
 
     // ── settings page ───────────────────────────────────────────────────────
     public string SettingsTitle    { get; init; } = "Settings";
@@ -202,6 +204,7 @@ sealed class Lang
         CardFans    = "Lüfter",
         DriveFree   = "frei",
         RowUptime   = "Laufzeit",
+        RowIdle     = "Leerlauf",
         RowBoard    = "Board",
 
         FieldUsername   = "Benutzername",
@@ -246,6 +249,7 @@ sealed class Lang
         SensorBoard      = "Mainboard",
         SensorDrives     = "Laufwerke",
         SensorUptime     = "Laufzeit",
+        SensorIdle       = "Leerlaufzeit",
 
         SettingsTitle    = "Einstellungen",
         SetInterval      = "Sendeintervall",

@@ -3,6 +3,14 @@
 User-facing changes per release. The release workflow publishes the matching
 section as the GitHub release notes — every tagged version needs a section here.
 
+## v2.12.0 — 2026-10-27
+
+- **Idle time sensor**: seconds since the last keyboard or mouse input on the
+  PC, published as `system/idle` and as a Home Assistant entity "Idle Time".
+  Useful for automations such as "PC in use" (idle below 60 s) or "nobody at
+  the PC for 10 minutes". Shown in the dashboard's System card and can be
+  turned off on the Sensors page.
+
 ## v2.11.0 — 2026-10-26
 
 - **New UI built with WPF and the Windows 11 Fluent theme**: native Windows 11

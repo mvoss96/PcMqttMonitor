@@ -207,6 +207,7 @@ sealed class SensorService : IDisposable
         var fans = CollectFanMetrics();
 
         var uptimeSec = _config.Uptime ? (int?)(Environment.TickCount64 / 1000) : null;
+        var idleSec = _config.Idle ? ReadIdleSeconds() : null;
 
         // The one-line console summary is only ever seen with --console — skip
         // the string building entirely otherwise.
@@ -247,8 +248,8 @@ sealed class SensorService : IDisposable
             Drives = driveMetrics.Count > 0 ? driveMetrics : null,
             Network = adapters is { Count: > 0 } ? adapters : null,
             Fans = fans is { Count: > 0 } ? fans : null,
-            // Always present: OS version is static and uptime merely optional.
-            System = new SystemMetrics { UptimeSec = uptimeSec, OsVersion = OsVersionString }
+            // Always present: OS version is static, uptime and idle time optional.
+            System = new SystemMetrics { UptimeSec = uptimeSec, IdleSec = idleSec, OsVersion = OsVersionString }
         };
 
         var summary = summaryParts.Count > 0 ? string.Join(" || ", summaryParts) : string.Empty;
@@ -817,6 +818,29 @@ sealed class SensorService : IDisposable
         var used  = total - avail;
         var load  = (float)status.dwMemoryLoad;
         return (load, used, total);
+    }
+
+    // Seconds since the last keyboard or mouse input in this session, or
+    // null if Windows does not report it.
+    static int? ReadIdleSeconds()
+    {
+        var info = new LastInputInfo { cbSize = (uint)Marshal.SizeOf<LastInputInfo>() };
+        return GetLastInputInfo(ref info) ? IdleSeconds((uint)Environment.TickCount, info.dwTime) : null;
+    }
+
+    // Both values are 32-bit millisecond tick counts that wrap after 49.7
+    // days; unsigned subtraction gives the right difference across a wrap.
+    internal static int IdleSeconds(uint nowTicks, uint lastInputTicks) =>
+        (int)((nowTicks - lastInputTicks) / 1000);
+
+    [DllImport("user32.dll")]
+    static extern bool GetLastInputInfo(ref LastInputInfo plii);
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct LastInputInfo
+    {
+        public uint cbSize;
+        public uint dwTime;
     }
 
     [DllImport("kernel32.dll")]
