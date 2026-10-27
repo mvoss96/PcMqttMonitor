@@ -1,8 +1,12 @@
 #define MyAppName "PC MQTT Monitor"
-#define MyAppVersion "2.12.0"
+#define MyAppVersion "2.12.1"
 #define MyAppPublisher "mvoss"
 #define MyAppExeName "PcMqttMonitor.exe"
 #define MyAppTaskName "PcMqttMonitor"
+; The app is published framework-dependent: it needs the .NET 10 Desktop
+; Runtime, which setup downloads from Microsoft when it is missing. This
+; link always points to the latest 10.0.x release.
+#define RuntimeUrl "https://aka.ms/dotnet/10.0/windowsdesktop-runtime-win-x64.exe"
 
 [Setup]
 ; Unique AppId — do not change this after first release or upgrades will break.
@@ -92,9 +96,18 @@ Filename: "schtasks.exe"; \
   Flags: runhidden; \
   RunOnceId: "RemoveTask"
 
+[CustomMessages]
+english.RuntimeDownload=Downloading the .NET 10 Desktop Runtime
+english.RuntimeDownloadDesc=PC MQTT Monitor needs the .NET 10 Desktop Runtime from Microsoft (about 60 MB).
+english.RuntimeFailed=The .NET 10 Desktop Runtime could not be installed (%1). Install it from https://dotnet.microsoft.com/download/dotnet/10.0 and run this setup again.
+german.RuntimeDownload=.NET 10 Desktop Runtime wird heruntergeladen
+german.RuntimeDownloadDesc=PC MQTT Monitor benötigt die .NET 10 Desktop Runtime von Microsoft (etwa 60 MB).
+german.RuntimeFailed=Die .NET 10 Desktop Runtime konnte nicht installiert werden (%1). Bitte von https://dotnet.microsoft.com/download/dotnet/10.0 installieren und dieses Setup erneut starten.
+
 [Code]
 var
   Upgrade: Boolean;
+  DownloadPage: TDownloadWizardPage;
 
 // An upgrade when the exe already exists in the fixed install directory.
 function InitializeSetup(): Boolean;
@@ -129,10 +142,72 @@ begin
   Sleep(500); // give Windows a moment to release the file lock
 end;
 
+procedure InitializeWizard();
+begin
+  DownloadPage := CreateDownloadPage(CustomMessage('RuntimeDownload'),
+    CustomMessage('RuntimeDownloadDesc'), nil);
+end;
+
+// Any installed 10.0.x Desktop Runtime will do (the app rolls forward
+// within the major version).
+function DesktopRuntimeInstalled(): Boolean;
+var
+  FindRec: TFindRec;
+begin
+#ifdef ForceRuntime
+  Result := False;  // ISCC /DForceRuntime: test the download path
+#else
+  // On ARM64 Windows the x64 runtime this win-x64 exe needs lives in its own
+  // folder (dotnet\x64); dotnet\shared there holds the ARM64 runtime.
+  if IsArm64() then
+    Result := FindFirst(ExpandConstant('{commonpf64}\dotnet\x64\shared\Microsoft.WindowsDesktop.App\10.*'), FindRec)
+  else
+    Result := FindFirst(ExpandConstant('{commonpf64}\dotnet\shared\Microsoft.WindowsDesktop.App\10.*'), FindRec);
+  if Result then
+    FindClose(FindRec);
+#endif
+end;
+
+// Downloads the runtime installer and runs it quietly. Returns '' on
+// success, else the message for the Preparing page (setup stops there).
+// Exit codes 3010/1641 mean success with a pending reboot, 1638 that the
+// same or a newer version is already installed.
+function InstallDesktopRuntime(): String;
+var
+  ResultCode: Integer;
+begin
+  Result := '';
+  DownloadPage.Clear;
+  DownloadPage.Add('{#RuntimeUrl}', 'windowsdesktop-runtime.exe', '');
+  DownloadPage.Show;
+  try
+    try
+      DownloadPage.Download;
+    except
+      Result := FmtMessage(CustomMessage('RuntimeFailed'), [GetExceptionMessage]);
+    end;
+  finally
+    DownloadPage.Hide;
+  end;
+  if Result <> '' then
+    exit;
+
+  if not Exec(ExpandConstant('{tmp}\windowsdesktop-runtime.exe'), '/install /quiet /norestart',
+      '', SW_SHOW, ewWaitUntilTerminated, ResultCode) then
+    Result := FmtMessage(CustomMessage('RuntimeFailed'), [SysErrorMessage(ResultCode)])
+  else
+    Log('.NET Desktop Runtime installer exit code: ' + IntToStr(ResultCode));
+  if (Result = '') and not ((ResultCode = 0) or (ResultCode = 3010) or (ResultCode = 1641) or (ResultCode = 1638)) then
+    Result := FmtMessage(CustomMessage('RuntimeFailed'), ['exit code ' + IntToStr(ResultCode)]);
+end;
+
+// Runs on every install, also on upgrades, which skip the Ready page.
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   KillRunningApp();
   Result := '';
+  if not DesktopRuntimeInstalled() then
+    Result := InstallDesktopRuntime();
 end;
 
 // Registers the autostart scheduled task by running the installed app with

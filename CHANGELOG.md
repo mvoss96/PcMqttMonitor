@@ -3,6 +3,13 @@
 User-facing changes per release. The release workflow publishes the matching
 section as the GitHub release notes — every tagged version needs a section here.
 
+## v2.12.1 — 2026-10-27
+
+- The installer shrinks from about 50 MB to about 3 MB: the app now uses the
+  .NET 10 Desktop Runtime installed on the PC instead of bringing its own.
+  If it is missing, setup downloads it from Microsoft (about 60 MB) and
+  installs it before the app, also on updates.
+
 ## v2.12.0 — 2026-10-27
 
 - **Idle time sensor**: seconds since the last keyboard or mouse input on the

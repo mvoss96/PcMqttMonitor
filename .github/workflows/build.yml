@@ -20,8 +20,8 @@ jobs:
       - name: Run tests
         run: dotnet test tests/PcMqttMonitor.Tests -c Release
 
-      - name: Publish self-contained exe
-        run: dotnet publish PcMqttMonitor.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
+      - name: Publish exe
+        run: dotnet publish PcMqttMonitor.csproj -c Release -r win-x64 -p:PublishSingleFile=true -o publish
 
       # Pages plus the --scenarios states (invalid input, save footer, sink
       # status, pause notice), so UI changes can be looked at in the PR
