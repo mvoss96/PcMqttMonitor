@@ -3,6 +3,12 @@
 User-facing changes per release. The release workflow publishes the matching
 section as the GitHub release notes — every tagged version needs a section here.
 
+## v2.14.1 — 2026-10-27
+
+- New installations show CPU and GPU load as two bars in the tray icon by
+  default. Existing installations keep their choice; it can be changed under
+  Settings → Tray icon.
+
 ## v2.14.0 — 2026-10-27
 
 - **Windows on ARM**: the app runs with the sensors available there. CPU
