@@ -100,6 +100,9 @@ sealed class MqttConfig
     // Opt-in: publish a Home Assistant device-discovery config so all sensors
     // appear in HA automatically. Off by default — enabled via the Settings tab.
     public bool HaDiscoveryEnabled { get; set; } = false;
+    // Show messages published to <topicRoot>/<host>/notify as Windows
+    // notifications; with discovery on, HA gets a notify entity for it.
+    public bool NotificationsEnabled { get; set; } = true;
 
     public MqttConfig Clone() => (MqttConfig)MemberwiseClone();
 }

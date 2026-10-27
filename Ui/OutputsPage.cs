@@ -14,7 +14,7 @@ sealed class OutputsPage : UserControl
     readonly TextBox _host, _port, _username, _topic, _udpHost, _udpPort, _tcpPort, _baud;
     readonly PasswordBox _password;
     readonly ComboBox _serialPort;
-    readonly CheckBox _tls, _discovery;
+    readonly CheckBox _tls, _discovery, _notifications;
 
     // Last state each running sink reported, keyed by sink name ("MQTT", …).
     readonly Dictionary<string, (StatusKind Kind, string Text)> _reported = new();
@@ -37,6 +37,7 @@ sealed class OutputsPage : UserControl
         _topic = _mqtt.AddText(L.T.FieldTopicRoot, Changed);
         _tls = _mqtt.AddCheck(L.T.FieldUseTls, Changed);
         _discovery = _mqtt.AddCheck(L.T.FieldDiscovery, Changed);
+        _notifications = _mqtt.AddCheck(L.T.FieldNotifications, Changed);
 
         _udp = new OutputExpander("UDP", Changed);
         _udpHost = _udp.AddText(L.T.FieldHost, Changed);
@@ -129,6 +130,7 @@ sealed class OutputsPage : UserControl
         m.TopicRoot = _topic.Text.Trim();
         m.UseTls = _tls.IsChecked == true;
         m.HaDiscoveryEnabled = _discovery.IsChecked == true;
+        m.NotificationsEnabled = _notifications.IsChecked == true;
 
         _config.Udp.Enabled = _udp.Enabled.IsChecked == true;
         _config.Udp.Host = _udpHost.Text.Trim();
@@ -155,6 +157,7 @@ sealed class OutputsPage : UserControl
         _topic.Text = m.TopicRoot;
         _tls.IsChecked = m.UseTls;
         _discovery.IsChecked = m.HaDiscoveryEnabled;
+        _notifications.IsChecked = m.NotificationsEnabled;
 
         _udp.Enabled.IsChecked = _config.Udp.Enabled;
         _udpHost.Text = _config.Udp.Host;
@@ -183,6 +186,7 @@ sealed class OutputsPage : UserControl
                 || _topic.Text.Trim() != m.TopicRoot
                 || _tls.IsChecked != m.UseTls
                 || _discovery.IsChecked != m.HaDiscoveryEnabled
+                || _notifications.IsChecked != m.NotificationsEnabled
                 || _udp.Enabled.IsChecked != _config.Udp.Enabled
                 || _udpHost.Text.Trim() != _config.Udp.Host
                 || PortOr(_udpPort, _config.Udp.Port) != _config.Udp.Port
@@ -296,6 +300,10 @@ sealed class OutputExpander : Border
         box.Checked += (_, _) => changed();
         box.Unchecked += (_, _) => changed();
         AddRow("", box);
+        // Tighter than the text rows: the MQTT card with its three check
+        // boxes must leave room for the save footer without scrolling.
+        box.MinHeight = 28;
+        box.Margin = new Thickness(0);
         return box;
     }
 

@@ -7,13 +7,18 @@ using MQTTnet.Protocol;
 
 // The MQTT output path: connection management (one reconnect attempt per cycle),
 // availability topic with LWT, the scalar subtopics + JSON status topic, and
-// keeping the Home Assistant discovery config on the broker in sync.
+// keeping the Home Assistant discovery config on the broker in sync. The one
+// inbound path: messages on the notify topic become Windows notifications.
 sealed class MqttSink : IMetricsSink
 {
     readonly MqttConfig _config;
     readonly Action<string> _log;
     readonly Action<string> _setStatus;   // tray context-menu status line
     readonly SinkStatus _status;          // Outputs card
+    readonly Action<Notification> _notify;
+    // The broker accepted the notify subscription on the current connection;
+    // only then is the HA notify entity advertised.
+    bool _notifyActive;
     readonly MqttClientFactory _factory = new();
     readonly IMqttClient _client;
     readonly MqttClientOptions _options;
@@ -47,17 +52,60 @@ sealed class MqttSink : IMetricsSink
     public static string AvailabilityTopic(string topicRoot, string host)
         => $"{topicRoot}/{host}/availability";
 
+    // Messages published here are shown as Windows notifications.
+    public static string NotifyTopic(string topicRoot, string host)
+        => $"{topicRoot}/{host}/notify";
+
     public MqttSink(MqttConfig config, Action<string> log,
-        Action<string> setStatus, Action<string, StatusKind?, string> report)
+        Action<string> setStatus, Action<string, StatusKind?, string> report,
+        Action<Notification> notify)
     {
         _config = config.Clone();   // see MqttConfig: dispose must use the old settings
         _log = log;
         _setStatus = setStatus;
         _status = new SinkStatus(Name, log, report);
+        _notify = notify;
 
         _client = _factory.CreateMqttClient();
+        _client.ApplicationMessageReceivedAsync += OnMessageReceived;
         _options = BuildOptions(_factory, _config);
     }
+
+    // Retained messages are skipped: they would show an old notification again
+    // after every reconnect.
+    Task OnMessageReceived(MqttApplicationMessageReceivedEventArgs e)
+    {
+        var message = e.ApplicationMessage;
+        if (message.Retain || message.Topic != NotifyTopic(_config.TopicRoot, HostInfo.Id))
+            return Task.CompletedTask;
+        if (Notification.Parse(message.ConvertPayloadToString(), "Home Assistant") is { } n)
+        {
+            _log($"Notification received: {n.Title}");
+            _notify(n);
+        }
+        return Task.CompletedTask;
+    }
+
+    // The broker forgets subscriptions of a clean session, so this runs after
+    // every connect. A broker rejects a subscription in the SUBACK (e.g. an
+    // account that may only publish) without an exception, so the result
+    // decides whether notifications work.
+    async Task SubscribeNotifyAsync(string broker, CancellationToken ct)
+    {
+        var result = await _client.SubscribeAsync(_factory.CreateSubscribeOptionsBuilder()
+            .WithTopicFilter(NotifyTopic(_config.TopicRoot, HostInfo.Id), MqttQualityOfServiceLevel.AtLeastOnce)
+            .Build(), ct);
+        var code = result.Items.FirstOrDefault()?.ResultCode;
+        _notifyActive = Granted(code);
+        if (_notifyActive) return;
+        _log($"[error] The broker rejected the notify subscription ({code}); notifications are off.");
+        _status.Ok($"{string.Format(L.T.StatusConnected, broker)} · {L.T.OutNotifyRejected}");
+    }
+
+    internal static bool Granted(MqttClientSubscribeResultCode? code) =>
+        code is MqttClientSubscribeResultCode.GrantedQoS0
+             or MqttClientSubscribeResultCode.GrantedQoS1
+             or MqttClientSubscribeResultCode.GrantedQoS2;
 
     static MqttClientOptions BuildOptions(MqttClientFactory factory, MqttConfig config)
     {
@@ -111,6 +159,9 @@ sealed class MqttSink : IMetricsSink
                 _status.Ok(string.Format(L.T.StatusConnected, broker));
                 _retryDelay = TimeSpan.Zero;
                 await PublishAvailabilityAsync(online: true, ct);
+                _notifyActive = false;
+                if (_config.NotificationsEnabled)
+                    await SubscribeNotifyAsync(broker, ct);
                 _needsDiscoverySync = true;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
@@ -156,7 +207,8 @@ sealed class MqttSink : IMetricsSink
         try
         {
             bool want = _config.HaDiscoveryEnabled;
-            var fingerprint = HaDiscovery.Fingerprint(metrics);
+            bool notify = _config.NotificationsEnabled && _notifyActive;
+            var fingerprint = HaDiscovery.Fingerprint(metrics, notify);
             // Components that vanished since the last publish (or since the
             // previous app run) are removed from the SECOND cycle on: the first
             // snapshot has no network rates yet and would wrongly tombstone
@@ -168,12 +220,12 @@ sealed class MqttSink : IMetricsSink
             {
                 if (want)
                 {
-                    var current = HaDiscovery.ComponentTopics(metrics, _config.TopicRoot, HostInfo.Id);
+                    var current = HaDiscovery.ComponentTopics(metrics, notify, _config.TopicRoot, HostInfo.Id);
                     var removed = canRemove
                         ? _advertised.Where(kv => !current.ContainsKey(kv.Key)).ToList()
                         : new List<KeyValuePair<string, string>>();
                     await HaDiscovery.PublishConfigAsync(
-                        _client, _config.TopicRoot, HostInfo.Id, metrics,
+                        _client, _config.TopicRoot, HostInfo.Id, metrics, notify,
                         UpdateChecker.CurrentVersion.ToString(3),
                         _config.Host, _config.Port,
                         removed.Select(kv => kv.Key).ToList(), ct);

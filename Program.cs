@@ -150,7 +150,7 @@ class Program
 
         if (config.Mqtt.Enabled && !string.IsNullOrWhiteSpace(config.Mqtt.Host))
         {
-            try { sinks.Add(new MqttSink(config.Mqtt, Log, tray.SetStatus, tray.SetSinkStatus)); }
+            try { sinks.Add(new MqttSink(config.Mqtt, Log, tray.SetStatus, tray.SetSinkStatus, tray.ShowNotification)); }
             catch (Exception ex) { Log($"[error] Invalid MQTT config: {ex.Message}"); }
         }
 

@@ -3,6 +3,15 @@
 User-facing changes per release. The release workflow publishes the matching
 section as the GitHub release notes — every tagged version needs a section here.
 
+## v2.13.0 — 2026-10-27
+
+- **Notifications from Home Assistant**: messages published to
+  `pc/<host>/notify` appear as Windows notifications. With HA discovery on,
+  the PC gets a notify entity, so `notify.send_message` works from any
+  automation. Plain text is shown with the title "Home Assistant"; JSON
+  (`{"title": "...", "message": "..."}`) sets a title of its own. Turned
+  on by default; "Notifications from HA" in the MQTT card turns it off.
+
 ## v2.12.1 — 2026-10-27
 
 - The installer shrinks from about 50 MB to about 3 MB: the app now uses the
