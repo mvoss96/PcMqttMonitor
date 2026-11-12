@@ -1,9 +1,9 @@
 <h1 align="center">PC MQTT Monitor</h1>
 
 <p align="center">
-  A lightweight Windows tray app that streams your PC's hardware sensors —<br>
-  CPU, GPU, RAM, drives, network — wherever you need them:<br>
-  <b>MQTT</b> (native Home Assistant discovery) · <b>UDP</b> · <b>TCP</b> · <b>Serial</b>
+  A lightweight Windows tray app that brings your PC's hardware sensors into <b>Home Assistant</b>:<br>
+  CPU, GPU, RAM, drives, network, battery — via <b>MQTT</b> with automatic discovery,<br>
+  or as JSON over <b>UDP</b> · <b>TCP</b> · <b>Serial</b> (e.g. for an ESP32 status display)
 </p>
 
 <p align="center">
