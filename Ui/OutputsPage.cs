@@ -15,6 +15,10 @@ sealed class OutputsPage : UserControl
     readonly PasswordBox _password;
     readonly ComboBox _serialPort;
     readonly CheckBox _tls, _discovery, _notifications;
+    readonly TextBlock _topicPreview;
+
+    // Host part shown in the topic preview; DemoMode replaces the real machine name.
+    internal static string PreviewHostId = HostInfo.Id;
 
     // Last state each running sink reported, keyed by sink name ("MQTT", …).
     readonly Dictionary<string, (StatusKind Kind, string Text)> _reported = new();
@@ -35,6 +39,10 @@ sealed class OutputsPage : UserControl
         _password.PasswordChanged += (_, _) => Changed();
         _mqtt.AddRow(L.T.FieldPassword, _password);
         _topic = _mqtt.AddText(L.T.FieldTopicRoot, Changed);
+        // The full topic prefix, so it is visible that the machine name follows the root.
+        _topicPreview = new TextBlock { Style = (Style)Application.Current.FindResource("Sub") };
+        _mqtt.AddRow("", _topicPreview);
+        _topic.TextChanged += (_, _) => _topicPreview.Text = $"{_topic.Text.Trim()}/{PreviewHostId}/…";
         _tls = _mqtt.AddCheck(L.T.FieldUseTls, Changed);
         _discovery = _mqtt.AddCheck(L.T.FieldDiscovery, Changed);
         _notifications = _mqtt.AddCheck(L.T.FieldNotifications, Changed);

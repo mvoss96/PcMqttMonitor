@@ -34,6 +34,7 @@ static class DemoMode
         // Screenshots default to en/dark for identical output everywhere.
         L.Init(Arg("--lang") is { Length: > 0 } lang ? lang : dir != null ? "en" : "system");
         var config = DemoConfig();
+        OutputsPage.PreviewHostId = "gaming-pc";
         config.General.Theme = Arg("--theme") is { Length: > 0 } theme ? theme : dir != null ? "dark" : "system";
         MainWindow.ApplyTheme(config.General.Theme);
 

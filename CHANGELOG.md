@@ -3,6 +3,12 @@
 User-facing changes per release. The release workflow publishes the matching
 section as the GitHub release notes — every tagged version needs a section here.
 
+## v2.15.1 — 2026-11-12
+
+- The MQTT card shows the full topic below the root topic field, e.g.
+  `pc/gaming-pc/…`: the machine name is always appended, so several PCs can
+  share the same root topic.
+
 ## v2.15.0 — 2026-10-27
 
 - **Battery on laptops**: charge level and whether the laptop is plugged in,
