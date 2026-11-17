@@ -151,6 +151,7 @@ sealed class Lang
     public string TrayGpuTemp      { get; init; } = "GPU temp.";
     public string TrayRamLoad      { get; init; } = "RAM load";
     public string TrayLoadBars     { get; init; } = "Load bars";
+    public string TrayLoadBarsRam  { get; init; } = "Load + RAM";
     public string TrayTempBars     { get; init; } = "Temp. bars";
     public string SetLanguage      { get; init; } = "Language";
     public string SetAutostart     { get; init; } = "Start with Windows";
@@ -287,6 +288,7 @@ sealed class Lang
         TrayGpuTemp      = "GPU-Temp.",
         TrayRamLoad      = "RAM-Last",
         TrayLoadBars     = "Last-Balken",
+        TrayLoadBarsRam  = "Last + RAM",
         TrayTempBars     = "Temp.-Balken",
         SetLanguage      = "Sprache",
         SetAutostart     = "Mit Windows starten",

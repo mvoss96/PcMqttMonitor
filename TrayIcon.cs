@@ -9,10 +9,10 @@ static class TrayIcon
 {
     public const string Logo = "logo", CpuLoad = "cpu_load", CpuTemp = "cpu_temp",
                         GpuLoad = "gpu_load", GpuTemp = "gpu_temp", RamLoad = "ram_load",
-                        LoadBars = "load_bars", TempBars = "temp_bars";
+                        LoadBars = "load_bars", LoadBarsRam = "load_bars_ram", TempBars = "temp_bars";
 
     // Order of the Settings dropdown.
-    public static readonly string[] Modes = [Logo, CpuLoad, CpuTemp, GpuLoad, GpuTemp, RamLoad, LoadBars, TempBars];
+    public static readonly string[] Modes = [Logo, CpuLoad, CpuTemp, GpuLoad, GpuTemp, RamLoad, LoadBars, LoadBarsRam, TempBars];
 
     // Same thresholds as the dashboard's temperature colors.
     const float WarmTempC = 60, HotTempC = 80;
@@ -51,6 +51,7 @@ static class TrayIcon
     internal static string Key(MetricsSnapshot m, string? mode) => (mode switch
     {
         LoadBars => $"{mode}|{m.Cpu?.Load}|{m.Gpu?.Load}",
+        LoadBarsRam => $"{mode}|{m.Cpu?.Load}|{m.Gpu?.Load}|{m.Ram?.Load}",
         TempBars => $"{mode}|{Round(m.Cpu?.TempC)}|{Round(m.Gpu?.TempC)}",
         _ => $"{mode}|{Value(m, mode)}",
     }) + (TaskbarIsLight() ? "|light" : "|dark");
@@ -62,12 +63,18 @@ static class TrayIcon
     public static Bitmap? Render(MetricsSnapshot m, string? mode, int size)
     {
         bool light = TaskbarIsLight();
-        if (mode == LoadBars)
+        if (mode is LoadBars or LoadBarsRam)
         {
-            if (m.Cpu?.Load == null && m.Gpu?.Load == null) return null;
+            bool withRam = mode == LoadBarsRam;
+            if (m.Cpu?.Load == null && m.Gpu?.Load == null && (!withRam || m.Ram?.Load == null)) return null;
             var cpu = light ? Color.FromArgb(0, 103, 192) : Color.FromArgb(96, 205, 255);
             var gpu = light ? Color.FromArgb(202, 80, 16) : Color.FromArgb(255, 170, 40);
-            return Bars(size, light, ((m.Cpu?.Load ?? 0) / 100f, cpu), ((m.Gpu?.Load ?? 0) / 100f, gpu));
+            var ram = light ? Color.FromArgb(135, 60, 180) : Color.FromArgb(200, 150, 255);
+            var cpuBar = ((m.Cpu?.Load ?? 0) / 100f, cpu);
+            var gpuBar = ((m.Gpu?.Load ?? 0) / 100f, gpu);
+            return withRam
+                ? Bars(size, light, cpuBar, gpuBar, ((m.Ram?.Load ?? 0) / 100f, ram))
+                : Bars(size, light, cpuBar, gpuBar);
         }
         if (mode == TempBars)
         {
@@ -109,16 +116,20 @@ static class TrayIcon
         return bmp;
     }
 
-    // Two vertical bars on a faint track, left and right; each filled from
-    // the bottom by its fraction (0–1).
-    static Bitmap Bars(int size, bool light, (float Fraction, Color Color) left, (float Fraction, Color Color) right)
+    // Two or three vertical bars on a faint track, spread evenly from the
+    // left to the right edge; each filled from the bottom by its fraction
+    // (0–1). At 16 px: two bars of 6 px with a 4 px gap, three of 4 px with
+    // 2 px gaps.
+    static Bitmap Bars(int size, bool light, params (float Fraction, Color Color)[] bars)
     {
         var bmp = new Bitmap(size, size);
         using var g = Graphics.FromImage(bmp);
-        int w = (int)MathF.Round(size * 0.4f);
+        int w = (int)MathF.Round(size * (bars.Length == 2 ? 0.4f : 0.25f));
         using var track = new SolidBrush(light ? Color.FromArgb(60, 0, 0, 0) : Color.FromArgb(70, 255, 255, 255));
-        foreach (var (x, bar) in new[] { (0, left), (size - w, right) })
+        for (int i = 0; i < bars.Length; i++)
         {
+            var bar = bars[i];
+            int x = (int)MathF.Round(i * (size - w) / (float)(bars.Length - 1));
             g.FillRectangle(track, x, 0, w, size);
             int h = (int)MathF.Round(size * Math.Clamp(bar.Fraction, 0, 1));
             using var fill = new SolidBrush(bar.Color);

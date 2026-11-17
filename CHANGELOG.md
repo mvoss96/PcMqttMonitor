@@ -3,6 +3,11 @@
 User-facing changes per release. The release workflow publishes the matching
 section as the GitHub release notes — every tagged version needs a section here.
 
+## v2.16.0 — 2026-11-17
+
+- New tray icon "Load + RAM": three bars for CPU, GPU and RAM load.
+  Choose it under Settings → Tray icon.
+
 ## v2.15.1 — 2026-11-12
 
 - The MQTT card shows the full topic below the root topic field, e.g.
