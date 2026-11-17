@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
 
@@ -30,7 +30,7 @@ jobs:
         run: Start-Process publish/PcMqttMonitor.exe -ArgumentList '--screenshots','scenarios','--lang','en','--theme','dark','--scenarios' -Wait
 
       - name: Upload UI scenarios
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ui-scenarios
           path: scenarios/*.png
@@ -40,7 +40,7 @@ jobs:
         run: '& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer.iss'
 
       - name: Upload installer artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: installer
           path: installer-output/*.exe
