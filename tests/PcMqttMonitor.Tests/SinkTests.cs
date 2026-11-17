@@ -106,7 +106,7 @@ public class UdpSinkTests
         var receive = receiver.ReceiveAsync();
         await sink.PublishAsync(new MetricsSnapshot { Host = "test-pc" }, CancellationToken.None);
         Assert.Same(receive, await Task.WhenAny(receive, Task.Delay(3000)));
-        Assert.Contains("\"Host\":\"test-pc\"", System.Text.Encoding.UTF8.GetString(receive.Result.Buffer));
+        Assert.Contains("\"Host\":\"test-pc\"", System.Text.Encoding.UTF8.GetString((await receive).Buffer));
     }
 }
 
