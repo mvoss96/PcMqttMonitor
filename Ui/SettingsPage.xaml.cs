@@ -27,7 +27,8 @@ public partial class SettingsPage : UserControl
         LanguageChoice.ItemsSource = new[] { L.T.LangSystem, "English", "Deutsch" };
         // Same order as TrayIcon.Modes.
         TrayChoice.ItemsSource = new[] { L.T.TrayLogo, L.T.TrayCpuLoad, L.T.TrayCpuTemp,
-            L.T.TrayGpuLoad, L.T.TrayGpuTemp, L.T.TrayRamLoad, L.T.TrayLoadBars, L.T.TrayTempBars };
+            L.T.TrayGpuLoad, L.T.TrayGpuTemp, L.T.TrayRamLoad, L.T.TrayLoadBars,
+            L.T.TrayLoadBarsRam, L.T.TrayTempBars };
         Revert();
 
         foreach (var c in new[] { Interval, ThemeChoice, LanguageChoice, TrayChoice })

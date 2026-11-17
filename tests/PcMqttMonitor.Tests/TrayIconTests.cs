@@ -22,6 +22,7 @@ public class TrayIconTests
     [Theory]
     [InlineData("logo")]
     [InlineData("load_bars")]
+    [InlineData("load_bars_ram")]
     [InlineData("unknown")]
     public void NoNumber(string mode) => Assert.Null(TrayIcon.Value(Snapshot(), mode));
 
@@ -43,6 +44,16 @@ public class TrayIconTests
         var ma = Snapshot(); ma.Cpu!.TempC = a;
         var mb = Snapshot(); mb.Cpu!.TempC = b;
         Assert.Equal(same, TrayIcon.Key(ma, "temp_bars") == TrayIcon.Key(mb, "temp_bars"));
+    }
+
+    // Only the three-bar icon draws RAM, so only its key follows the RAM load.
+    [Theory]
+    [InlineData("load_bars", true)]
+    [InlineData("load_bars_ram", false)]
+    public void RamLoadChangesOnlyTheThreeBarKey(string mode, bool same)
+    {
+        var other = Snapshot(); other.Ram!.Load = 65;
+        Assert.Equal(same, TrayIcon.Key(Snapshot(), mode) == TrayIcon.Key(other, mode));
     }
 
     [Fact]
