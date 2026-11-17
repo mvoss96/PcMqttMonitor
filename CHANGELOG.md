@@ -3,6 +3,12 @@
 User-facing changes per release. The release workflow publishes the matching
 section as the GitHub release notes — every tagged version needs a section here.
 
+## v2.16.1 — 2026-11-17
+
+- New installations show CPU, GPU and RAM load as three bars in the tray
+  icon by default. Existing installations keep their choice; it can be
+  changed under Settings → Tray icon.
+
 ## v2.16.0 — 2026-11-17
 
 - New tray icon "Load + RAM": three bars for CPU, GPU and RAM load.

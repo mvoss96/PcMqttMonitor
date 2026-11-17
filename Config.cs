@@ -80,8 +80,8 @@ sealed class GeneralConfig
     // Tray icon content: "logo", or a live value ("cpu_load", "cpu_temp",
     // "gpu_load", "gpu_temp", "ram_load", "load_bars", "load_bars_ram",
     // "temp_bars"); see TrayIcon.
-    // Default: CPU and GPU load as two bars.
-    public string TrayIcon { get; set; } = "load_bars";
+    // Default: CPU, GPU and RAM load as three bars.
+    public string TrayIcon { get; set; } = "load_bars_ram";
 }
 
 // Each sink CLONES its config section at construction: on Save the UI writes

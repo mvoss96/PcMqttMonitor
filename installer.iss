@@ -1,5 +1,5 @@
 #define MyAppName "PC MQTT Monitor"
-#define MyAppVersion "2.16.0"
+#define MyAppVersion "2.16.1"
 #define MyAppPublisher "mvoss"
 #define MyAppExeName "PcMqttMonitor.exe"
 #define MyAppTaskName "PcMqttMonitor"
